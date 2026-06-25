@@ -1,0 +1,191 @@
+﻿<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>파트 단가 관리 시스템</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="style.css" rel="stylesheet">
+</head>
+<body>
+  <nav class="navbar navbar-dark bg-primary px-4">
+    <span class="navbar-brand fw-bold">⚙️ 파트 단가 관리 시스템</span>
+    <div class="d-flex gap-3">
+      <a href="index.html" class="nav-link text-white active">대시보드</a>
+      <a href="parts.html" class="nav-link text-white">파트 관리</a>
+      <a href="lots.html" class="nav-link text-white">배치 관리</a>
+      <a href="history.html" class="nav-link text-white">이력 조회</a>
+      <a href="quotation.html" class="nav-link text-white">견적 생성</a>
+      <a href="master-fill.html" class="nav-link text-white">마스터 업데이트</a>
+    </div>
+  </nav>
+
+  <div class="container-fluid p-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h5 class="mb-0">📊 파트별 현황</h5>
+      <button class="btn btn-outline-primary btn-sm" onclick="load()">🔄 새로고침</button>
+    </div>
+
+    <!-- 요약 카드 -->
+    <div class="row g-3 mb-4">
+      <div class="col-md-3">
+        <div class="card text-center border-0 shadow-sm filter-card" style="cursor:pointer" onclick="setFilter('')" id="card-all">
+          <div class="card-body py-3">
+            <div class="fs-2 fw-bold text-primary" id="cnt-total">-</div>
+            <div class="text-muted small">전체 파트</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="card text-center border-0 shadow-sm filter-card" style="cursor:pointer" onclick="setFilter('asis')" id="card-asis">
+          <div class="card-body py-3">
+            <div class="fs-2 fw-bold text-success" id="cnt-asis">-</div>
+            <div class="text-muted small">🟢 As-is 진행 중</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="card text-center border-0 shadow-sm filter-card bg-warning-subtle" style="cursor:pointer" onclick="setFilter('near,switch')" id="card-near">
+          <div class="card-body py-3">
+            <div class="fs-2 fw-bold text-warning" id="cnt-near">-</div>
+            <div class="text-muted small">🟡 전환 임박</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="card text-center border-0 shadow-sm filter-card bg-danger-subtle" style="cursor:pointer" onclick="setFilter('tobe,sajup')" id="card-tobe">
+          <div class="card-body py-3">
+            <div class="fs-2 fw-bold text-danger" id="cnt-tobe">-</div>
+            <div class="text-muted small">🔴 To-be 전환됨</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 필터 바 -->
+    <div class="d-flex align-items-center gap-2 mb-2" id="filter-bar" style="display:none!important">
+      <span class="text-muted small">필터:</span>
+      <span class="badge fs-6" id="filter-label"></span>
+      <button class="btn btn-outline-secondary btn-sm" onclick="setFilter('')">전체 보기</button>
+    </div>
+
+    <!-- 파트 테이블 -->
+    <div class="card shadow-sm">
+      <div class="card-body p-0">
+        <table class="table table-hover mb-0 align-middle">
+          <thead class="table-dark">
+            <tr>
+              <th>Type</th>
+              <th>Part Number</th>
+              <th>Description</th>
+              <th class="text-center">누적 사용</th>
+              <th class="text-center">Onhand</th>
+              <th class="text-center">Q'ty 기준</th>
+              <th class="text-center">잔여 As-is</th>
+              <th class="text-end">As-is 단가</th>
+              <th class="text-end">To-be 단가</th>
+              <th class="text-end">현재 판가</th>
+              <th class="text-center">사급 (입고/사용)</th>
+              <th class="text-center">상태</th>
+            </tr>
+          </thead>
+          <tbody id="dashboard-body">
+            <tr><td colspan="12" class="text-center text-muted py-4">불러오는 중...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    let allData = [];
+    let activeFilter = '';
+
+    async function load() {
+      const res = await fetch('/api/dashboard');
+      allData = await res.json();
+
+      document.getElementById('cnt-total').textContent = allData.length;
+      document.getElementById('cnt-asis').textContent  = allData.filter(d => d.status === 'asis' || d.status === 'fixed').length;
+      document.getElementById('cnt-near').textContent  = allData.filter(d => d.status === 'near' || d.status === 'switch').length;
+      document.getElementById('cnt-tobe').textContent  = allData.filter(d => d.status === 'tobe' || d.status === 'sajup').length;
+
+      renderTable();
+    }
+
+    function setFilter(statusStr) {
+      activeFilter = statusStr;
+      document.querySelectorAll('.filter-card').forEach(c => { c.style.outline = ''; });
+      const cardMap = { '': 'card-all', 'asis': 'card-asis', 'near,switch': 'card-near', 'tobe,sajup': 'card-tobe' };
+      const cardId = cardMap[statusStr];
+      if (cardId) { const c = document.getElementById(cardId); if (c) c.style.outline = '3px solid #0d6efd'; }
+
+      const bar = document.getElementById('filter-bar');
+      const lbl = document.getElementById('filter-label');
+      const labelMap = {
+        '': '', 'asis': '🟢 As-is 진행 중',
+        'near,switch': '🟡 전환 임박', 'tobe,sajup': '🔴 To-be 전환됨'
+      };
+      if (statusStr) {
+        bar.style.removeProperty('display');
+        lbl.textContent = labelMap[statusStr] || statusStr;
+      } else {
+        bar.style.setProperty('display', 'none', 'important');
+      }
+      renderTable();
+    }
+
+    function renderTable() {
+      const statuses = activeFilter ? activeFilter.split(',') : null;
+      const filtered = statuses ? allData.filter(d => statuses.includes(d.status)) : allData;
+      const tbody = document.getElementById('dashboard-body');
+
+      if (!filtered.length) {
+        const msg = activeFilter ? '해당 상태의 파트가 없습니다.' : '등록된 파트가 없습니다.';
+        tbody.innerHTML = `<tr><td colspan="11" class="text-center text-muted py-4">${msg}</td></tr>`;
+        return;
+      }
+
+      const statusInfo = {
+        asis:   { badge: '<span class="badge bg-success">🟢 As-is</span>',       row: '' },
+        near:   { badge: '<span class="badge bg-warning text-dark">🟡 전환 임박</span>', row: 'table-warning' },
+        switch: { badge: '<span class="badge bg-warning text-dark">🟡 전환 시점!</span>', row: 'table-warning' },
+        tobe:   { badge: '<span class="badge bg-danger">🔴 To-be</span>',         row: 'table-danger' },
+        sajup:  { badge: '<span class="badge bg-danger">🔴 사급 전환</span>',     row: 'table-danger' },
+        fixed:  { badge: '<span class="badge bg-secondary">고정가</span>',        row: '' }
+      };
+
+      tbody.innerHTML = filtered.map(d => {
+        const si = statusInfo[d.status] || statusInfo.fixed;
+        const tobeDisplay = d.price_to_be > 0
+          ? `$${d.price_to_be.toLocaleString('en', {minimumFractionDigits:2})}`
+          : (d.qty_threshold > 0 ? '<span class="text-muted small">사급</span>' : '-');
+        const remainingDisplay = d.remaining != null
+          ? (d.remaining === 0 ? '<span class="text-danger fw-bold">0</span>' : d.remaining.toLocaleString())
+          : '-';
+        const thresholdDisplay = d.qty_threshold > 0 ? d.qty_threshold.toLocaleString() : '-';
+
+        return `<tr class="${si.row}" style="cursor:pointer" onclick="location.href='lots.html?pn=${d.part_number}'" title="${d.part_number} 배치 보기">
+          <td><span class="badge bg-secondary">${d.type || '-'}</span></td>
+          <td class="fw-semibold font-monospace small">${d.part_number}</td>
+          <td class="small text-muted">${d.description || '-'}</td>
+          <td class="text-center fw-bold">${d.cumulative.toLocaleString()}</td>
+          <td class="text-center">${d.onhand_qty != null ? d.onhand_qty.toLocaleString() : '-'}</td>
+          <td class="text-center">${thresholdDisplay}</td>
+          <td class="text-center">${remainingDisplay}</td>
+          <td class="text-end">$${d.price_as_is.toLocaleString('en', {minimumFractionDigits:2})}</td>
+          <td class="text-end">${tobeDisplay}</td>
+          <td class="text-end fw-bold text-primary">$${d.current_price.toLocaleString('en', {minimumFractionDigits:2})}</td>
+          <td class="text-center">${(d.sajup_received > 0)
+            ? `<span class="small">입고 <strong>${d.sajup_received}</strong> / 사용 <strong>${d.sajup_used}</strong><br><span class="text-muted">잔여 ${d.sajup_received - d.sajup_used}</span></span>`
+            : '<span class="text-muted small">-</span>'}</td>
+          <td class="text-center">${si.badge}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    load();
+  </script>
+</body>
+</html>

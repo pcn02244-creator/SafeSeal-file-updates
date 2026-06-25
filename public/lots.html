@@ -1,0 +1,317 @@
+﻿<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>배치 관리 - 파트 단가 관리 시스템</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="style.css" rel="stylesheet">
+</head>
+<body>
+  <nav class="navbar navbar-dark bg-primary px-4">
+    <span class="navbar-brand fw-bold">⚙️ 파트 단가 관리 시스템</span>
+    <div class="d-flex gap-3">
+      <a href="index.html" class="nav-link text-white">대시보드</a>
+      <a href="parts.html" class="nav-link text-white">파트 관리</a>
+      <a href="lots.html" class="nav-link text-white active">배치 관리</a>
+      <a href="history.html" class="nav-link text-white">이력 조회</a><a href="quotation.html" class="nav-link text-white">견적 생성</a>
+      <a href="master-fill.html" class="nav-link text-white">마스터 업데이트</a>
+    </div>
+  </nav>
+
+  <div class="container-fluid p-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h5 class="mb-0">📦 구매 배치 관리 <span class="badge bg-secondary">FIFO 자동 적용</span></h5>
+      <div class="d-flex gap-2 align-items-center">
+        <select class="form-select form-select-sm w-auto" id="part-filter" onchange="load()">
+          <option value="">전체 파트</option>
+        </select>
+        <button class="btn btn-outline-secondary btn-sm" id="toggle-consumed" onclick="toggleConsumed()">🕐 소진완료 보기</button>
+        <button class="btn btn-primary btn-sm" onclick="openAddModal()">+ 배치 추가</button>
+      </div>
+    </div>
+
+    <div id="lots-container"></div>
+  </div>
+
+  <!-- 판가 입력 모달 -->
+  <div class="modal fade" id="priceModal" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+      <div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title">판가 입력</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="price-lot-id">
+          <div class="mb-2 small text-muted" id="price-lot-info"></div>
+          <label class="form-label fw-semibold">판가 (USD) <span class="text-danger">*</span></label>
+          <input type="number" class="form-control" id="f-selling-price" placeholder="0.00" step="0.01" min="0">
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+          <button class="btn btn-primary" onclick="savePrice()">저장</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 배치 추가 모달 -->
+  <div class="modal fade" id="addModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title">배치 추가</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Part Number <span class="text-danger">*</span></label>
+            <select class="form-select font-monospace" id="add-pn"></select>
+          </div>
+          <div class="row g-2">
+            <div class="col-6">
+              <label class="form-label fw-semibold">PO번호</label>
+              <input type="text" class="form-control font-monospace" id="add-po" placeholder="PO25033100083">
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold">공급처</label>
+              <input type="text" class="form-control" id="add-supplier" placeholder="그린트위드코리아">
+            </div>
+          </div>
+          <div class="row g-2 mt-1">
+            <div class="col-6">
+              <label class="form-label fw-semibold">발주수량 <span class="text-danger">*</span></label>
+              <input type="number" class="form-control" id="add-qty" placeholder="16" min="1">
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold">구매단가 ($)</label>
+              <input type="number" class="form-control" id="add-purchase" placeholder="3130.00" step="0.01" min="0">
+            </div>
+          </div>
+          <div class="row g-2 mt-1">
+            <div class="col-6">
+              <label class="form-label fw-semibold">판가 ($)</label>
+              <input type="number" class="form-control" id="add-selling" placeholder="나중에 입력 가능" step="0.01" min="0">
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold">발주일</label>
+              <input type="date" class="form-control" id="add-date">
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+          <button class="btn btn-primary" onclick="addLot()">추가</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    .lot-active-row { border-left: 4px solid #198754 !important; background-color: #f0fff4 !important; }
+    .lot-consumed-row { opacity: 0.45; }
+    .part-group-header { background: #f8f9fa; font-weight: 600; font-size: 0.85rem; }
+  </style>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    let priceModal, addModal;
+    let showConsumed = false;
+    let allLots = [];
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      priceModal = new bootstrap.Modal(document.getElementById('priceModal'));
+      addModal   = new bootstrap.Modal(document.getElementById('addModal'));
+
+      const params = new URLSearchParams(location.search);
+      const pn = params.get('pn');
+
+      const parts = await fetch('/api/parts').then(r => r.json());
+      const sel = document.getElementById('part-filter');
+      parts.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.part_number;
+        opt.textContent = `${p.part_number}  (${p.type || '-'})`;
+        sel.appendChild(opt);
+      });
+
+      const addSel = document.getElementById('add-pn');
+      parts.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.part_number;
+        opt.textContent = `${p.part_number} · ${p.type || '-'}`;
+        addSel.appendChild(opt);
+      });
+
+      if (pn) sel.value = pn;
+      load();
+    });
+
+    function toggleConsumed() {
+      showConsumed = !showConsumed;
+      const btn = document.getElementById('toggle-consumed');
+      btn.textContent = showConsumed ? '🕐 소진완료 숨기기' : '🕐 소진완료 보기';
+      btn.className = showConsumed
+        ? 'btn btn-secondary btn-sm'
+        : 'btn btn-outline-secondary btn-sm';
+      render();
+    }
+
+    async function load() {
+      const pn = document.getElementById('part-filter').value;
+      const url = pn ? `/api/lots?part_number=${encodeURIComponent(pn)}` : '/api/lots';
+      allLots = await fetch(url).then(r => r.json());
+      render();
+    }
+
+    function render() {
+      const container = document.getElementById('lots-container');
+      const filtered = showConsumed ? allLots : allLots.filter(l => l.lot_status !== 'consumed');
+
+      if (!filtered.length) {
+        const msg = allLots.length
+          ? '소진완료 배치만 있습니다. [소진완료 보기]를 클릭하세요.'
+          : '배치 데이터가 없습니다. [엑셀 최신화] 또는 [+ 배치 추가]를 이용하세요.';
+        container.innerHTML = `<div class="text-center text-muted py-5">${msg}</div>`;
+        return;
+      }
+
+      // 파트별로 그룹화
+      const groups = {};
+      filtered.forEach(l => {
+        const key = l.part_number || '(미매칭)';
+        if (!groups[key]) groups[key] = { type: l.part_type, lots: [] };
+        groups[key].lots.push(l);
+      });
+
+      const html = Object.entries(groups).map(([pn, g]) => {
+        const activeLot = g.lots.find(l => l.lot_status === 'active');
+        const currentPriceHtml = activeLot && activeLot.selling_price > 0
+          ? `<span class="text-success fw-bold">현재 판가 $${activeLot.selling_price.toLocaleString('en', {minimumFractionDigits:2})}</span>`
+          : `<span class="text-warning fw-semibold">판가 미입력</span>`;
+
+        const rows = g.lots.map(l => {
+          const isActive   = l.lot_status === 'active';
+          const isConsumed = l.lot_status === 'consumed';
+          const rowClass   = isActive ? 'lot-active-row' : isConsumed ? 'lot-consumed-row' : '';
+
+          const statusBadge = {
+            active:   '<span class="badge bg-success">▶ 소진중</span>',
+            pending:  '<span class="badge bg-secondary">대기</span>',
+            consumed: '<span class="badge bg-light text-muted border">소진완료</span>'
+          }[l.lot_status] || '';
+
+          const sellingDisplay = l.selling_price > 0
+            ? `<span class="${isActive ? 'fw-bold text-success fs-6' : 'text-muted'}">$${l.selling_price.toLocaleString('en', {minimumFractionDigits:2})}</span>`
+            : (isActive
+                ? '<span class="badge bg-warning text-dark">미입력 !</span>'
+                : '<span class="text-muted small">-</span>');
+
+          const qtyDisplay = isActive
+            ? `<strong class="text-success">${(l.lot_remaining || 0).toLocaleString()}</strong> / ${(l.ordered_qty || 0).toLocaleString()}`
+            : isConsumed
+              ? `<span class="text-muted">${(l.ordered_qty || 0).toLocaleString()} (소진)</span>`
+              : `${(l.lot_remaining || 0).toLocaleString()} / ${(l.ordered_qty || 0).toLocaleString()}`;
+
+          return `<tr class="${rowClass}">
+            <td class="font-monospace small text-muted">${l.po_number || '-'}</td>
+            <td class="small">${l.supplier || '-'}</td>
+            <td class="text-center">${qtyDisplay}</td>
+            <td class="text-end text-muted small">$${(l.purchase_price || 0).toLocaleString('en', {minimumFractionDigits:0})}</td>
+            <td class="text-end">${sellingDisplay}</td>
+            <td class="text-center">${statusBadge}</td>
+            <td class="text-center">
+              <button class="btn btn-outline-primary btn-sm me-1" onclick="openPriceModal(${l.id},'${l.part_number}','${l.po_number}',${l.purchase_price},${l.selling_price})">판가</button>
+              <button class="btn btn-outline-danger btn-sm" onclick="deleteLot(${l.id})">삭제</button>
+            </td>
+          </tr>`;
+        }).join('');
+
+        return `
+          <div class="card shadow-sm mb-3">
+            <div class="card-header part-group-header d-flex justify-content-between align-items-center py-2">
+              <span>
+                <span class="badge bg-secondary me-2">${g.type || '-'}</span>
+                <span class="font-monospace">${pn}</span>
+              </span>
+              <span class="small">${currentPriceHtml}</span>
+            </div>
+            <div class="card-body p-0">
+              <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light">
+                  <tr>
+                    <th class="small">PO번호</th>
+                    <th class="small">공급처</th>
+                    <th class="text-center small">잔여 / 발주</th>
+                    <th class="text-end small">구매단가</th>
+                    <th class="text-end small">판가</th>
+                    <th class="text-center small">상태</th>
+                    <th class="text-center small">관리</th>
+                  </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+              </table>
+            </div>
+          </div>`;
+      }).join('');
+
+      container.innerHTML = html;
+    }
+
+    function openPriceModal(id, pn, po, purchasePrice, sellingPrice) {
+      document.getElementById('price-lot-id').value = id;
+      document.getElementById('price-lot-info').textContent = `${pn} · ${po || '-'} · 구매단가 $${(purchasePrice||0).toLocaleString('en', {minimumFractionDigits:0})}`;
+      document.getElementById('f-selling-price').value = sellingPrice > 0 ? sellingPrice : '';
+      priceModal.show();
+    }
+
+    async function savePrice() {
+      const id = document.getElementById('price-lot-id').value;
+      const price = document.getElementById('f-selling-price').value;
+      if (!price) { alert('판가를 입력해 주세요.'); return; }
+      await fetch(`/api/lots/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ selling_price: parseFloat(price) })
+      });
+      priceModal.hide();
+      load();
+    }
+
+    function openAddModal() {
+      ['add-po','add-supplier','add-qty','add-purchase','add-selling','add-date'].forEach(id => {
+        document.getElementById(id).value = '';
+      });
+      addModal.show();
+    }
+
+    async function addLot() {
+      const pn  = document.getElementById('add-pn').value;
+      const qty = document.getElementById('add-qty').value;
+      if (!pn || !qty) { alert('Part Number와 발주수량은 필수입니다.'); return; }
+      const body = {
+        part_number:    pn,
+        po_number:      document.getElementById('add-po').value.trim(),
+        supplier:       document.getElementById('add-supplier').value.trim(),
+        ordered_qty:    parseInt(qty),
+        purchase_price: parseFloat(document.getElementById('add-purchase').value) || 0,
+        selling_price:  parseFloat(document.getElementById('add-selling').value) || 0,
+        order_date:     document.getElementById('add-date').value
+      };
+      const res  = await fetch('/api/lots', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+      const data = await res.json();
+      if (data.error) { alert(data.error); return; }
+      addModal.hide();
+      load();
+    }
+
+    async function deleteLot(id) {
+      if (!confirm('이 배치를 삭제하시겠습니까?')) return;
+      await fetch(`/api/lots/${id}`, { method: 'DELETE' });
+      load();
+    }
+  </script>
+</body>
+</html>
+

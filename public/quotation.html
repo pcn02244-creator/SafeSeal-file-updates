@@ -1,0 +1,637 @@
+﻿<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>견적 생성 - 파트 단가 관리 시스템</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="style.css" rel="stylesheet">
+  <style>
+    body { background: #f0f2f5; }
+
+    /* ── 공정 배지 ── */
+    .proc-wipe  { background:#6c757d; color:#fff; padding:3px 10px; border-radius:20px; font-size:.78rem; font-weight:600; }
+    .proc-chem  { background:#1a73e8; color:#fff; padding:3px 10px; border-radius:20px; font-size:.78rem; font-weight:600; }
+    .proc-refurb{ background:#e8710a; color:#fff; padding:3px 10px; border-radius:20px; font-size:.78rem; font-weight:600; }
+
+    /* ── 요약 카드 ── */
+    .stat-card {
+      background:#fff; border-radius:10px;
+      border-left:4px solid #dee2e6;
+      box-shadow:0 1px 4px rgba(0,0,0,.07);
+      padding:14px 16px;
+      transition:transform .15s, box-shadow .15s;
+    }
+    .stat-card.clickable { cursor:pointer; }
+    .stat-card.clickable:hover { transform:translateY(-2px); box-shadow:0 4px 14px rgba(0,0,0,.13); }
+    .stat-card.active { box-shadow:0 4px 14px rgba(0,0,0,.2); outline:2px solid #1a73e8; }
+    .stat-val { font-size:1.5rem; font-weight:700; line-height:1.2; }
+    .stat-lbl { font-size:.76rem; color:#6c757d; margin-top:3px; }
+
+    /* ── 테이블 ── */
+    .q-row { cursor:pointer; }
+    .q-row:hover td { background:#eef2ff !important; }
+    .row-chem  td:first-child { border-left:3px solid #1a73e8; }
+    .row-refurb td:first-child { border-left:3px solid #e8710a; }
+    .row-wipe  td:first-child { border-left:3px solid #adb5bd; }
+
+    /* ── 필터 바 ── */
+    .filter-wrap { background:#fff; border-bottom:1px solid #e9ecef; padding:10px 16px; }
+
+    /* ── 모달 ── */
+    .info-tile { background:#f8f9fa; border-radius:8px; padding:10px 14px; text-align:center; }
+    .info-tile .t-lbl { font-size:.7rem; color:#9aa5b4; text-transform:uppercase; letter-spacing:.05em; }
+    .info-tile .t-val { font-size:.95rem; font-weight:600; margin-top:2px; }
+    .sec-title { font-size:.7rem; text-transform:uppercase; letter-spacing:.08em; color:#9aa5b4; font-weight:700; margin:16px 0 8px; }
+
+    /* ── 페이지네이션 ── */
+    .page-btn { border:1px solid #dee2e6; background:#fff; border-radius:6px; padding:4px 12px; font-size:.84rem; cursor:pointer; }
+    .page-btn:hover { background:#f0f2f5; }
+    .page-btn.active { background:#1a73e8; color:#fff; border-color:#1a73e8; }
+    .page-btn:disabled { opacity:.4; cursor:not-allowed; }
+  </style>
+</head>
+<body>
+  <nav class="navbar navbar-dark bg-primary px-4">
+    <span class="navbar-brand fw-bold">⚙️ 파트 단가 관리 시스템</span>
+    <div class="d-flex gap-3">
+      <a href="index.html"     class="nav-link text-white">대시보드</a>
+      <a href="parts.html"     class="nav-link text-white">파트 관리</a>
+      <a href="lots.html"      class="nav-link text-white">배치 관리</a>
+      <a href="history.html"   class="nav-link text-white">이력 조회</a>
+      <a href="quotation.html" class="nav-link text-white active">견적 생성</a>
+      <a href="master-fill.html" class="nav-link text-white">마스터 업데이트</a>
+    </div>
+  </nav>
+
+  <div class="container-fluid p-4">
+
+    <!-- 파일 경로 -->
+    <div class="card mb-4" style="border:none;border-radius:10px;box-shadow:0 1px 6px rgba(0,0,0,.07)">
+      <div class="card-body">
+        <div class="row g-3 align-items-end">
+          <div class="col-md-5">
+            <label class="form-label small fw-semibold text-muted text-uppercase" style="letter-spacing:.05em">MES 추출 파일</label>
+            <input type="text" class="form-control font-monospace" id="mes-path" placeholder="예: C:\Downloads\20260521100349.xls">
+          </div>
+          <div class="col-md-5">
+            <label class="form-label small fw-semibold text-muted text-uppercase" style="letter-spacing:.05em">마스터파일</label>
+            <input type="text" class="form-control font-monospace" id="master-path" placeholder="예: C:\Downloads\PPC_Safeseal_Master file.xlsx">
+          </div>
+          <div class="col-md-2">
+            <button class="btn btn-primary w-100 fw-semibold" id="gen-btn" onclick="generate()">📊 견적 생성</button>
+          </div>
+        </div>
+        <div id="path-error" class="alert alert-danger mt-3 mb-0 d-none"></div>
+      </div>
+    </div>
+
+    <!-- 로딩 -->
+    <div id="loading" class="d-none text-center py-5">
+      <div class="spinner-border text-primary" style="width:3rem;height:3rem;"></div>
+      <div class="mt-3 text-muted" id="loading-msg">분석 중…</div>
+    </div>
+
+    <!-- 결과 -->
+    <div id="results" class="d-none">
+
+      <!-- 요약 카드 -->
+      <div id="summary-section" class="mb-4"></div>
+
+      <!-- 견적 테이블 -->
+      <div class="card mb-4" style="border:none;border-radius:10px;box-shadow:0 1px 6px rgba(0,0,0,.08)">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center py-3"
+             style="border-bottom:1px solid #e9ecef;border-radius:10px 10px 0 0">
+          <span class="fw-bold">📋 견적서 데이터</span>
+          <div class="d-flex align-items-center gap-3">
+            <span id="filter-count" class="small text-muted"></span>
+            <button class="btn btn-sm btn-outline-primary" onclick="exportExcel()">📥 엑셀 다운로드</button>
+            <button class="btn btn-sm btn-outline-success" onclick="exportCSV()">📥 CSV</button>
+          </div>
+        </div>
+
+        <!-- 필터 바 -->
+        <div class="filter-wrap d-flex flex-wrap gap-2 align-items-end">
+          <div>
+            <div class="small text-muted mb-1">공정</div>
+            <select class="form-select form-select-sm" id="f-process" onchange="applyFilter()" style="min-width:130px">
+              <option value="">전체</option>
+              <option value="CHEM SOAK">CHEM SOAK</option>
+              <option value="REFURB">REFURB</option>
+              <option value="WIPE DOWN">WIPE DOWN</option>
+            </select>
+          </div>
+          <div>
+            <div class="small text-muted mb-1">수주번호</div>
+            <input type="text" class="form-control form-control-sm font-monospace" id="f-sjbun" placeholder="검색…" oninput="applyFilter()" style="min-width:150px">
+          </div>
+          <div>
+            <div class="small text-muted mb-1">PN</div>
+            <input type="text" class="form-control form-control-sm font-monospace" id="f-pn" placeholder="검색…" oninput="applyFilter()" style="min-width:120px">
+          </div>
+          <div>
+            <div class="small text-muted mb-1">SN</div>
+            <input type="text" class="form-control form-control-sm font-monospace" id="f-sn" placeholder="검색…" oninput="applyFilter()" style="min-width:120px">
+          </div>
+          <button class="btn btn-sm btn-light border" onclick="clearFilter()" style="align-self:flex-end">초기화</button>
+        </div>
+
+        <!-- 테이블 (컬럼 7개로 간소화) -->
+        <div style="overflow-x:auto">
+          <table class="table table-hover mb-0 align-middle" style="font-size:.85rem">
+            <thead style="background:#1e2a3a;color:#fff">
+              <tr>
+                <th class="ps-3" style="width:80px">공정</th>
+                <th style="width:160px">수주번호</th>
+                <th style="width:120px">PN</th>
+                <th style="width:110px">SN</th>
+                <th>교체파트</th>
+                <th class="text-end" style="width:130px">Total USD</th>
+                <th class="text-end pe-3" style="width:140px">Total KRW</th>
+              </tr>
+            </thead>
+            <tbody id="quotation-body"></tbody>
+          </table>
+        </div>
+
+        <!-- 페이지네이션 -->
+        <div class="d-flex justify-content-between align-items-center px-3 py-2 border-top bg-white" style="border-radius:0 0 10px 10px">
+          <span class="small text-muted" id="page-info"></span>
+          <div class="d-flex gap-1" id="page-btns"></div>
+        </div>
+      </div>
+
+      <!-- 확인 필요 -->
+      <div class="card" id="issues-section" style="border:none;border-radius:10px;box-shadow:0 1px 6px rgba(0,0,0,.08)">
+        <div class="card-header d-flex justify-content-between align-items-center py-3"
+             style="background:#fffbea;border-bottom:1px solid #fde68a;border-radius:10px 10px 0 0">
+          <span class="fw-bold">⚠️ 확인 필요 리스트</span>
+          <span class="badge bg-warning text-dark px-3 py-2" id="issue-count-badge" style="font-size:.84rem"></span>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="table mb-0 align-middle" style="font-size:.84rem">
+            <thead style="background:#fef3c7">
+              <tr>
+                <th class="ps-3">수주번호</th>
+                <th>PO No.</th>
+                <th>PN</th>
+                <th>SN</th>
+                <th>이슈 유형</th>
+                <th>상세 내용</th>
+                <th>필요한 조치</th>
+                <th class="pe-3 text-center">수동처리</th>
+              </tr>
+            </thead>
+            <tbody id="issues-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 상세 모달 -->
+  <div class="modal fade" id="detailModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+      <div class="modal-content" style="border-radius:12px;border:none">
+        <div class="modal-header py-3" style="background:#1e2a3a;border-radius:12px 12px 0 0">
+          <div>
+            <h5 class="modal-title text-white mb-1" id="detail-title"></h5>
+            <div id="detail-proc-badge"></div>
+          </div>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body px-4 py-3">
+          <div class="sec-title">제품 정보</div>
+          <div class="row g-2" id="detail-product"></div>
+          <div class="sec-title">공정 비용</div>
+          <div class="row g-2" id="detail-process"></div>
+          <div class="sec-title">교체파트</div>
+          <table class="table table-sm align-middle mb-0" style="font-size:.84rem">
+            <thead style="background:#f1f3f5">
+              <tr>
+                <th>Part Number</th>
+                <th>구분</th>
+                <th>Description</th>
+                <th class="text-center">수량</th>
+                <th class="text-end">단가 USD</th>
+                <th class="text-end">단가 KRW</th>
+                <th class="text-end">소계 USD</th>
+                <th class="text-end">소계 KRW</th>
+                <th class="text-center">단가구분</th>
+              </tr>
+            </thead>
+            <tbody id="detail-parts-body"></tbody>
+          </table>
+        </div>
+        <div class="modal-footer px-4 py-3" style="background:#f8f9fa;border-radius:0 0 12px 12px">
+          <div class="d-flex gap-4 me-auto">
+            <div>
+              <div class="small text-muted">공정 합계</div>
+              <div class="fw-semibold" id="detail-proc-total"></div>
+            </div>
+            <div>
+              <div class="small text-muted">교체파트 합계</div>
+              <div class="fw-semibold" id="detail-repl-total"></div>
+            </div>
+          </div>
+          <div class="text-end">
+            <div class="small text-muted">Total</div>
+            <div class="fw-bold fs-5 text-primary" id="detail-grand-total"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    let quotationData = [];
+    let filteredData  = [];
+    let detailModal;
+    let activeCardEl  = null;
+    let currentPage   = 1;
+    const PAGE_SIZE   = 50;
+
+    /* 공정 배지 */
+    function procBadge(p) {
+      const map = {
+        'WIPE DOWN': '<span class="proc-wipe">WIPE DOWN</span>',
+        'CHEM SOAK': '<span class="proc-chem">CHEM SOAK</span>',
+        'REFURB':    '<span class="proc-refurb">REFURB</span>',
+      };
+      return map[p] || `<span class="badge bg-secondary">${p}</span>`;
+    }
+    const ROW_CLS = { 'WIPE DOWN':'row-wipe', 'CHEM SOAK':'row-chem', 'REFURB':'row-refurb' };
+
+    function restoreResult(data) {
+      quotationData = data.quotation;
+      filteredData  = [...quotationData];
+      clearFilter(false);
+      renderSummary(data.summary);
+      renderQuotation(filteredData);
+      renderIssues(data.issues);
+      document.getElementById('results').classList.remove('d-none');
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      detailModal = new bootstrap.Modal(document.getElementById('detailModal'));
+      const cfg = await fetch('/api/config').then(r => r.json());
+      if (cfg.mes_path)    document.getElementById('mes-path').value    = cfg.mes_path;
+      if (cfg.master_path) document.getElementById('master-path').value = cfg.master_path;
+      try {
+        const saved = sessionStorage.getItem('quotation_result');
+        if (saved) restoreResult(JSON.parse(saved));
+      } catch {}
+    });
+
+    function fmt(n, dec=2) { return (n||0).toLocaleString('en',{minimumFractionDigits:dec}); }
+    function fmtKRW(n)      { return (n||0).toLocaleString('ko'); }
+
+    /* ── 생성 ── */
+    async function generate() {
+      const mesPath    = document.getElementById('mes-path').value.trim();
+      const masterPath = document.getElementById('master-path').value.trim();
+      const errDiv = document.getElementById('path-error');
+      if (!mesPath || !masterPath) {
+        errDiv.textContent = 'MES 파일 경로와 마스터파일 경로를 모두 입력해 주세요.';
+        errDiv.classList.remove('d-none'); return;
+      }
+      errDiv.classList.add('d-none');
+      document.getElementById('loading').classList.remove('d-none');
+      document.getElementById('results').classList.add('d-none');
+      document.getElementById('gen-btn').disabled = true;
+      document.getElementById('loading-msg').innerHTML =
+        'MES / 마스터파일 확인 중…<br><span class="small text-muted">클라우디움·DRM 파일은 Excel을 통해 자동 변환합니다 (20~60초 소요)</span>';
+      try {
+        const res  = await fetch('/api/quotation/generate', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ mes_path:mesPath, master_path:masterPath })
+        });
+        const data = await res.json();
+        if (data.error) { errDiv.textContent='❌ '+data.error; errDiv.classList.remove('d-none'); return; }
+        restoreResult(data);
+        try { sessionStorage.setItem('quotation_result', JSON.stringify(data)); } catch {}
+      } catch(e) {
+        errDiv.textContent='❌ 오류: '+e.message; errDiv.classList.remove('d-none');
+      } finally {
+        document.getElementById('loading').classList.add('d-none');
+        document.getElementById('gen-btn').disabled = false;
+      }
+    }
+
+    /* ── 필터 ── */
+    function applyFilter() {
+      const proc  = document.getElementById('f-process').value.toUpperCase();
+      const sjbun = document.getElementById('f-sjbun').value.trim().toUpperCase();
+      const pn    = document.getElementById('f-pn').value.trim().toUpperCase();
+      const sn    = document.getElementById('f-sn').value.trim().toUpperCase();
+      filteredData = quotationData.filter(q => {
+        if (proc  && q.process.toUpperCase() !== proc)          return false;
+        if (sjbun && !q.수주번호.toUpperCase().includes(sjbun)) return false;
+        if (pn    && !q.pn.toUpperCase().includes(pn))          return false;
+        if (sn    && !String(q.sn).toUpperCase().includes(sn))  return false;
+        return true;
+      });
+      currentPage = 1;
+      updateFilterCount();
+      renderQuotation(filteredData);
+    }
+
+    function clearFilter(reRender=true) {
+      ['f-process','f-sjbun','f-pn','f-sn'].forEach(id => document.getElementById(id).value='');
+      if (activeCardEl) { activeCardEl.classList.remove('active'); activeCardEl=null; }
+      filteredData = [...quotationData];
+      currentPage  = 1;
+      if (reRender) { updateFilterCount(); renderQuotation(filteredData); }
+    }
+
+    function updateFilterCount() {
+      const t = quotationData.length, s = filteredData.length;
+      document.getElementById('filter-count').textContent =
+        (s < t) ? `${s.toLocaleString()} / ${t.toLocaleString()}건` : `총 ${t.toLocaleString()}건`;
+    }
+
+    /* ── 카드 클릭 ── */
+    function filterByCard(el) {
+      const ftype = el.dataset.ftype, fval = el.dataset.fval;
+      if (activeCardEl && activeCardEl !== el) activeCardEl.classList.remove('active');
+      if (activeCardEl === el) { activeCardEl.classList.remove('active'); activeCardEl=null; clearFilter(); return; }
+      activeCardEl = el;
+      el.classList.add('active');
+      if (ftype === 'all') { clearFilter(true); document.getElementById('quotation-body').closest('.card').scrollIntoView({behavior:'smooth',block:'start'}); return; }
+      if (ftype === 'issues') { document.getElementById('issues-section').scrollIntoView({behavior:'smooth'}); return; }
+      if (ftype === 'proc') {
+        document.getElementById('f-process').value = fval;
+        ['f-sjbun','f-pn','f-sn'].forEach(id => document.getElementById(id).value='');
+        applyFilter();
+        document.getElementById('quotation-body').closest('.card').scrollIntoView({behavior:'smooth',block:'start'});
+      }
+    }
+
+    /* ── 요약 카드 ── */
+    function renderSummary(s) {
+      const processCounts = {};
+      quotationData.forEach(q => { processCounts[q.process] = (processCounts[q.process]||0)+1; });
+
+      const BL  = { 'WIPE DOWN':'#6c757d','CHEM SOAK':'#1a73e8','REFURB':'#e8710a' };
+      const COL = { 'WIPE DOWN':'#6c757d','CHEM SOAK':'#1a73e8','REFURB':'#e8710a' };
+
+      function card({id, value, label, valColor, blColor, ftype, fval}) {
+        const clickable = !!ftype;
+        const safeId = 'sc-'+(fval||id||label).replace(/[^a-zA-Z0-9]/g,'_');
+        return `<div style="min-width:130px;flex:1 1 130px;max-width:200px">
+          <div id="${safeId}" class="stat-card ${clickable?'clickable':''}"
+               style="border-left-color:${blColor||'#dee2e6'}"
+               ${clickable?`data-ftype="${ftype}" data-fval="${fval||''}" onclick="filterByCard(this)"`:''}>
+            <div class="stat-val" style="color:${valColor||'#1e2a3a'}">${value}</div>
+            <div class="stat-lbl">${label}</div>
+          </div>
+        </div>`;
+      }
+
+      const row1 = [
+        card({id:'all',    value:s.totalMES.toLocaleString(),       label:'견적 대상 (마스터)',  valColor:'#1a73e8', blColor:'#1a73e8', ftype:'all',    fval:''}),
+        card({id:'auto',   value:s.quotationCount.toLocaleString(), label:'자동 생성 가능', valColor:'#34a853', blColor:'#34a853', ftype:'all',    fval:''}),
+        card({id:'issues', value:s.issueCount.toLocaleString(),     label:'확인 필요',       valColor:'#f9ab00', blColor:'#f9ab00', ftype:'issues', fval:''}),
+        card({id:'usd',    value:`$${fmt(s.totalUSD)}`,             label:'총 견적 USD',    valColor:'#1e2a3a', blColor:'#dee2e6'}),
+        card({id:'krw',    value:`₩${fmtKRW(s.totalKRW)}`,        label:'총 견적 KRW',    valColor:'#1e2a3a', blColor:'#dee2e6'}),
+      ].join('');
+
+      const row2 = Object.entries(processCounts).map(([proc, cnt]) =>
+        card({id:proc, value:cnt.toLocaleString()+'건', label:proc, valColor:COL[proc]||'#1e2a3a', blColor:BL[proc]||'#dee2e6', ftype:'proc', fval:proc})
+      ).join('');
+
+      document.getElementById('summary-section').innerHTML = `
+        <div class="d-flex flex-wrap gap-3 mb-2">${row1}</div>
+        ${row2?`<div class="small text-muted mt-2 mb-1" style="font-weight:700;letter-spacing:.06em;font-size:.68rem;text-transform:uppercase">공정별 클릭 필터</div>
+                <div class="d-flex flex-wrap gap-3">${row2}</div>`:''}`;
+    }
+
+    /* ── 견적 테이블 (페이지네이션) ── */
+    function renderQuotation(list) {
+      const totalPages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
+      if (currentPage > totalPages) currentPage = totalPages;
+      const start = (currentPage-1)*PAGE_SIZE;
+      const page  = list.slice(start, start+PAGE_SIZE);
+
+      const tbody = document.getElementById('quotation-body');
+      if (!page.length) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-5">조건에 맞는 건이 없습니다.</td></tr>';
+      } else {
+        tbody.innerHTML = page.map(q => {
+          const realIdx = quotationData.indexOf(q);
+          const replText = q.replParts.length
+            ? q.replParts.map(p=>`<span class="font-monospace small">${p.pn}</span><span class="text-muted"> ×${p.qty}</span>`).join('&ensp;')
+            : '<span class="text-muted small">없음</span>';
+          const manualBadge = q.manualChecked
+            ? `<span class="badge bg-warning text-dark ms-1" title="수동 확인 후 포함">⚠️ 수동확인</span>` : '';
+          return `<tr class="q-row ${ROW_CLS[q.process]||''}" onclick="showDetail(${realIdx})">
+            <td class="ps-3">${procBadge(q.process)}${manualBadge}</td>
+            <td class="font-monospace small">${q.수주번호}</td>
+            <td class="font-monospace small">${q.pn}</td>
+            <td class="font-monospace small">${q.sn}</td>
+            <td class="small">${replText}</td>
+            <td class="text-end small text-muted"><span class="text-secondary">$</span>${fmt(q.totalUSD)}</td>
+            <td class="text-end pe-3 fw-bold text-primary"><span class="text-secondary">₩</span>${fmtKRW(q.totalKRW)}</td>
+          </tr>`;
+        }).join('');
+      }
+
+      /* 페이지 정보 & 버튼 */
+      document.getElementById('page-info').textContent =
+        list.length ? `${start+1}–${Math.min(start+PAGE_SIZE, list.length)} / ${list.length.toLocaleString()}건` : '';
+
+      const btnDiv = document.getElementById('page-btns');
+      if (totalPages <= 1) { btnDiv.innerHTML=''; return; }
+
+      let btns = `<button class="page-btn" onclick="goPage(${currentPage-1})" ${currentPage===1?'disabled':''}>‹</button>`;
+      const range = pageRange(currentPage, totalPages);
+      range.forEach(p => {
+        if (p === '…') btns += `<span class="page-btn" style="cursor:default;color:#aaa">…</span>`;
+        else btns += `<button class="page-btn ${p===currentPage?'active':''}" onclick="goPage(${p})">${p}</button>`;
+      });
+      btns += `<button class="page-btn" onclick="goPage(${currentPage+1})" ${currentPage===totalPages?'disabled':''}>›</button>`;
+      btnDiv.innerHTML = btns;
+    }
+
+    function pageRange(cur, total) {
+      if (total <= 7) return Array.from({length:total},(_,i)=>i+1);
+      const r = [];
+      if (cur > 3)         { r.push(1); if (cur > 4) r.push('…'); }
+      for (let p = Math.max(1,cur-2); p <= Math.min(total,cur+2); p++) r.push(p);
+      if (cur < total-2)   { if (cur < total-3) r.push('…'); r.push(total); }
+      return r;
+    }
+
+    function goPage(p) {
+      const total = Math.ceil(filteredData.length / PAGE_SIZE);
+      if (p < 1 || p > total) return;
+      currentPage = p;
+      renderQuotation(filteredData);
+      document.getElementById('quotation-body').closest('.card').scrollIntoView({behavior:'smooth',block:'start'});
+    }
+
+    /* ── 상세 모달 ── */
+    function showDetail(idx) {
+      const q = quotationData[idx];
+      document.getElementById('detail-title').textContent = q.수주번호;
+      document.getElementById('detail-proc-badge').innerHTML = procBadge(q.process) +
+        `&nbsp;<span class="text-white-50 small ms-2">PO: ${q.po||'누락'}</span>`;
+
+      document.getElementById('detail-product').innerHTML = [
+        ['PN', q.pn], ['SN', q.sn], ['TKM No.', q.tkmNo||'-'], ['PO No.', q.po||'<span class="text-danger">누락</span>'],
+      ].map(([k,v]) => `<div class="col-6 col-md-3">
+        <div class="info-tile"><div class="t-lbl">${k}</div><div class="t-val font-monospace">${v}</div></div>
+      </div>`).join('');
+
+      document.getElementById('detail-process').innerHTML = `
+        <div class="col-6 col-md-3"><div class="info-tile">
+          <div class="t-lbl">공정 유형</div><div class="t-val">${procBadge(q.process)}</div>
+        </div></div>
+        <div class="col-6 col-md-3"><div class="info-tile">
+          <div class="t-lbl">공정 비용 USD</div><div class="t-val">$${fmt(q.processUSD)}</div>
+        </div></div>
+        <div class="col-6 col-md-3"><div class="info-tile">
+          <div class="t-lbl">공정 비용 KRW</div><div class="t-val">₩${fmtKRW(q.processKRW)}</div>
+        </div></div>`;
+
+      const pb = document.getElementById('detail-parts-body');
+      if (!q.replParts.length) {
+        pb.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-3">교체파트 없음</td></tr>';
+      } else {
+        pb.innerHTML = q.replParts.map(p => `<tr>
+          <td class="font-monospace small">${p.pn}</td>
+          <td><span class="badge bg-secondary">${p.partType||'-'}</span></td>
+          <td class="small text-muted">${p.description||'-'}</td>
+          <td class="text-center small">${p.unitSize>1?`${p.mesQty}개 → <strong>${p.qty} set</strong>`:`${p.qty} ${p.unit||'EA'}`}</td>
+          <td class="text-end small">$${fmt(p.unitPriceUSD)}</td>
+          <td class="text-end small">₩${fmtKRW(p.unitPriceKRW)}</td>
+          <td class="text-end fw-semibold">$${fmt(p.totalUSD)}</td>
+          <td class="text-end fw-semibold">₩${fmtKRW(p.totalKRW)}</td>
+          <td class="text-center"><span class="badge ${p.priceStatus==='To-be'?'bg-danger':'bg-success'}">${p.priceStatus}</span></td>
+        </tr>`).join('');
+      }
+
+      document.getElementById('detail-proc-total').innerHTML  = `$${fmt(q.processUSD)} <span class="text-muted small">/ ₩${fmtKRW(q.processKRW)}</span>`;
+      document.getElementById('detail-repl-total').innerHTML  = `$${fmt(q.replTotalUSD)} <span class="text-muted small">/ ₩${fmtKRW(q.replTotalKRW)}</span>`;
+      document.getElementById('detail-grand-total').innerHTML = `$${fmt(q.totalUSD)}<br><span class="fs-6">₩${fmtKRW(q.totalKRW)}</span>`;
+      detailModal.show();
+    }
+
+    /* ── 이슈 ── */
+    let issuesData = [];
+
+    function renderIssues(list) {
+      issuesData = list;
+      document.getElementById('issue-count-badge').textContent = list.length+'건';
+      const IC = {
+        '수주번호 매칭 실패':'bg-danger','PN 불일치':'bg-danger','SN 불일치':'bg-warning text-dark',
+        'PO 정보 누락':'bg-warning text-dark','Process 단가 누락':'bg-danger',
+        'Replacement Part 단가 누락':'bg-danger','공정-파트 불일치':'bg-warning text-dark'
+      };
+      const tbody = document.getElementById('issues-body');
+      if (!list.length) {
+        tbody.innerHTML='<tr><td colspan="8" class="text-center text-success py-4">확인 필요 항목이 없습니다. ✅</td></tr>'; return;
+      }
+      tbody.innerHTML = list.map((i, idx) => `<tr>
+        <td class="ps-3 font-monospace small">${i.수주번호}</td>
+        <td class="font-monospace small">${i.po||'-'}</td>
+        <td class="font-monospace small">${i.pn||'-'}</td>
+        <td class="font-monospace small">${i.sn||'-'}</td>
+        <td><span class="badge ${IC[i.issue]||'bg-secondary'}">${i.issue}</span></td>
+        <td class="small">${i.detail}</td>
+        <td class="small text-muted">${i.canManualInclude ? i.action : i.action}</td>
+        <td class="pe-3 text-center">
+          ${i.canManualInclude
+            ? `<button class="btn btn-sm btn-outline-warning" onclick="manualInclude(${idx})">수동 포함</button>`
+            : '-'}
+        </td>
+      </tr>`).join('');
+    }
+
+    function manualInclude(idx) {
+      const issue = issuesData[idx];
+      if (!issue?.canManualInclude || !issue.manualData) return;
+      const d = issue.manualData;
+      const ep = d.excludedPart;
+      if (!confirm(`[${d.수주번호}] ${d.process} 공정에서 제외된 파트\n\n${ep.partType}: ${ep.pn} × ${ep.qty}${ep.unit}\n$${fmt(ep.totalUSD)} / ₩${fmtKRW(ep.totalKRW)}\n\n견적에 수동으로 포함하시겠습니까?`)) return;
+
+      // 이미 견적에 같은 수주번호가 있으면 해당 항목에 파트 추가, 없으면 신규 추가
+      const existing = quotationData.find(q => q.수주번호 === d.수주번호);
+      if (existing) {
+        existing.replParts.push(ep);
+        existing.replTotalUSD += ep.totalUSD;
+        existing.replTotalKRW += ep.totalKRW;
+        existing.totalUSD     += ep.totalUSD;
+        existing.totalKRW     += ep.totalKRW;
+        existing.manualChecked = true;
+      } else {
+        quotationData.push({
+          수주번호: d.수주번호, po: d.po, pn: d.pn, sn: d.sn, tkmNo: d.tkmNo,
+          process: d.process, processName: d.processName,
+          processUSD: d.processUSD, processKRW: d.processKRW,
+          replParts: [ep],
+          replTotalUSD: ep.totalUSD, replTotalKRW: ep.totalKRW,
+          totalUSD: d.processUSD + ep.totalUSD,
+          totalKRW: d.processKRW + ep.totalKRW,
+          manualChecked: true,
+        });
+      }
+
+      // 이슈 목록에서 제거
+      issuesData.splice(idx, 1);
+      filteredData = [...quotationData];
+      renderIssues(issuesData);
+      renderSummary({ totalMES: quotationData.length, quotationCount: quotationData.length, issueCount: issuesData.length,
+        totalUSD: quotationData.reduce((s,q)=>s+q.totalUSD,0), totalKRW: quotationData.reduce((s,q)=>s+q.totalKRW,0) });
+      renderQuotation(filteredData);
+      alert('견적에 포함됐습니다. ⚠️ 수동확인 표시로 구분됩니다.');
+    }
+
+    /* ── 엑셀 다운로드 ── */
+    async function exportExcel() {
+      const src = filteredData.length ? filteredData : quotationData;
+      if (!src.length) { alert('내보낼 데이터가 없습니다.'); return; }
+      try {
+        const res = await fetch('/api/quotation/excel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ quotation: src })
+        });
+        if (!res.ok) { const d = await res.json(); alert('❌ ' + (d.error || '엑셀 생성 실패')); return; }
+        const blob = await res.blob();
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `견적_${new Date().toISOString().slice(0,10)}.xlsx`;
+        a.click();
+      } catch(e) { alert('❌ 오류: ' + e.message); }
+    }
+
+    /* ── CSV ── */
+    function exportCSV() {
+      const src = filteredData.length ? filteredData : quotationData;
+      if (!src.length) { alert('내보낼 데이터가 없습니다.'); return; }
+      const rows = [['수주번호','PO No.','PN','SN','TKM No.','공정','공정 USD','공정 KRW','교체파트 PN','교체파트 설명','수량','단가 USD','단가 KRW','소계 USD','소계 KRW','교체파트 합계 USD','교체파트 합계 KRW','Total USD','Total KRW']];
+      for (const q of src) {
+        if (!q.replParts.length) {
+          rows.push([q.수주번호,q.po,q.pn,q.sn,q.tkmNo,q.process,q.processUSD,q.processKRW,'','','','','','','',0,0,q.totalUSD,q.totalKRW]);
+        } else {
+          q.replParts.forEach((p,i) => rows.push([
+            i===0?q.수주번호:'',i===0?q.po:'',i===0?q.pn:'',i===0?q.sn:'',
+            i===0?q.tkmNo:'',i===0?q.process:'',i===0?q.processUSD:'',i===0?q.processKRW:'',
+            p.pn,p.description,p.qty,p.unitPriceUSD,p.unitPriceKRW,p.totalUSD,p.totalKRW,
+            i===0?q.replTotalUSD:'',i===0?q.replTotalKRW:'',i===0?q.totalUSD:'',i===0?q.totalKRW:''
+          ]));
+        }
+      }
+      const csv = rows.map(r=>r.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(',')).join('\r\n');
+      const blob = new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8;'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `견적_${new Date().toISOString().slice(0,10)}.csv`;
+      a.click();
+    }
+  </script>
+</body>
+</html>

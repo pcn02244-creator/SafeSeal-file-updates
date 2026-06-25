@@ -1,0 +1,255 @@
+﻿<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>마스터 업데이트 - 파트 단가 관리 시스템</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="style.css" rel="stylesheet">
+  <style>
+    body { background:#f0f2f5; }
+    .stat-card { background:#fff; border-radius:10px; border-left:4px solid #dee2e6;
+      box-shadow:0 1px 4px rgba(0,0,0,.07); padding:14px 16px;
+      transition:transform .15s, box-shadow .15s; }
+    .stat-card.clickable { cursor:pointer; }
+    .stat-card.clickable:hover { transform:translateY(-2px); box-shadow:0 4px 14px rgba(0,0,0,.15); }
+    .stat-card.active { outline:2px solid #1a73e8; box-shadow:0 4px 14px rgba(0,0,0,.18); }
+    .stat-val { font-size:1.4rem; font-weight:700; }
+    .stat-lbl { font-size:.75rem; color:#6c757d; margin-top:2px; }
+    .col-badge { display:inline-block; font-size:.7rem; font-weight:600;
+      padding:1px 6px; border-radius:4px; background:#e9ecef; color:#495057; }
+    .skip-cell { color:#adb5bd; font-style:italic; font-size:.78rem; }
+    .write-cell { color:#198754; font-size:.82rem; font-weight:500; }
+    .empty-cell { color:#dee2e6; font-size:.78rem; }
+  </style>
+</head>
+<body>
+  <nav class="navbar navbar-dark bg-primary px-4">
+    <span class="navbar-brand fw-bold">⚙️ 파트 단가 관리 시스템</span>
+    <div class="d-flex gap-3">
+      <a href="index.html"       class="nav-link text-white">대시보드</a>
+      <a href="parts.html"       class="nav-link text-white">파트 관리</a>
+      <a href="lots.html"        class="nav-link text-white">배치 관리</a>
+      <a href="history.html"     class="nav-link text-white">이력 조회</a>
+      <a href="quotation.html"   class="nav-link text-white">견적 생성</a>
+      <a href="master-fill.html" class="nav-link text-white active">마스터 업데이트</a>
+    </div>
+  </nav>
+
+  <div class="container-fluid p-4">
+    <div class="d-flex align-items-center gap-2 mb-4">
+      <h5 class="mb-0">📋 마스터파일 업데이트 프리뷰</h5>
+      <span class="badge bg-warning text-dark">읽기 전용 — 실제 쓰기 없음</span>
+    </div>
+
+    <!-- 안내 -->
+    <div class="alert alert-info mb-4" style="font-size:.88rem">
+      <strong>동작 방식</strong><br>
+      MES 파일의 <strong>작업완료</strong> 행을 수주번호로 마스터파일과 매칭한 뒤,
+      마스터파일 AT~BF 열 중 <strong>공란인 셀에만</strong> 데이터를 채웁니다.
+      이미 값이 있는 셀은 건너뜁니다.<br>
+      <span class="text-warning fw-semibold">⚠️ 현재 읽기 전용 모드 — 아래 표는 실제 쓸 내용의 프리뷰입니다.</span>
+    </div>
+
+    <!-- 오류 -->
+    <div id="error-msg" class="alert alert-danger d-none mb-4"></div>
+
+    <!-- 실행 버튼 -->
+    <div class="card mb-4" style="border:none;border-radius:10px;box-shadow:0 1px 6px rgba(0,0,0,.07)">
+      <div class="card-body d-flex align-items-center gap-3">
+        <div class="text-muted small">견적 생성에서 사용한 MES·마스터파일 경로가 자동으로 사용됩니다.</div>
+        <button class="btn btn-primary ms-auto" id="preview-btn" onclick="runPreview()">🔍 프리뷰 생성</button>
+      </div>
+    </div>
+
+    <!-- 로딩 -->
+    <div id="loading" class="d-none text-center py-5">
+      <div class="spinner-border text-primary"></div>
+      <div class="mt-2 text-muted small">MES·마스터파일 분석 중…</div>
+    </div>
+
+    <!-- 결과 -->
+    <div id="results" class="d-none">
+      <!-- 통계 카드 (클릭 필터) -->
+      <div class="d-flex flex-wrap gap-3 mb-4">
+        <div class="stat-card clickable" style="border-left-color:#1a73e8;min-width:140px;flex:1" onclick="filterTable('all')" id="card-all">
+          <div class="stat-val text-primary" id="s-mes"></div>
+          <div class="stat-lbl">전체</div>
+        </div>
+        <div class="stat-card clickable" style="border-left-color:#34a853;min-width:140px;flex:1" onclick="filterTable('updates')" id="card-update">
+          <div class="stat-val text-success" id="s-update"></div>
+          <div class="stat-lbl">업데이트 대상</div>
+        </div>
+        <div class="stat-card clickable" style="border-left-color:#fbbc04;min-width:140px;flex:1" onclick="filterTable('alreadyFilled')" id="card-filled">
+          <div class="stat-val text-warning" id="s-filled"></div>
+          <div class="stat-lbl">이미 입력됨</div>
+        </div>
+        <div class="stat-card clickable" style="border-left-color:#ea4335;min-width:140px;flex:1" onclick="filterTable('noMesMatch')" id="card-nomatch">
+          <div class="stat-val text-danger" id="s-nomatch"></div>
+          <div class="stat-lbl">마스터 미매칭</div>
+        </div>
+        <div class="stat-card clickable" style="border-left-color:#6c757d;min-width:140px;flex:1" onclick="filterTable('wipeShtSkipped')" id="card-sht">
+          <div class="stat-val text-secondary" id="s-sht"></div>
+          <div class="stat-lbl">WIPE DOWN+SHT 제외</div>
+        </div>
+      </div>
+
+      <!-- 프리뷰 테이블 -->
+      <div class="card" style="border:none;border-radius:10px;box-shadow:0 1px 6px rgba(0,0,0,.08)">
+        <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center"
+             style="border-bottom:1px solid #e9ecef;border-radius:10px 10px 0 0">
+          <span class="fw-bold">업데이트 프리뷰</span>
+          <div class="d-flex align-items-center gap-3">
+            <span id="preview-count" class="small text-muted"></span>
+            <button class="btn btn-sm btn-outline-primary" id="excel-btn" onclick="downloadExcel()">📥 엑셀 다운로드</button>
+          </div>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="table table-hover mb-0 align-middle" style="font-size:.82rem;min-width:1200px">
+            <thead style="background:#1e2a3a;color:#fff">
+              <tr>
+                <th class="ps-3" style="width:50px">행</th>
+                <th style="width:140px">수주번호</th>
+                <th style="width:100px">PN</th>
+                <th style="width:100px">SN</th>
+                <th><span class="col-badge">AT</span> 공정</th>
+                <th><span class="col-badge">AU</span> 교체여부</th>
+                <th><span class="col-badge">AW</span> Wafer Seal</th>
+                <th><span class="col-badge">AX-AY</span> Contact Pin</th>
+                <th><span class="col-badge">AZ-BA</span> 기본 Screw</th>
+                <th><span class="col-badge">BB-BC</span> Screw Other</th>
+                <th><span class="col-badge">BD</span> Retainer</th>
+                <th><span class="col-badge">BE-BF</span> Lead In</th>
+              </tr>
+            </thead>
+            <tbody id="preview-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    let previewData = null;
+    let activeCardId = 'card-update';
+
+    function applyPreviewData(data) {
+      previewData = data;
+      const s = data.stats;
+      document.getElementById('s-mes').textContent     = s.totalMesCompleted.toLocaleString();
+      document.getElementById('s-update').textContent  = s.toUpdate.toLocaleString();
+      document.getElementById('s-filled').textContent  = s.alreadyFilled.toLocaleString();
+      document.getElementById('s-nomatch').textContent = s.noMesMatch.toLocaleString();
+      document.getElementById('s-sht').textContent     = (s.wipeShtSkipped||0).toLocaleString();
+      document.getElementById('results').classList.remove('d-none');
+      filterTable('updates');
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      try {
+        const saved = sessionStorage.getItem('masterfill_result');
+        if (saved) applyPreviewData(JSON.parse(saved));
+      } catch {}
+    });
+
+    function cell(v) {
+      if (v === null)  return `<span class="skip-cell">기존값 유지</span>`;
+      if (v === '')    return `<span class="empty-cell">—</span>`;
+      return `<span class="write-cell">${String(v).replace(/\n/g, '<br>')}</span>`;
+    }
+
+    function filterTable(category) {
+      if (!previewData) return;
+      document.querySelectorAll('.stat-card.clickable').forEach(c => c.classList.remove('active'));
+      const cardMap = { all:'card-all', updates:'card-update', alreadyFilled:'card-filled',
+                        noMesMatch:'card-nomatch', wipeShtSkipped:'card-sht' };
+      const card = document.getElementById(cardMap[category]);
+      if (card) card.classList.add('active');
+      activeCardId = cardMap[category];
+
+      const tbody = document.getElementById('preview-body');
+      document.getElementById('excel-btn').style.display = category === 'updates' || category === 'all' ? '' : 'none';
+
+      if (category === 'updates' || category === 'all') {
+        const list = previewData.updates;
+        document.getElementById('preview-count').textContent = `${list.length.toLocaleString()}건`;
+        if (!list.length) { tbody.innerHTML = '<tr><td colspan="12" class="text-center text-muted py-4">업데이트 대상이 없습니다.</td></tr>'; return; }
+        tbody.innerHTML = list.map(u => {
+          const w = u.toWrite;
+          return `<tr>
+            <td class="ps-3 text-muted small">${u.excelRow}</td>
+            <td class="font-monospace small">${u.orderNo}</td>
+            <td class="font-monospace small">${u.pn||'-'}</td>
+            <td class="font-monospace small">${u.sn||'-'}</td>
+            <td>${cell(w.AT)}</td><td>${cell(w.AU)}</td><td>${cell(w.AW)}</td>
+            <td>${w.AX!==null&&w.AX!==''?`<span class="write-cell">${w.AX}</span> ×${cell(w.AY)}`:cell(w.AX)}</td>
+            <td>${w.AZ!==null&&w.AZ!==''?`${cell(w.AZ)} ea`:cell(w.AZ)}</td>
+            <td>${w.BB!==null&&w.BB!==''?`<span class="write-cell">${w.BB}</span> ×${cell(w.BC)}`:cell(w.BB)}</td>
+            <td>${cell(w.BD)}</td>
+            <td>${w.BE!==null&&w.BE!==''?`<span class="write-cell">${w.BE}</span> ×${cell(w.BF)}`:cell(w.BE)}</td>
+          </tr>`;
+        }).join('');
+      } else {
+        const listMap = { alreadyFilled: previewData.alreadyFilled, noMesMatch: previewData.noMesMatch, wipeShtSkipped: previewData.wipeShtSkipped };
+        const list = listMap[category] || [];
+        const labelMap = { alreadyFilled:'이미 입력됨', noMesMatch:'마스터 미매칭', wipeShtSkipped:'WIPE DOWN+SHT 제외' };
+        document.getElementById('preview-count').textContent = `${list.length.toLocaleString()}건 (${labelMap[category]})`;
+        if (!list.length) { tbody.innerHTML = `<tr><td colspan="12" class="text-center text-muted py-4">${labelMap[category]} 항목이 없습니다.</td></tr>`; return; }
+        tbody.innerHTML = list.map(u => `<tr>
+          <td class="ps-3 text-muted small">${u.excelRow||'-'}</td>
+          <td class="font-monospace small">${u.orderNo}</td>
+          <td class="font-monospace small">${u.pn||'-'}</td>
+          <td class="font-monospace small">${u.sn||'-'}</td>
+          <td colspan="8" class="text-muted small">
+            ${category==='alreadyFilled' ? `기존값: <strong>${u.existingProcess}</strong>` :
+              category==='wipeShtSkipped' ? `공정: ${u.process||'-'} / P열 SHT → 제외` : '—'}
+          </td>
+        </tr>`).join('');
+      }
+    }
+
+    async function runPreview() {
+      document.getElementById('error-msg').classList.add('d-none');
+      document.getElementById('results').classList.add('d-none');
+      document.getElementById('loading').classList.remove('d-none');
+      document.getElementById('preview-btn').disabled = true;
+
+      try {
+        const res  = await fetch('/api/master/fill-preview', { method:'POST', headers:{'Content-Type':'application/json'}, body:'{}' });
+        const data = await res.json();
+        if (data.error) { showError(data.error); return; }
+        applyPreviewData(data);
+        try { sessionStorage.setItem('masterfill_result', JSON.stringify(data)); } catch {}
+      } catch(e) { showError('오류: ' + e.message); }
+      finally {
+        document.getElementById('loading').classList.add('d-none');
+        document.getElementById('preview-btn').disabled = false;
+      }
+    }
+
+    async function downloadExcel() {
+      const btn = document.getElementById('excel-btn');
+      btn.disabled = true; btn.textContent = '생성 중…';
+      try {
+        const res = await fetch('/api/master/fill-excel', { method:'POST', headers:{'Content-Type':'application/json'}, body:'{}' });
+        if (!res.ok) { const d = await res.json(); alert('❌ ' + d.error); return; }
+        const blob = await res.blob();
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `마스터업데이트_${new Date().toISOString().slice(0,10)}.xlsx`;
+        a.click();
+      } catch(e) { alert('❌ ' + e.message); }
+      finally { btn.disabled = false; btn.textContent = '📥 엑셀 다운로드'; }
+    }
+
+    function showError(msg) {
+      const el = document.getElementById('error-msg');
+      el.textContent = '❌ ' + msg;
+      el.classList.remove('d-none');
+      document.getElementById('loading').classList.add('d-none');
+      document.getElementById('preview-btn').disabled = false;
+    }
+  </script>
+</body>
+</html>

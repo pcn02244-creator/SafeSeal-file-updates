@@ -1,0 +1,7 @@
+body { background-color: #f8f9fa; font-size: 14px; }
+.navbar { box-shadow: 0 2px 4px rgba(0,0,0,0.15); }
+.nav-link.active { font-weight: bold; border-bottom: 2px solid white; }
+.font-monospace { font-family: 'Courier New', monospace; }
+.card { border-radius: 8px; }
+th { font-size: 13px; white-space: nowrap; }
+td { font-size: 13px; }
