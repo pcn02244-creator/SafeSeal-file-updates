@@ -174,6 +174,9 @@ app.use(session({
   cookie: { maxAge: 8 * 60 * 60 * 1000 } // 8시간
 }));
 
+// Railway 헬스체크
+app.get('/health', (req, res) => res.status(200).send('ok'));
+
 // 로그인 페이지
 app.get('/login', (req, res) => {
   if (req.session.auth) return res.redirect('/');
