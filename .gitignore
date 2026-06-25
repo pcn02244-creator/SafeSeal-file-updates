@@ -4,6 +4,10 @@ node_modules/
 # 임시 PowerShell 스크립트
 data/*.ps1
 data/_*.ps1
+*.ps1
+
+# 환경 설정 파일
+.railway-env*
 
 # 환경변수 (나중에 API 키 등)
 .env

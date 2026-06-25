@@ -4,9 +4,11 @@ const path = require('path');
 const os = require('os');
 const XLSX      = require('xlsx');
 const XLSXStyle = require('xlsx-js-style');
+const session   = require('express-session');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
+const APP_PASSWORD = process.env.APP_PASSWORD || 'hansol2024';
 const DATA_DIR    = path.join(__dirname, 'data');
 const PARTS_FILE         = path.join(DATA_DIR, 'parts.json');
 const USAGE_FILE         = path.join(DATA_DIR, 'usage.json');
@@ -164,6 +166,70 @@ try {
 }
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
+app.use(session({
+  secret: 'safeseal-secret-key-2024',
+  resave: false,
+  saveUninitialized: false,
+  cookie: { maxAge: 8 * 60 * 60 * 1000 } // 8시간
+}));
+
+// 로그인 페이지
+app.get('/login', (req, res) => {
+  if (req.session.auth) return res.redirect('/');
+  res.send(`<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>로그인 - 파트 단가 관리 시스템</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { background:#f0f2f5; display:flex; align-items:center; justify-content:center; min-height:100vh; }
+    .login-card { background:#fff; border-radius:12px; padding:40px; box-shadow:0 4px 20px rgba(0,0,0,.1); width:100%; max-width:380px; }
+  </style>
+</head>
+<body>
+  <div class="login-card">
+    <div class="text-center mb-4">
+      <div style="font-size:2rem">⚙️</div>
+      <h5 class="fw-bold mt-2">파트 단가 관리 시스템</h5>
+      <div class="text-muted small">한솔아이원스 안성사업장</div>
+    </div>
+    ${req.query.error ? '<div class="alert alert-danger py-2 small">비밀번호가 올바르지 않습니다.</div>' : ''}
+    <form method="POST" action="/login">
+      <div class="mb-3">
+        <label class="form-label fw-semibold">비밀번호</label>
+        <input type="password" name="password" class="form-control" placeholder="비밀번호 입력" autofocus required>
+      </div>
+      <button type="submit" class="btn btn-primary w-100">로그인</button>
+    </form>
+  </div>
+</body>
+</html>`);
+});
+
+app.post('/login', (req, res) => {
+  if (req.body.password === APP_PASSWORD) {
+    req.session.auth = true;
+    res.redirect('/');
+  } else {
+    res.redirect('/login?error=1');
+  }
+});
+
+app.get('/logout', (req, res) => {
+  req.session.destroy();
+  res.redirect('/login');
+});
+
+// 인증 미들웨어
+app.use((req, res, next) => {
+  if (req.session.auth) return next();
+  if (req.path.startsWith('/api/')) return res.status(401).json({ error: '로그인이 필요합니다.' });
+  res.redirect('/login');
+});
+
 app.use(express.static(path.join(__dirname, 'public'), { etag: false, lastModified: false, setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate') }));
 
 if (!fs.existsSync(DATA_DIR))    fs.mkdirSync(DATA_DIR);
