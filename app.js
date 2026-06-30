@@ -5,6 +5,7 @@ const os = require('os');
 const XLSX      = require('xlsx');
 const XLSXStyle = require('xlsx-js-style');
 const session   = require('express-session');
+const multer    = require('multer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -21,6 +22,7 @@ const CODES_CSV          = path.join(DATA_DIR, 'iones_codes.csv');
 
 const EXCHANGE_RATE = 1511.26;
 const { spawnSync } = require('child_process');
+const upload = multer({ storage: multer.memoryStorage() });
 
 function roundKRW(usd) { return Math.round(usd * EXCHANGE_RATE / 100) * 100; }
 function readProcessCosts() { return JSON.parse(fs.readFileSync(PROCESS_COSTS_FILE, 'utf8')); }
@@ -976,6 +978,156 @@ app.post('/api/quotation/generate', (req, res) => {
     res.json({ summary, quotation, issues });
 
   } catch (e) {
+    res.status(500).json({ error: `견적 생성 실패: ${e.message}` });
+  }
+});
+
+// ── API: 파일 업로드로 견적 생성 (Railway 클라우드용) ──
+app.post('/api/quotation/generate-upload', upload.fields([
+  { name: 'mes_file', maxCount: 1 },
+  { name: 'master_file', maxCount: 1 }
+]), (req, res) => {
+  const mesFile    = req.files?.mes_file?.[0];
+  const masterFile = req.files?.master_file?.[0];
+  if (!mesFile)    return res.status(400).json({ error: 'MES 파일을 업로드해 주세요.' });
+  if (!masterFile) return res.status(400).json({ error: '마스터파일을 업로드해 주세요.' });
+
+  try {
+    const mesWb   = XLSX.read(mesFile.buffer, { cellText: true, raw: false });
+    const mesRows = XLSX.utils.sheet_to_json(mesWb.Sheets[mesWb.SheetNames[0]], { header: 1, defval: '' });
+    fs.writeFileSync(path.join(DATA_DIR, 'mes_converted.csv'),
+      XLSX.utils.sheet_to_csv(mesWb.Sheets[mesWb.SheetNames[0]]), 'utf8');
+
+    const masterWb = XLSX.read(masterFile.buffer, { cellText: true, raw: false });
+    const msName   = masterWb.SheetNames.find(n => /safeseal master/i.test(n)) || masterWb.SheetNames[1];
+    const msRows   = XLSX.utils.sheet_to_json(masterWb.Sheets[msName], { header: 1, defval: '' });
+    fs.writeFileSync(path.join(DATA_DIR, 'master_converted.csv'),
+      XLSX.utils.sheet_to_csv(masterWb.Sheets[msName]), 'utf8');
+
+    const mesGroups = {};
+    for (let i = 1; i < mesRows.length; i++) {
+      const r = mesRows[i];
+      const orderNo = String(r[3] || '').trim();
+      if (!orderNo) continue;
+      const snField  = String(r[5] || '').trim();
+      const spaceIdx = snField.indexOf(' ');
+      const pn = spaceIdx > 0 ? snField.slice(0, spaceIdx) : snField;
+      const sn = spaceIdx > 0 ? snField.slice(spaceIdx + 1) : '';
+      const processType = normalizeProcessKey(String(r[2] || ''));
+      const matPN  = String(r[8] || '').trim();
+      const matQty = parseInt(String(r[9] || '').replace(/[^0-9]/g, '')) || 0;
+      if (!mesGroups[orderNo]) mesGroups[orderNo] = { processType, pn, sn, materials: [] };
+      if (matPN) mesGroups[orderNo].materials.push({ pn: matPN, qty: matQty || 1 });
+    }
+
+    const masterTargets = [];
+    for (let i = 2; i < msRows.length; i++) {
+      const r = msRows[i];
+      const clnDate  = String(r[19] || '').trim();
+      const delivery = String(r[20] || '').trim();
+      const orderNo  = String(r[10] || '').trim();
+      if (!clnDate || delivery || !orderNo) continue;
+      masterTargets.push({
+        orderNo, pn: String(r[6]||'').trim(), sn: String(r[7]||'').trim(),
+        po: String(r[8]||'').trim(), tkmNo: String(r[9]||'').trim(),
+      });
+    }
+
+    const parts = readParts(), usage = readUsage(), partPriceMap = {};
+    for (const p of parts) {
+      const cum = usage.filter(u => u.part_number === p.part_number).reduce((s, u) => s + u.quantity, 0);
+      const exceeded = p.qty_threshold > 0 && cum > p.qty_threshold;
+      const info = {
+        unitPrice: exceeded ? p.price_to_be : p.price_as_is, unit: p.unit, unitSize: p.unit_size || 1,
+        description: p.description, partType: p.type, priceStatus: exceeded ? 'To-be' : 'As-is',
+        canonicalPN: p.part_number,
+      };
+      partPriceMap[p.part_number] = info;
+      if (Array.isArray(p.alt_numbers)) p.alt_numbers.forEach(alt => { partPriceMap[alt] = info; });
+    }
+
+    const quotation = [], issues = [], processCosts = readProcessCosts();
+    const REFURB_ONLY_TYPES = ['Retainer', 'Lead In', 'Screw'];
+
+    for (const target of masterTargets) {
+      const { orderNo, pn, sn, po, tkmNo } = target;
+      const mes = mesGroups[orderNo];
+      if (!mes) {
+        issues.push({ 수주번호: orderNo, po, pn, sn, issue: 'MES 데이터 없음',
+          detail: `마스터에 있으나 MES 파일에 "${orderNo}" 없음`, action: 'MES 파일 기간 확인 또는 수주번호 재확인' });
+        continue;
+      }
+      if (mes.pn && mes.pn !== pn) {
+        issues.push({ 수주번호: orderNo, po, pn, sn, issue: 'PN 불일치',
+          detail: `마스터 PN: ${pn} / MES PN: ${mes.pn}`, action: 'PN 확인 필요 — 마스터 기준으로 견적 생성됨' });
+      } else if (mes.sn && mes.sn !== sn) {
+        issues.push({ 수주번호: orderNo, po, pn, sn, issue: 'SN 불일치',
+          detail: `마스터 SN: ${sn} / MES SN: ${mes.sn}`, action: 'SN 확인 필요 — 마스터 기준으로 견적 생성됨' });
+      }
+      const procCost = processCosts[mes.processType];
+      if (!procCost) {
+        issues.push({ 수주번호: orderNo, po, pn, sn, issue: 'Process 단가 누락',
+          detail: `공정 타입 "${mes.processType}" 단가 없음`, action: '공정 단가 설정 확인' });
+        continue;
+      }
+      const isRefurb = mes.processType === 'REFURB';
+      let hasBlockingIssue = false;
+      const replParts = [], excludedParts = [];
+      for (const mat of mes.materials) {
+        const pi = partPriceMap[mat.pn];
+        if (!pi || pi.unitPrice <= 0) {
+          issues.push({ 수주번호: orderNo, po, pn, sn, issue: 'Replacement Part 단가 누락',
+            detail: `파트 "${mat.pn}" 단가 정보 없음`, action: '파트 단가 시스템에서 해당 파트 등록/단가 입력' });
+          hasBlockingIssue = true; continue;
+        }
+        if (!isRefurb && REFURB_ONLY_TYPES.includes(pi.partType)) {
+          const billingQty = pi.unitSize > 1 ? Math.round(mat.qty / pi.unitSize) : mat.qty;
+          const exTotalUSD = pi.unitPrice * billingQty;
+          const excludedPart = {
+            pn: pi.canonicalPN || mat.pn, description: pi.description, partType: pi.partType,
+            unit: pi.unit, unitSize: pi.unitSize, mesQty: mat.qty, qty: billingQty,
+            unitPriceUSD: pi.unitPrice, unitPriceKRW: roundKRW(pi.unitPrice),
+            totalUSD: exTotalUSD, totalKRW: roundKRW(exTotalUSD), priceStatus: pi.priceStatus,
+          };
+          excludedParts.push(excludedPart);
+          issues.push({ 수주번호: orderNo, po, pn, sn, issue: '공정-파트 불일치',
+            detail: `${mes.processType} 공정에 ${pi.partType}(${mat.pn}) 발생 — MES 입력 오류 가능성. 해당 파트는 견적에서 제외됨.`,
+            action: 'MES 확인 후 이상 없으면 [수동 포함] 클릭', canManualInclude: true,
+            manualData: { 수주번호: orderNo, po, pn, sn, tkmNo, process: mes.processType,
+              processName: procCost.name, processUSD: procCost.usd, processKRW: procCost.krw, excludedPart } });
+          continue;
+        }
+        const billingQty = pi.unitSize > 1 ? Math.round(mat.qty / pi.unitSize) : mat.qty;
+        const totalUSD = pi.unitPrice * billingQty;
+        replParts.push({
+          pn: pi.canonicalPN || mat.pn, description: pi.description, partType: pi.partType,
+          unit: pi.unit, unitSize: pi.unitSize, mesQty: mat.qty, qty: billingQty,
+          unitPriceUSD: pi.unitPrice, unitPriceKRW: roundKRW(pi.unitPrice),
+          totalUSD, totalKRW: roundKRW(totalUSD), priceStatus: pi.priceStatus,
+        });
+      }
+      if (hasBlockingIssue) continue;
+      const replTotalUSD = replParts.reduce((s, p) => s + p.totalUSD, 0);
+      const replTotalKRW = replParts.reduce((s, p) => s + p.totalKRW, 0);
+      quotation.push({
+        수주번호: orderNo, po, pn, sn, tkmNo, process: mes.processType,
+        processName: procCost.name, processUSD: procCost.usd, processKRW: procCost.krw,
+        replParts, replTotalUSD, replTotalKRW,
+        totalUSD: procCost.usd + replTotalUSD, totalKRW: procCost.krw + replTotalKRW,
+      });
+    }
+
+    const summary = {
+      totalMES: masterTargets.length, quotationCount: quotation.length, issueCount: issues.length,
+      totalProcessUSD: quotation.reduce((s, q) => s + q.processUSD, 0),
+      totalProcessKRW: quotation.reduce((s, q) => s + q.processKRW, 0),
+      totalReplUSD: quotation.reduce((s, q) => s + q.replTotalUSD, 0),
+      totalReplKRW: quotation.reduce((s, q) => s + q.replTotalKRW, 0),
+      totalUSD: quotation.reduce((s, q) => s + q.totalUSD, 0),
+      totalKRW: quotation.reduce((s, q) => s + q.totalKRW, 0),
+    };
+    res.json({ summary, quotation, issues });
+  } catch(e) {
     res.status(500).json({ error: `견적 생성 실패: ${e.message}` });
   }
 });

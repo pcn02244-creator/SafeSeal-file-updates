@@ -66,17 +66,22 @@
 
   <div class="container-fluid p-4">
 
-    <!-- 파일 경로 -->
+    <!-- 파일 업로드 -->
     <div class="card mb-4" style="border:none;border-radius:10px;box-shadow:0 1px 6px rgba(0,0,0,.07)">
       <div class="card-body">
+        <div class="alert alert-info py-2 small mb-3">
+          💡 <strong>DRM 파일 처리 방법:</strong> MES 파일과 마스터파일을 각각 Excel에서 열어 <strong>다른이름으로 저장 → xlsx</strong> 형식으로 저장한 뒤 업로드하세요.
+        </div>
         <div class="row g-3 align-items-end">
           <div class="col-md-5">
-            <label class="form-label small fw-semibold text-muted text-uppercase" style="letter-spacing:.05em">MES 추출 파일</label>
-            <input type="text" class="form-control font-monospace" id="mes-path" placeholder="예: C:\Downloads\20260521100349.xls">
+            <label class="form-label small fw-semibold text-muted text-uppercase" style="letter-spacing:.05em">MES 추출 파일 업로드</label>
+            <input type="file" class="form-control" id="mes-file" accept=".xlsx,.xls,.csv">
+            <div class="text-muted" style="font-size:.75rem;margin-top:3px">MES 조회 후 xlsx로 저장하여 업로드</div>
           </div>
           <div class="col-md-5">
-            <label class="form-label small fw-semibold text-muted text-uppercase" style="letter-spacing:.05em">마스터파일</label>
-            <input type="text" class="form-control font-monospace" id="master-path" placeholder="예: C:\Downloads\PPC_Safeseal_Master file.xlsx">
+            <label class="form-label small fw-semibold text-muted text-uppercase" style="letter-spacing:.05em">마스터파일 업로드</label>
+            <input type="file" class="form-control" id="master-file" accept=".xlsx,.xls">
+            <div class="text-muted" style="font-size:.75rem;margin-top:3px">PPC_Safeseal_Master file.xlsx → xlsx로 저장 후 업로드</div>
           </div>
           <div class="col-md-2">
             <button class="btn btn-primary w-100 fw-semibold" id="gen-btn" onclick="generate()">📊 견적 생성</button>
@@ -276,9 +281,6 @@
 
     document.addEventListener('DOMContentLoaded', async () => {
       detailModal = new bootstrap.Modal(document.getElementById('detailModal'));
-      const cfg = await fetch('/api/config').then(r => r.json());
-      if (cfg.mes_path)    document.getElementById('mes-path').value    = cfg.mes_path;
-      if (cfg.master_path) document.getElementById('master-path').value = cfg.master_path;
       try {
         const saved = sessionStorage.getItem('quotation_result');
         if (saved) restoreResult(JSON.parse(saved));
@@ -290,24 +292,23 @@
 
     /* ── 생성 ── */
     async function generate() {
-      const mesPath    = document.getElementById('mes-path').value.trim();
-      const masterPath = document.getElementById('master-path').value.trim();
+      const mesFile    = document.getElementById('mes-file').files[0];
+      const masterFile = document.getElementById('master-file').files[0];
       const errDiv = document.getElementById('path-error');
-      if (!mesPath || !masterPath) {
-        errDiv.textContent = 'MES 파일 경로와 마스터파일 경로를 모두 입력해 주세요.';
+      if (!mesFile || !masterFile) {
+        errDiv.textContent = 'MES 파일과 마스터파일을 모두 업로드해 주세요.';
         errDiv.classList.remove('d-none'); return;
       }
       errDiv.classList.add('d-none');
       document.getElementById('loading').classList.remove('d-none');
       document.getElementById('results').classList.add('d-none');
       document.getElementById('gen-btn').disabled = true;
-      document.getElementById('loading-msg').innerHTML =
-        'MES / 마스터파일 확인 중…<br><span class="small text-muted">클라우디움·DRM 파일은 Excel을 통해 자동 변환합니다 (20~60초 소요)</span>';
+      document.getElementById('loading-msg').textContent = '파일 분석 중… (파일 크기에 따라 10~30초 소요)';
       try {
-        const res  = await fetch('/api/quotation/generate', {
-          method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({ mes_path:mesPath, master_path:masterPath })
-        });
+        const fd = new FormData();
+        fd.append('mes_file', mesFile);
+        fd.append('master_file', masterFile);
+        const res  = await fetch('/api/quotation/generate-upload', { method:'POST', body: fd });
         const data = await res.json();
         if (data.error) { errDiv.textContent='❌ '+data.error; errDiv.classList.remove('d-none'); return; }
         restoreResult(data);
