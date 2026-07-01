@@ -554,7 +554,15 @@ app.post('/api/debug/master-columns', (req, res) => {
 });
 
 // ── API: 설정 ──────────────────────────────────────────
-app.get('/api/config', (req, res) => res.json(readConfig()));
+app.get('/api/config', (req, res) => {
+  const cfg = readConfig();
+  // Railway(Linux)에서는 Windows 경로 데이터를 반환하지 않음
+  if (process.platform !== 'win32') {
+    delete cfg.mes_path;
+    delete cfg.master_path;
+  }
+  res.json(cfg);
+});
 app.post('/api/config', (req, res) => {
   writeConfig({ ...readConfig(), ...req.body });
   res.json({ ok: true });

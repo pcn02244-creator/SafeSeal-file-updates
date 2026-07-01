@@ -70,53 +70,45 @@
     <div class="card mb-4" style="border:none;border-radius:10px;box-shadow:0 1px 6px rgba(0,0,0,.07)">
       <div class="card-body">
 
-        <!-- 마스터파일 경로 (저장된 경로 표시, 평소엔 숨김) -->
-        <div id="master-saved-row" class="d-flex align-items-center gap-2 mb-3 d-none">
-          <span class="badge bg-success">마스터파일 저장됨</span>
-          <span class="font-monospace small text-muted" id="master-saved-text" style="word-break:break-all"></span>
-          <button class="btn btn-link btn-sm p-0 text-muted ms-auto" onclick="toggleMasterEdit()">경로 변경</button>
-        </div>
-        <div id="master-edit-row" class="mb-3 d-none">
-          <label class="form-label small fw-semibold text-muted text-uppercase" style="letter-spacing:.05em">마스터파일 경로</label>
-          <input type="text" class="form-control font-monospace" id="master-path"
-                 placeholder="예: U:\전사 폴더\한솔아이원스\TKM구매팀\PPC_Safeseal_Master file_2024~2026.xlsx">
-          <div class="text-muted small mt-1">한 번 입력하면 자동 저장됩니다.</div>
-        </div>
-
-        <!-- MES + 생성 버튼 -->
-        <div class="row g-3 align-items-end" id="path-input-row">
-          <div class="col-md-10">
-            <label class="form-label small fw-semibold text-muted text-uppercase" style="letter-spacing:.05em">MES 추출 파일 경로</label>
-            <input type="text" class="form-control font-monospace" id="mes-path"
-                   placeholder="예: C:\Downloads\20260521100349.xls">
-          </div>
-          <div class="col-md-2">
-            <button class="btn btn-primary w-100 fw-semibold" id="gen-btn" onclick="generate()">📊 견적 생성</button>
+        <!-- 파일 업로드 섹션 (기본 표시 — Railway 클라우드용) -->
+        <div id="upload-section">
+          <div class="small text-muted mb-3">💡 MES·마스터파일을 Excel에서 <strong>다른이름으로 저장 → xlsx</strong> 후 업로드하세요.</div>
+          <div class="row g-3 align-items-end">
+            <div class="col-md-5">
+              <label class="form-label small fw-semibold text-muted text-uppercase" style="letter-spacing:.05em">MES 파일</label>
+              <input type="file" class="form-control" id="mes-file" accept=".xlsx,.xls,.csv">
+            </div>
+            <div class="col-md-5">
+              <label class="form-label small fw-semibold text-muted text-uppercase" style="letter-spacing:.05em">마스터파일</label>
+              <input type="file" class="form-control" id="master-file" accept=".xlsx,.xls">
+            </div>
+            <div class="col-md-2">
+              <button class="btn btn-success w-100 fw-semibold" onclick="generateUpload()">📊 견적 생성</button>
+            </div>
           </div>
         </div>
 
-        <!-- 파일 업로드 (☁️ Railway 접속 시 자동 펼침) -->
-        <div class="mt-3" id="upload-toggle-row">
-          <button class="btn btn-link btn-sm text-muted p-0" type="button" id="upload-toggle-btn"
-                  data-bs-toggle="collapse" data-bs-target="#upload-section">
-            ☁️ 클라우드(Railway)로 접속 중이라면 클릭 → 파일 직접 업로드
-          </button>
-          <div class="collapse mt-2" id="upload-section">
-            <div class="p-3 rounded" style="background:#f8f9fa;border:1px dashed #dee2e6">
-              <div class="small text-muted mb-2">💡 MES·마스터파일을 Excel에서 <strong>다른이름으로 저장 → xlsx</strong> 후 업로드</div>
-              <div class="row g-2 align-items-end">
-                <div class="col-md-5">
-                  <label class="form-label small fw-semibold mb-1">MES 파일</label>
-                  <input type="file" class="form-control form-control-sm" id="mes-file" accept=".xlsx,.xls,.csv">
-                </div>
-                <div class="col-md-5">
-                  <label class="form-label small fw-semibold mb-1">마스터파일</label>
-                  <input type="file" class="form-control form-control-sm" id="master-file" accept=".xlsx,.xls">
-                </div>
-                <div class="col-md-2">
-                  <button class="btn btn-success btn-sm w-100" onclick="generateUpload()">업로드 생성</button>
-                </div>
-              </div>
+        <!-- 경로 입력 섹션 (기본 숨김 — localhost 전용) -->
+        <div id="path-section" style="display:none">
+          <div id="master-saved-row" class="d-flex align-items-center gap-2 mb-3 d-none">
+            <span class="badge bg-success">마스터파일 저장됨</span>
+            <span class="font-monospace small text-muted" id="master-saved-text" style="word-break:break-all"></span>
+            <button class="btn btn-link btn-sm p-0 text-muted ms-auto" onclick="toggleMasterEdit()">경로 변경</button>
+          </div>
+          <div id="master-edit-row" class="mb-3 d-none">
+            <label class="form-label small fw-semibold text-muted text-uppercase" style="letter-spacing:.05em">마스터파일 경로</label>
+            <input type="text" class="form-control font-monospace" id="master-path"
+                   placeholder="예: U:\전사 폴더\한솔아이원스\TKM구매팀\PPC_Safeseal_Master file_2024~2026.xlsx">
+            <div class="text-muted small mt-1">한 번 입력하면 자동 저장됩니다.</div>
+          </div>
+          <div class="row g-3 align-items-end">
+            <div class="col-md-10">
+              <label class="form-label small fw-semibold text-muted text-uppercase" style="letter-spacing:.05em">MES 추출 파일 경로</label>
+              <input type="text" class="form-control font-monospace" id="mes-path"
+                     placeholder="예: C:\Downloads\20260521100349.xls">
+            </div>
+            <div class="col-md-2">
+              <button class="btn btn-primary w-100 fw-semibold" id="gen-btn" onclick="generate()">📊 견적 생성</button>
             </div>
           </div>
         </div>
@@ -318,27 +310,29 @@
     document.addEventListener('DOMContentLoaded', async () => {
       detailModal = new bootstrap.Modal(document.getElementById('detailModal'));
 
-      // Railway 클라우드 접속 감지 → 업로드 섹션 자동 펼침
-      const isCloud = !['localhost', '127.0.0.1'].includes(location.hostname);
-      if (isCloud) {
-        const uploadSection   = document.getElementById('upload-section');
-        const pathInputRow    = document.getElementById('path-input-row');
-        const toggleBtn       = document.getElementById('upload-toggle-btn');
-        if (uploadSection) uploadSection.classList.add('show');
-        if (pathInputRow)  pathInputRow.style.display = 'none';
-        if (toggleBtn)     toggleBtn.style.display = 'none';
+      // localhost이면 경로 방식, 그 외(Railway 등)는 파일 업로드 방식
+      const isLocal = ['localhost', '127.0.0.1'].includes(location.hostname);
+      if (isLocal) {
+        document.getElementById('path-section').style.display = '';
+        document.getElementById('upload-section').style.display = 'none';
       }
 
-      // 저장된 경로 불러오기
-      const cfg = await fetch('/api/config').then(r => r.json()).catch(() => ({}));
-      if (cfg.mes_path)    document.getElementById('mes-path').value = cfg.mes_path;
-      if (cfg.master_path) {
-        savedMasterPath = cfg.master_path;
-        document.getElementById('master-path').value = cfg.master_path;
-        showMasterSaved(cfg.master_path);
-      } else {
-        // 마스터 경로 없으면 입력창 보이기
-        document.getElementById('master-edit-row').classList.remove('d-none');
+      // 저장된 경로 불러오기 (localhost에서만 의미 있음)
+      if (isLocal) {
+        const cfg = await fetch('/api/config').then(r => r.json()).catch(() => ({}));
+        if (cfg.mes_path) {
+          const el = document.getElementById('mes-path');
+          if (el) el.value = cfg.mes_path;
+        }
+        if (cfg.master_path) {
+          savedMasterPath = cfg.master_path;
+          const el = document.getElementById('master-path');
+          if (el) el.value = cfg.master_path;
+          showMasterSaved(cfg.master_path);
+        } else {
+          const el = document.getElementById('master-edit-row');
+          if (el) el.classList.remove('d-none');
+        }
       }
       try {
         const saved = sessionStorage.getItem('quotation_result');
