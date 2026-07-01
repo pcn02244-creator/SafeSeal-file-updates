@@ -178,6 +178,7 @@ app.use(session({
 
 // Railway 헬스체크
 app.get('/health', (req, res) => res.status(200).send('ok'));
+app.get('/api/version', (req, res) => res.json({ version: 'v20260701-css-fix', platform: process.platform }));
 
 // 로그인 페이지
 app.get('/login', (req, res) => {
