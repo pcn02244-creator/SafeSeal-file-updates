@@ -323,7 +323,7 @@
       // _isLocal은 <head>에서 이미 처리됨 (CSS 클래스 추가 완료)
 
       // 저장된 경로 불러오기 (localhost에서만 의미 있음)
-      if (isLocal) {
+      if (window._isLocal) {
         const cfg = await fetch('/api/config').then(r => r.json()).catch(() => ({}));
         if (cfg.mes_path) {
           const el = document.getElementById('mes-path');
