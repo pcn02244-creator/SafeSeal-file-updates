@@ -178,7 +178,7 @@ app.use(session({
 
 // Railway 헬스체크
 app.get('/health', (req, res) => res.status(200).send('ok'));
-app.get('/api/version', (req, res) => res.json({ version: 'v20260701-css-fix', platform: process.platform }));
+app.get('/api/version', (req, res) => res.json({ version: 'v20260701-islocal-fix', platform: process.platform }));
 app.get('/api/master-cache-status', requireLogin, (req, res) => {
   const p = path.join(DATA_DIR, 'master_converted.csv');
   const exists = fs.existsSync(p) && fs.statSync(p).size > 100;
