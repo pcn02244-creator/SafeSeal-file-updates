@@ -178,7 +178,7 @@ app.use(session({
 
 // Railway 헬스체크
 app.get('/health', (req, res) => res.status(200).send('ok'));
-app.get('/api/version', (req, res) => res.json({ version: 'v20260701-path-only', platform: process.platform }));
+app.get('/api/version', (req, res) => res.json({ version: 'v20260701-auto-filepick', platform: process.platform }));
 
 
 // 로그인 페이지
