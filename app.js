@@ -179,6 +179,11 @@ app.use(session({
 // Railway 헬스체크
 app.get('/health', (req, res) => res.status(200).send('ok'));
 app.get('/api/version', (req, res) => res.json({ version: 'v20260701-css-fix', platform: process.platform }));
+app.get('/api/master-cache-status', requireLogin, (req, res) => {
+  const p = path.join(DATA_DIR, 'master_converted.csv');
+  const exists = fs.existsSync(p) && fs.statSync(p).size > 100;
+  res.json({ cached: exists, mtime: exists ? fs.statSync(p).mtime : null });
+});
 
 // 로그인 페이지
 app.get('/login', (req, res) => {
@@ -998,8 +1003,11 @@ app.post('/api/quotation/generate-upload', upload.fields([
 ]), (req, res) => {
   const mesFile    = req.files?.mes_file?.[0];
   const masterFile = req.files?.master_file?.[0];
-  if (!mesFile)    return res.status(400).json({ error: 'MES 파일을 업로드해 주세요.' });
-  if (!masterFile) return res.status(400).json({ error: '마스터파일을 업로드해 주세요.' });
+  if (!mesFile) return res.status(400).json({ error: 'MES 파일을 업로드해 주세요.' });
+
+  const masterCachePath = path.join(DATA_DIR, 'master_converted.csv');
+  const hasCachedMaster = fs.existsSync(masterCachePath) && fs.statSync(masterCachePath).size > 100;
+  if (!masterFile && !hasCachedMaster) return res.status(400).json({ error: '마스터파일을 업로드해 주세요. (최초 1회 필요)' });
 
   try {
     const mesWb   = XLSX.read(mesFile.buffer, { cellText: true, raw: false });
@@ -1007,11 +1015,18 @@ app.post('/api/quotation/generate-upload', upload.fields([
     fs.writeFileSync(path.join(DATA_DIR, 'mes_converted.csv'),
       XLSX.utils.sheet_to_csv(mesWb.Sheets[mesWb.SheetNames[0]]), 'utf8');
 
-    const masterWb = XLSX.read(masterFile.buffer, { cellText: true, raw: false });
-    const msName   = masterWb.SheetNames.find(n => /safeseal master/i.test(n)) || masterWb.SheetNames[1];
-    const msRows   = XLSX.utils.sheet_to_json(masterWb.Sheets[msName], { header: 1, defval: '' });
-    fs.writeFileSync(path.join(DATA_DIR, 'master_converted.csv'),
-      XLSX.utils.sheet_to_csv(masterWb.Sheets[msName]), 'utf8');
+    let msRows;
+    if (masterFile) {
+      const masterWb = XLSX.read(masterFile.buffer, { cellText: true, raw: false });
+      const msName   = masterWb.SheetNames.find(n => /safeseal master/i.test(n)) || masterWb.SheetNames[1];
+      msRows = XLSX.utils.sheet_to_json(masterWb.Sheets[msName], { header: 1, defval: '' });
+      fs.writeFileSync(masterCachePath, XLSX.utils.sheet_to_csv(masterWb.Sheets[msName]), 'utf8');
+    } else {
+      // 캐시된 마스터파일 사용
+      const csv = fs.readFileSync(masterCachePath, 'utf8');
+      const masterWb = XLSX.read(csv, { type: 'string' });
+      msRows = XLSX.utils.sheet_to_json(masterWb.Sheets[masterWb.SheetNames[0]], { header: 1, defval: '' });
+    }
 
     const mesGroups = {};
     for (let i = 1; i < mesRows.length; i++) {
