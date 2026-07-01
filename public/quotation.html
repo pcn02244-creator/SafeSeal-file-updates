@@ -86,8 +86,8 @@
           <div class="text-muted small mt-1">입력하면 자동 저장됩니다.</div>
         </div>
 
-        <!-- MES 경로 + 견적 생성 (로컬 전용) -->
-        <div id="local-section" class="row g-3 align-items-end">
+        <!-- MES 경로 + 견적 생성 -->
+        <div class="row g-3 align-items-end">
           <div class="col-md-10">
             <label class="form-label small fw-semibold text-muted text-uppercase" style="letter-spacing:.05em">MES 추출 파일 경로</label>
             <input type="text" class="form-control font-monospace" id="mes-path"
@@ -322,16 +322,7 @@
         const el = document.getElementById('mes-path');
         if (el) el.value = cfg.mes_path;
       }
-      if (!window._isLocal) {
-        // Railway: 마스터 자동 적용, 경로 섹션 숨기고 업로드만 표시
-        showMasterSaved('서버 자동 적용');
-        document.getElementById('master-saved-row').querySelector('button').classList.add('d-none');
-        document.getElementById('local-section').style.display = 'none';
-        document.getElementById('upload-toggle-btn').style.display = 'none';
-        document.getElementById('upload-section').classList.remove('collapse');
-        document.getElementById('upload-section').style.display = 'block';
-        document.getElementById('upload-label').textContent = 'MES 파일(.xlsx)을 선택하면 바로 견적이 생성됩니다.';
-      } else if (cfg.master_path) {
+      if (cfg.master_path) {
         savedMasterPath = cfg.master_path;
         const el = document.getElementById('master-path');
         if (el) el.value = cfg.master_path;

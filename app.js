@@ -178,7 +178,7 @@ app.use(session({
 
 // Railway 헬스체크
 app.get('/health', (req, res) => res.status(200).send('ok'));
-app.get('/api/version', (req, res) => res.json({ version: 'v20260701-railway-upload-only', platform: process.platform }));
+app.get('/api/version', (req, res) => res.json({ version: 'v20260701-path-only', platform: process.platform }));
 
 
 // 로그인 페이지
@@ -557,13 +557,7 @@ app.post('/api/debug/master-columns', (req, res) => {
 
 // ── API: 설정 ──────────────────────────────────────────
 app.get('/api/config', (req, res) => {
-  const cfg = readConfig();
-  // Railway(Linux)에서는 Windows 경로 데이터를 반환하지 않음
-  if (process.platform !== 'win32') {
-    delete cfg.mes_path;
-    delete cfg.master_path;
-  }
-  res.json(cfg);
+  res.json(readConfig());
 });
 app.post('/api/config', (req, res) => {
   writeConfig({ ...readConfig(), ...req.body });
