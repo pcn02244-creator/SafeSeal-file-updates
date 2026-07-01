@@ -888,9 +888,9 @@ app.post('/api/quotation/generate', (req, res) => {
         continue;
       }
 
-      // Retainer·Lead In·Screw는 REFURB 공정에서만 정상 교체됨
+      // WIPE DOWN에서만 Retainer·Lead In·Screw 제외 (CHEM SOAK·REFURB은 모두 허용)
       const REFURB_ONLY_TYPES = ['Retainer', 'Lead In', 'Screw'];
-      const isRefurb = mes.processType === 'REFURB';
+      const isWipeDown = mes.processType === 'WIPE DOWN';
 
       let hasBlockingIssue = false;
       const replParts = [];
@@ -907,8 +907,8 @@ app.post('/api/quotation/generate', (req, res) => {
           continue;
         }
 
-        // 공정-파트 타입 불일치: 해당 파트만 제외하고 나머지 견적은 진행
-        if (!isRefurb && REFURB_ONLY_TYPES.includes(pi.partType)) {
+        // 공정-파트 타입 불일치: WIPE DOWN에서 Retainer/Lead In/Screw만 제외
+        if (isWipeDown && REFURB_ONLY_TYPES.includes(pi.partType)) {
           const billingQty  = pi.unitSize > 1 ? Math.round(mat.qty / pi.unitSize) : mat.qty;
           const exTotalUSD  = pi.unitPrice * billingQty;
           const excludedPart = {
@@ -1070,7 +1070,7 @@ app.post('/api/quotation/generate-upload', upload.fields([
           detail: `공정 타입 "${mes.processType}" 단가 없음`, action: '공정 단가 설정 확인' });
         continue;
       }
-      const isRefurb = mes.processType === 'REFURB';
+      const isWipeDown = mes.processType === 'WIPE DOWN';
       let hasBlockingIssue = false;
       const replParts = [], excludedParts = [];
       for (const mat of mes.materials) {
@@ -1080,7 +1080,7 @@ app.post('/api/quotation/generate-upload', upload.fields([
             detail: `파트 "${mat.pn}" 단가 정보 없음`, action: '파트 단가 시스템에서 해당 파트 등록/단가 입력' });
           hasBlockingIssue = true; continue;
         }
-        if (!isRefurb && REFURB_ONLY_TYPES.includes(pi.partType)) {
+        if (isWipeDown && REFURB_ONLY_TYPES.includes(pi.partType)) {
           const billingQty = pi.unitSize > 1 ? Math.round(mat.qty / pi.unitSize) : mat.qty;
           const exTotalUSD = pi.unitPrice * billingQty;
           const excludedPart = {
