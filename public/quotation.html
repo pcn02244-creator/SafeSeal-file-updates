@@ -83,21 +83,14 @@
 
         <!-- 파일 업로드 섹션 (기본 표시 — Railway 클라우드용) -->
         <div id="upload-section">
-          <!-- 마스터파일 상태 -->
-          <div id="master-cached-row" class="d-flex align-items-center gap-2 mb-3 d-none">
-            <span class="badge bg-success">마스터파일 저장됨</span>
-            <span class="small text-muted" id="master-cache-mtime"></span>
-            <button class="btn btn-link btn-sm p-0 text-muted ms-auto" onclick="toggleMasterUpload()">파일 변경</button>
-          </div>
-          <div id="master-upload-row" class="mb-3">
-            <label class="form-label small fw-semibold text-muted text-uppercase" style="letter-spacing:.05em">마스터파일 <span class="text-danger">*최초 1회 업로드 후 자동 저장</span></label>
-            <input type="file" class="form-control" id="master-file" accept=".xlsx,.xls">
-          </div>
-          <!-- MES + 생성 버튼 -->
           <div class="row g-3 align-items-end">
-            <div class="col-md-10">
-              <label class="form-label small fw-semibold text-muted text-uppercase" style="letter-spacing:.05em">MES 파일 <span class="text-muted fw-normal">(매일 업로드)</span></label>
+            <div class="col-md-5">
+              <label class="form-label small fw-semibold text-muted text-uppercase" style="letter-spacing:.05em">MES 파일</label>
               <input type="file" class="form-control" id="mes-file" accept=".xlsx,.xls,.csv">
+            </div>
+            <div class="col-md-5">
+              <label class="form-label small fw-semibold text-muted text-uppercase" style="letter-spacing:.05em">마스터파일</label>
+              <input type="file" class="form-control" id="master-file" accept=".xlsx,.xls">
             </div>
             <div class="col-md-2">
               <button class="btn btn-success w-100 fw-semibold" onclick="generateUpload()">📊 견적 생성</button>
@@ -328,20 +321,6 @@
       detailModal = new bootstrap.Modal(document.getElementById('detailModal'));
 
       // _isLocal은 <head>에서 이미 처리됨 (CSS 클래스 추가 완료)
-
-      // Railway: 마스터파일 캐시 상태 확인
-      if (!window._isLocal) {
-        const st = await fetch('/api/master-cache-status').then(r => r.json()).catch(() => ({}));
-        if (st.cached) {
-          document.getElementById('master-cached-row').classList.remove('d-none');
-          document.getElementById('master-upload-row').style.display = 'none';
-          if (st.mtime) {
-            const d = new Date(st.mtime);
-            document.getElementById('master-cache-mtime').textContent =
-              `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} 업로드됨`;
-          }
-        }
-      }
 
       // 저장된 경로 불러오기 (localhost에서만 의미 있음)
       if (isLocal) {
