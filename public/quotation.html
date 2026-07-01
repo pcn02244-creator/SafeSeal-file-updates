@@ -86,8 +86,8 @@
           <div class="text-muted small mt-1">입력하면 자동 저장됩니다.</div>
         </div>
 
-        <!-- MES 경로 + 견적 생성 -->
-        <div class="row g-3 align-items-end">
+        <!-- MES 경로 + 견적 생성 (로컬 전용) -->
+        <div id="local-section" class="row g-3 align-items-end">
           <div class="col-md-10">
             <label class="form-label small fw-semibold text-muted text-uppercase" style="letter-spacing:.05em">MES 추출 파일 경로</label>
             <input type="text" class="form-control font-monospace" id="mes-path"
@@ -98,22 +98,22 @@
           </div>
         </div>
 
-        <!-- Railway 클라우드용 파일 업로드 (접어두기) -->
-        <div class="mt-3">
+        <!-- Railway 클라우드용 파일 업로드 -->
+        <div id="upload-toggle-btn" class="mt-3">
           <button class="btn btn-link btn-sm text-muted p-0" type="button"
                   data-bs-toggle="collapse" data-bs-target="#upload-section">
             ☁️ 클라우드(Railway) 접속 중이면 클릭 → MES 파일 직접 업로드
           </button>
-          <div class="collapse mt-2" id="upload-section">
-            <div class="p-3 rounded" style="background:#f8f9fa;border:1px dashed #dee2e6">
-              <div class="small text-muted mb-2">MES 파일을 xlsx로 저장 후 업로드하세요. 마스터파일은 자동 적용됩니다.</div>
-              <div class="row g-2 align-items-end">
-                <div class="col-md-10">
-                  <input type="file" class="form-control form-control-sm" id="mes-file" accept=".xlsx,.xls,.csv">
-                </div>
-                <div class="col-md-2">
-                  <button class="btn btn-success btn-sm w-100" onclick="generateUpload()">업로드 생성</button>
-                </div>
+        </div>
+        <div id="upload-section" class="collapse mt-2">
+          <div class="p-3 rounded" style="background:#f8f9fa;border:1px dashed #dee2e6">
+            <div id="upload-label" class="small text-muted mb-2">MES 파일을 xlsx로 저장 후 업로드하세요. 마스터파일은 자동 적용됩니다.</div>
+            <div class="row g-2 align-items-end">
+              <div class="col-md-10">
+                <input type="file" class="form-control form-control-sm" id="mes-file" accept=".xlsx,.xls,.csv">
+              </div>
+              <div class="col-md-2">
+                <button class="btn btn-success btn-sm w-100" onclick="generateUpload()">업로드 생성</button>
               </div>
             </div>
           </div>
@@ -323,10 +323,14 @@
         if (el) el.value = cfg.mes_path;
       }
       if (!window._isLocal) {
-        // Railway: 마스터파일은 서버에 자동 적용, 업로드 섹션 바로 표시
+        // Railway: 마스터 자동 적용, 경로 섹션 숨기고 업로드만 표시
         showMasterSaved('서버 자동 적용');
         document.getElementById('master-saved-row').querySelector('button').classList.add('d-none');
-        document.getElementById('upload-section').classList.add('show');
+        document.getElementById('local-section').style.display = 'none';
+        document.getElementById('upload-toggle-btn').style.display = 'none';
+        document.getElementById('upload-section').classList.remove('collapse');
+        document.getElementById('upload-section').style.display = 'block';
+        document.getElementById('upload-label').textContent = 'MES 파일(.xlsx)을 선택하면 바로 견적이 생성됩니다.';
       } else if (cfg.master_path) {
         savedMasterPath = cfg.master_path;
         const el = document.getElementById('master-path');
