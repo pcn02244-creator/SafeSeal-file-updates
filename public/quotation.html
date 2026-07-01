@@ -83,7 +83,7 @@
           <label class="form-label small fw-semibold text-muted text-uppercase" style="letter-spacing:.05em">마스터파일 경로</label>
           <input type="text" class="form-control font-monospace" id="master-path"
                  placeholder="예: U:\전사 폴더\한솔아이원스\TKM구매팀\PPC_Safeseal_Master file_2024~2026.xlsx">
-          <div class="text-muted small mt-1">한 번 입력하면 자동 저장됩니다.</div>
+          <div class="text-muted small mt-1">입력하면 자동 저장됩니다.</div>
         </div>
 
         <!-- MES 경로 + 견적 생성 -->
@@ -94,7 +94,7 @@
                    placeholder="예: C:\Downloads\20260521100349.xls">
           </div>
           <div class="col-md-2">
-            <button class="btn btn-primary w-100 fw-semibold" onclick="generate()">📊 견적 생성</button>
+            <button id="gen-btn" class="btn btn-primary w-100 fw-semibold" onclick="generate()">📊 견적 생성</button>
           </div>
         </div>
 
@@ -322,7 +322,12 @@
         const el = document.getElementById('mes-path');
         if (el) el.value = cfg.mes_path;
       }
-      if (cfg.master_path) {
+      if (!window._isLocal) {
+        // Railway: 마스터파일은 서버에 자동 적용, 업로드 섹션 바로 표시
+        showMasterSaved('서버 자동 적용');
+        document.getElementById('master-saved-row').querySelector('button').classList.add('d-none');
+        document.getElementById('upload-section').classList.add('show');
+      } else if (cfg.master_path) {
         savedMasterPath = cfg.master_path;
         const el = document.getElementById('master-path');
         if (el) el.value = cfg.master_path;
@@ -366,7 +371,7 @@
         errDiv.classList.remove('d-none'); return;
       }
       if (!masterPath) {
-        errDiv.textContent = '마스터파일 경로를 입력해 주세요. (최초 1회 입력 후 자동 저장됩니다)';
+        errDiv.textContent = '마스터파일 경로를 입력해 주세요.';
         errDiv.classList.remove('d-none');
         document.getElementById('master-edit-row').classList.remove('d-none'); return;
       }

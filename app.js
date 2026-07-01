@@ -178,7 +178,7 @@ app.use(session({
 
 // Railway 헬스체크
 app.get('/health', (req, res) => res.status(200).send('ok'));
-app.get('/api/version', (req, res) => res.json({ version: 'v20260701-unified-ui', platform: process.platform }));
+app.get('/api/version', (req, res) => res.json({ version: 'v20260701-master-auto-fix', platform: process.platform }));
 
 
 // 로그인 페이지
@@ -760,8 +760,10 @@ app.put('/api/process-costs', (req, res) => {
 // ── API: 견적 생성 ─────────────────────────────────────
 app.post('/api/quotation/generate', (req, res) => {
   const { mes_path, master_path } = req.body;
-  if (!mes_path)    return res.status(400).json({ error: 'MES 파일 경로를 입력해 주세요.' });
-  if (!master_path) return res.status(400).json({ error: '마스터파일 경로를 입력해 주세요.' });
+  if (!mes_path) return res.status(400).json({ error: 'MES 파일 경로를 입력해 주세요.' });
+  const masterCsvFallback = path.join(DATA_DIR, 'master_converted.csv');
+  const hasMasterCsv = fs.existsSync(masterCsvFallback) && fs.statSync(masterCsvFallback).size > 1000;
+  if (!master_path && !hasMasterCsv) return res.status(400).json({ error: '마스터파일 경로를 입력해 주세요.' });
   if (!fs.existsSync(mes_path))    return res.status(400).json({ error: `MES 파일을 찾을 수 없습니다: ${mes_path}` });
   // 마스터파일은 클라우디움 경로인 경우 직접 접근 불가일 수 있으므로 존재 여부 체크 생략하고 Excel COM으로 시도
 
@@ -807,18 +809,26 @@ app.post('/api/quotation/generate', (req, res) => {
     // ── 2. 마스터파일 파싱 (T열=CLN 완료, U열=Delivery 공란인 것만) ──
     // 클라우디움/DRM 파일은 Excel COM 변환 사용, 일반 파일은 XLSX 직접 읽기
     let msRows;
-    let masterReadViaExcel = false;
     try {
-      if (!fs.existsSync(master_path)) throw new Error('direct_read_fail');
+      if (!master_path || !fs.existsSync(master_path)) throw new Error('direct_read_fail');
       const masterWb = XLSX.readFile(master_path, { cellText: true, raw: false });
       const msName   = masterWb.SheetNames.find(n => /safeseal master/i.test(n)) || masterWb.SheetNames[1];
       msRows = XLSX.utils.sheet_to_json(masterWb.Sheets[msName], { header: 1, defval: '' });
     } catch {
-      // 직접 읽기 실패 → Excel COM으로 시도 (클라우디움, DRM 등)
-      masterReadViaExcel = true;
-      const masterCsvPath = convertMasterToCSV(master_path);
-      const masterWb2 = XLSX.readFile(masterCsvPath, { cellText: true, raw: false });
-      msRows = XLSX.utils.sheet_to_json(masterWb2.Sheets[masterWb2.SheetNames[0]], { header: 1, defval: '' });
+      // 직접 읽기 실패 → Excel COM 시도 (Windows 전용)
+      if (master_path && process.platform === 'win32') {
+        try {
+          const convPath = convertMasterToCSV(master_path);
+          const wb2 = XLSX.readFile(convPath, { cellText: true, raw: false });
+          msRows = XLSX.utils.sheet_to_json(wb2.Sheets[wb2.SheetNames[0]], { header: 1, defval: '' });
+        } catch {}
+      }
+      // 여전히 없으면 → 서버 캐시 CSV 자동 사용
+      if (!msRows) {
+        if (!hasMasterCsv) return res.status(500).json({ error: '마스터파일을 읽을 수 없습니다. U:\\ 드라이브 연결을 확인해 주세요.' });
+        const wb3 = XLSX.read(fs.readFileSync(masterCsvFallback, 'utf8'), { type: 'string' });
+        msRows = XLSX.utils.sheet_to_json(wb3.Sheets[wb3.SheetNames[0]], { header: 1, defval: '' });
+      }
     }
 
     const masterTargets = [];   // 견적 대상 (모수)
