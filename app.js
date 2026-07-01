@@ -179,11 +179,7 @@ app.use(session({
 // Railway 헬스체크
 app.get('/health', (req, res) => res.status(200).send('ok'));
 app.get('/api/version', (req, res) => res.json({ version: 'v20260701-islocal-fix', platform: process.platform }));
-app.get('/api/master-cache-status', requireLogin, (req, res) => {
-  const p = path.join(DATA_DIR, 'master_converted.csv');
-  const exists = fs.existsSync(p) && fs.statSync(p).size > 100;
-  res.json({ cached: exists, mtime: exists ? fs.statSync(p).mtime : null });
-});
+
 
 // 로그인 페이지
 app.get('/login', (req, res) => {
