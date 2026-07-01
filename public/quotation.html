@@ -83,14 +83,14 @@
 
         <!-- 파일 업로드 섹션 (기본 표시 — Railway 클라우드용) -->
         <div id="upload-section">
+          <div class="d-flex align-items-center gap-2 mb-3">
+            <span class="badge bg-success">마스터파일 저장됨</span>
+            <span class="small text-muted">서버에 저장된 마스터파일 자동 사용</span>
+          </div>
           <div class="row g-3 align-items-end">
-            <div class="col-md-5">
+            <div class="col-md-10">
               <label class="form-label small fw-semibold text-muted text-uppercase" style="letter-spacing:.05em">MES 파일</label>
               <input type="file" class="form-control" id="mes-file" accept=".xlsx,.xls,.csv">
-            </div>
-            <div class="col-md-5">
-              <label class="form-label small fw-semibold text-muted text-uppercase" style="letter-spacing:.05em">마스터파일</label>
-              <input type="file" class="form-control" id="master-file" accept=".xlsx,.xls">
             </div>
             <div class="col-md-2">
               <button class="btn btn-success w-100 fw-semibold" onclick="generateUpload()">📊 견적 생성</button>
