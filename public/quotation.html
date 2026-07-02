@@ -7,7 +7,7 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="style.css" rel="stylesheet">
   <script>
-    window._isLocal = ['localhost', '127.0.0.1'].includes(location.hostname);
+    window._isLocal = true; // 서버 platform 확인 후 DOMContentLoaded에서 업데이트
   </script>
   <style>
     body { background: #f0f2f5; }
@@ -297,6 +297,10 @@
 
     document.addEventListener('DOMContentLoaded', async () => {
       detailModal = new bootstrap.Modal(document.getElementById('detailModal'));
+
+      // 서버 platform으로 로컬/Railway 판단 (hostname 기반 아님)
+      const ver = await fetch('/api/version').then(r => r.json()).catch(() => ({}));
+      window._isLocal = (ver.platform === 'win32');
 
       // 저장된 경로 불러오기
       const cfg = await fetch('/api/config').then(r => r.json()).catch(() => ({}));
