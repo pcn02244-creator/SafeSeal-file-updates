@@ -6,13 +6,10 @@
 const APP_VERSION   = 'v20260703-pages';
 const EXCHANGE_RATE = 1511.26;
 
-// DRM Bridge 서버 주소 (localStorage에 저장, 기본값 localhost)
-function getDrmBridgeUrl() {
-  return localStorage.getItem('drm_bridge_url') || 'http://localhost:3001';
-}
-function setDrmBridgeUrl(url) {
-  localStorage.setItem('drm_bridge_url', url.replace(/\/$/, ''));
-}
+// DRM Bridge 주소: drm-config.json에서 읽어옴 (관리자가 한 번 설정하면 모든 사용자 자동 적용)
+let _drmBridgeUrl = 'http://localhost:3001';
+fetch('./drm-config.json').then(r => r.json()).then(c => { if (c.bridge_url) _drmBridgeUrl = c.bridge_url; }).catch(() => {});
+function getDrmBridgeUrl() { return _drmBridgeUrl; }
 
 // ── localStorage 래퍼 ─────────────────────────────────
 const DB = {
@@ -94,23 +91,7 @@ async function parseExcel(file, type) {
     const csv = await resp.text();
     return XLSX.read(csv, { type: 'string' });
   } catch (e) {
-    const isConnErr = ['fetch', 'Failed', 'NetworkError', 'ERR_CONNECTION', 'ECONNREFUSED'].some(k => e.message.includes(k));
-    if (isConnErr) {
-      const url = prompt(
-        `DRM 파일 처리 서버에 연결할 수 없습니다.\n\n` +
-        `현재 설정된 주소: ${bridgeUrl}\n\n` +
-        `서버를 운영하는 담당자의 IP 주소를 입력하세요.\n` +
-        `(예: http://192.168.1.50:3001)\n\n` +
-        `[취소] 시 기본값(localhost:3001) 유지`,
-        bridgeUrl
-      );
-      if (url && url.trim()) {
-        setDrmBridgeUrl(url.trim());
-        return parseExcel(file, type); // 새 주소로 재시도
-      }
-      throw new Error(`DRM Bridge 서버(${bridgeUrl})에 연결할 수 없습니다.\n담당자에게 start-drm-bridge.bat 실행을 요청하세요.`);
-    }
-    throw new Error('DRM 변환 실패: ' + e.message);
+    throw new Error('DRM 파일 변환 실패: ' + e.message);
   }
 }
 
