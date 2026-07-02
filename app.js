@@ -1171,7 +1171,7 @@ app.post('/api/quotation/generate-upload', upload.fields([
       totalUSD: quotation.reduce((s, q) => s + q.totalUSD, 0),
       totalKRW: quotation.reduce((s, q) => s + q.totalKRW, 0),
     };
-    res.json({ summary, quotation, issues, _debug: mesDebug });
+    res.json({ summary, quotation, issues });
   } catch(e) {
     res.status(500).json({ error: `견적 생성 실패: ${e.message}` });
   }
