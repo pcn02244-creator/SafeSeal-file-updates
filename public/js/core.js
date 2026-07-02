@@ -59,21 +59,43 @@ function readFileAsArrayBuffer(file) {
   });
 }
 
-async function parseExcel(file) {
+async function parseExcel(file, type) {
   const buf = await readFileAsArrayBuffer(file);
+  const arr = new Uint8Array(buf);
+  const isDRM = arr[0] === 0x9B && arr[1] === 0x20;
+
+  if (!isDRM) {
+    try {
+      return XLSX.read(buf, { cellText: true, raw: false });
+    } catch (e) {
+      throw new Error('파일을 읽을 수 없습니다: ' + e.message);
+    }
+  }
+
+  // DRM 파일 → 로컬 DRM Bridge 서버로 전송
   try {
-    return XLSX.read(buf, { cellText: true, raw: false });
+    const form = new FormData();
+    form.append('file', file);
+    form.append('type', type || 'mes');
+    const resp = await fetch('http://localhost:3001/drm-convert', { method: 'POST', body: form });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.error || `브리지 오류 ${resp.status}`);
+    }
+    const csv = await resp.text();
+    return XLSX.read(csv, { type: 'string' });
   } catch (e) {
-    const arr = new Uint8Array(buf);
-    if (arr[0] === 0x9B && arr[1] === 0x20)
-      throw new Error('DRM 파일을 읽을 수 없습니다. Excel에서 파일을 열고 "다른 이름으로 저장 → xlsx"로 저장 후 다시 업로드하세요.');
-    throw new Error('파일을 읽을 수 없습니다: ' + e.message);
+    if (e.message.includes('fetch') || e.message.includes('Failed') || e.message.includes('NetworkError') || e.message.includes('ERR_CONNECTION')) {
+      throw new Error('DRM 파일 처리를 위해 로컬 서버가 필요합니다.\n\n' +
+        '바탕화면 spare-parts-app 폴더에서\n"start-drm-bridge.bat" 을 더블클릭 후 다시 시도하세요.');
+    }
+    throw new Error('DRM 변환 실패: ' + e.message);
   }
 }
 
 // ── 견적 생성 ─────────────────────────────────────────
 async function generateQuotation(mesFile, masterFile) {
-  const mesWb       = await parseExcel(mesFile);
+  const mesWb       = await parseExcel(mesFile, 'mes');
   const mesAllRows  = XLSX.utils.sheet_to_json(mesWb.Sheets[mesWb.SheetNames[0]], { header: 1, defval: '' });
 
   let mesHeaderRow = 0, mesOrderCol = 3;
@@ -108,7 +130,7 @@ async function generateQuotation(mesFile, masterFile) {
 
   let msRows;
   if (masterFile) {
-    const masterWb = await parseExcel(masterFile);
+    const masterWb = await parseExcel(masterFile, 'master');
     const msName   = masterWb.SheetNames.find(n => /safeseal master/i.test(n))
                      || masterWb.SheetNames[1] || masterWb.SheetNames[0];
     msRows = XLSX.utils.sheet_to_json(masterWb.Sheets[msName], { header: 1, defval: '' });
@@ -292,7 +314,7 @@ function calcMasterFillData(mesData, partsMap) {
 async function buildMasterFillResult(mesFile, masterFile) {
   let mesRows;
   if (mesFile) {
-    const mesWb  = await parseExcel(mesFile);
+    const mesWb  = await parseExcel(mesFile, 'mes');
     const allRows = XLSX.utils.sheet_to_json(mesWb.Sheets[mesWb.SheetNames[0]], { header: 1, defval: '' });
     localStorage.setItem('mes_rows_cache', JSON.stringify(allRows));
     mesRows = allRows;
@@ -304,7 +326,7 @@ async function buildMasterFillResult(mesFile, masterFile) {
 
   let masterRows;
   if (masterFile) {
-    const masterWb = await parseExcel(masterFile);
+    const masterWb = await parseExcel(masterFile, 'master');
     const msName   = masterWb.SheetNames.find(n => /safeseal master/i.test(n))
                      || masterWb.SheetNames[1] || masterWb.SheetNames[0];
     masterRows = XLSX.utils.sheet_to_json(masterWb.Sheets[msName], { header: 1, defval: '' });
