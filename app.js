@@ -1007,9 +1007,13 @@ app.post('/api/quotation/generate-upload', upload.fields([
 
   try {
     const mesWb   = XLSX.read(mesFile.buffer, { cellText: true, raw: false });
-    const mesRows = XLSX.utils.sheet_to_json(mesWb.Sheets[mesWb.SheetNames[0]], { header: 1, defval: '' });
+    const mesSheetName = mesWb.SheetNames[0];
+    const mesRows = XLSX.utils.sheet_to_json(mesWb.Sheets[mesSheetName], { header: 1, defval: '' });
     fs.writeFileSync(path.join(DATA_DIR, 'mes_converted.csv'),
-      XLSX.utils.sheet_to_csv(mesWb.Sheets[mesWb.SheetNames[0]]), 'utf8');
+      XLSX.utils.sheet_to_csv(mesWb.Sheets[mesSheetName]), 'utf8');
+    // DEBUG: MES 파싱 확인용 (추후 제거)
+    const mesDebug = { sheetName: mesSheetName, totalRows: mesRows.length, header: mesRows[0] ? mesRows[0].slice(0,6) : [], sampleOrderNos: [] };
+    for (let di = 1; di < Math.min(6, mesRows.length); di++) mesDebug.sampleOrderNos.push(String(mesRows[di][3]||''));
 
     let msRows;
     if (masterFile) {
@@ -1144,7 +1148,7 @@ app.post('/api/quotation/generate-upload', upload.fields([
       totalUSD: quotation.reduce((s, q) => s + q.totalUSD, 0),
       totalKRW: quotation.reduce((s, q) => s + q.totalKRW, 0),
     };
-    res.json({ summary, quotation, issues });
+    res.json({ summary, quotation, issues, _debug: mesDebug });
   } catch(e) {
     res.status(500).json({ error: `견적 생성 실패: ${e.message}` });
   }
