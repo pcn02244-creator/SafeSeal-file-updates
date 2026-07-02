@@ -61,10 +61,14 @@ function readFileAsArrayBuffer(file) {
 
 async function parseExcel(file) {
   const buf = await readFileAsArrayBuffer(file);
-  const arr = new Uint8Array(buf);
-  if (arr[0] === 0x9B && arr[1] === 0x20)
-    throw new Error('Fasoo DRM 파일은 업로드할 수 없습니다. Excel에서 xlsx로 저장 후 업로드하세요.');
-  return XLSX.read(buf, { cellText: true, raw: false });
+  try {
+    return XLSX.read(buf, { cellText: true, raw: false });
+  } catch (e) {
+    const arr = new Uint8Array(buf);
+    if (arr[0] === 0x9B && arr[1] === 0x20)
+      throw new Error('DRM 파일을 읽을 수 없습니다. Excel에서 파일을 열고 "다른 이름으로 저장 → xlsx"로 저장 후 다시 업로드하세요.');
+    throw new Error('파일을 읽을 수 없습니다: ' + e.message);
+  }
 }
 
 // ── 견적 생성 ─────────────────────────────────────────
