@@ -1006,30 +1006,29 @@ app.post('/api/quotation/generate-upload', upload.fields([
   if (!masterFile && !hasMasterCache) return res.status(400).json({ error: '마스터파일을 업로드해 주세요.' });
 
   try {
-    const mesWb = XLSX.read(mesFile.buffer, { type: 'buffer', cellText: false, raw: true });
-    // 반입번호 헤더 시트 탐색 — 워크시트 셀 객체에서 직접 읽어 속도 최적화
-    let mesSheetName = mesWb.SheetNames[0];
-    outer: for (const sn of mesWb.SheetNames) {
-      const ws = mesWb.Sheets[sn];
-      const ref = ws['!ref'];
-      if (!ref) continue;
-      for (let ri = 0; ri < 5; ri++) {
-        for (let ci = 0; ci < 20; ci++) {
-          const addr = XLSX.utils.encode_cell({ r: ri, c: ci });
-          if ((ws[addr] && String(ws[addr].v || '')) === '반입번호') { mesSheetName = sn; break outer; }
-        }
-      }
+    // DRM 감지: 첫 2바이트가 0x9B 0x20이면 Fasoo DRM → XLSX 파서 대신 캐시 CSV 사용
+    const mesBuf = mesFile.buffer;
+    const mesDRM = mesBuf.length >= 2 && mesBuf[0] === 0x9B && mesBuf[1] === 0x20;
+    const mesCsvPath = path.join(DATA_DIR, 'mes_converted.csv');
+
+    let mesAllRows, mesHeaderRow = 0, mesOrderCol = 3;
+    if (mesDRM) {
+      // DRM 파일 → 서버 캐시 CSV 사용
+      if (!fs.existsSync(mesCsvPath)) return res.status(400).json({ error: 'MES DRM 파일은 서버 캐시가 필요합니다. 먼저 로컬에서 견적 생성을 1회 실행하세요.' });
+      const mesWb2 = XLSX.read(fs.readFileSync(mesCsvPath, 'utf8'), { type: 'string' });
+      mesAllRows = XLSX.utils.sheet_to_json(mesWb2.Sheets[mesWb2.SheetNames[0]], { header: 1, defval: '' });
+    } else {
+      const mesWb = XLSX.read(mesBuf, { cellText: true, raw: false });
+      const mesSheetName = mesWb.SheetNames[0];
+      mesAllRows = XLSX.utils.sheet_to_json(mesWb.Sheets[mesSheetName], { header: 1, defval: '' });
+      fs.writeFileSync(mesCsvPath, XLSX.utils.sheet_to_csv(mesWb.Sheets[mesSheetName]), 'utf8');
     }
-    const mesAllRows = XLSX.utils.sheet_to_json(mesWb.Sheets[mesSheetName], { header: 1, defval: '' });
-    // 헤더 행 위치·컬럼 인덱스 자동 탐색
-    let mesHeaderRow = 0, mesOrderCol = 3;
+    // 헤더 행·컬럼 인덱스 자동 탐색
     for (let ri = 0; ri < Math.min(5, mesAllRows.length); ri++) {
       const idx = mesAllRows[ri].indexOf('반입번호');
       if (idx >= 0) { mesHeaderRow = ri; mesOrderCol = idx; break; }
     }
     const mesRows = mesAllRows;
-    fs.writeFileSync(path.join(DATA_DIR, 'mes_converted.csv'),
-      XLSX.utils.sheet_to_csv(mesWb.Sheets[mesSheetName]), 'utf8');
 
     let msRows;
     if (masterFile) {
