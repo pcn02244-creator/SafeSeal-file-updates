@@ -781,6 +781,7 @@ app.post('/api/quotation/generate', (req, res) => {
     }
     const mesWb   = XLSX.readFile(actualMesPath, { cellText: true, raw: false });
     const mesRows = XLSX.utils.sheet_to_json(mesWb.Sheets[mesWb.SheetNames[0]], { header: 1, defval: '' });
+    try { fs.writeFileSync(path.join(DATA_DIR, 'mes_converted.csv'), XLSX.utils.sheet_to_csv(mesWb.Sheets[mesWb.SheetNames[0]]), 'utf8'); } catch {}
 
     const mesGroups = {};
     for (let i = 1; i < mesRows.length; i++) {
@@ -808,6 +809,7 @@ app.post('/api/quotation/generate', (req, res) => {
       const masterWb = XLSX.readFile(master_path, { cellText: true, raw: false });
       const msName   = masterWb.SheetNames.find(n => /safeseal master/i.test(n)) || masterWb.SheetNames[1];
       msRows = XLSX.utils.sheet_to_json(masterWb.Sheets[msName], { header: 1, defval: '' });
+      try { fs.writeFileSync(path.join(DATA_DIR, 'master_converted.csv'), XLSX.utils.sheet_to_csv(masterWb.Sheets[msName]), 'utf8'); } catch {}
     } catch {
       // 직접 읽기 실패 → Excel COM 시도 (Windows), 그 다음 CSV 폴백
       if (master_path && process.platform === 'win32') {
