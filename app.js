@@ -1006,23 +1006,27 @@ app.post('/api/quotation/generate-upload', upload.fields([
   if (!masterFile && !hasMasterCache) return res.status(400).json({ error: '마스터파일을 업로드해 주세요.' });
 
   try {
-    const mesWb = XLSX.read(mesFile.buffer, { cellText: true, raw: false });
-    // 반입번호 헤더가 있는 시트 자동 탐색
+    const mesWb = XLSX.read(mesFile.buffer, { type: 'buffer', cellText: false, raw: true });
+    // 반입번호 헤더 시트 탐색 — 워크시트 셀 객체에서 직접 읽어 속도 최적화
     let mesSheetName = mesWb.SheetNames[0];
-    for (const sn of mesWb.SheetNames) {
-      const testRows = XLSX.utils.sheet_to_json(mesWb.Sheets[sn], { header: 1, defval: '', range: 0 });
-      for (let ri = 0; ri < Math.min(5, testRows.length); ri++) {
-        if (testRows[ri].includes('반입번호')) { mesSheetName = sn; break; }
+    outer: for (const sn of mesWb.SheetNames) {
+      const ws = mesWb.Sheets[sn];
+      const ref = ws['!ref'];
+      if (!ref) continue;
+      for (let ri = 0; ri < 5; ri++) {
+        for (let ci = 0; ci < 20; ci++) {
+          const addr = XLSX.utils.encode_cell({ r: ri, c: ci });
+          if ((ws[addr] && String(ws[addr].v || '')) === '반입번호') { mesSheetName = sn; break outer; }
+        }
       }
     }
     const mesAllRows = XLSX.utils.sheet_to_json(mesWb.Sheets[mesSheetName], { header: 1, defval: '' });
-    // 헤더 행 위치 자동 탐색 (반입번호가 있는 행)
-    let mesHeaderRow = 0;
+    // 헤더 행 위치·컬럼 인덱스 자동 탐색
+    let mesHeaderRow = 0, mesOrderCol = 3;
     for (let ri = 0; ri < Math.min(5, mesAllRows.length); ri++) {
-      if (mesAllRows[ri].includes('반입번호')) { mesHeaderRow = ri; break; }
+      const idx = mesAllRows[ri].indexOf('반입번호');
+      if (idx >= 0) { mesHeaderRow = ri; mesOrderCol = idx; break; }
     }
-    // 반입번호 컬럼 인덱스 자동 탐색
-    const mesOrderCol = mesAllRows[mesHeaderRow].indexOf('반입번호');
     const mesRows = mesAllRows;
     fs.writeFileSync(path.join(DATA_DIR, 'mes_converted.csv'),
       XLSX.utils.sheet_to_csv(mesWb.Sheets[mesSheetName]), 'utf8');
