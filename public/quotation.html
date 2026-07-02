@@ -7,7 +7,7 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="style.css" rel="stylesheet">
   <script>
-    window._isLocal = true; // 서버 platform 확인 후 DOMContentLoaded에서 업데이트
+    window._isLocal = ['localhost', '127.0.0.1'].includes(location.hostname);
   </script>
   <style>
     body { background: #f0f2f5; }
@@ -83,7 +83,7 @@
           <label class="form-label small fw-semibold text-muted text-uppercase" style="letter-spacing:.05em">마스터파일 경로</label>
           <input type="text" class="form-control font-monospace" id="master-path"
                  placeholder="예: U:\전사 폴더\한솔아이원스\TKM구매팀\PPC_Safeseal_Master file_2024~2026.xlsx">
-          <div class="text-muted small mt-1">입력하면 자동 저장됩니다.</div>
+          <div class="text-muted small mt-1">한 번 입력하면 자동 저장됩니다.</div>
         </div>
 
         <!-- MES 경로 + 견적 생성 -->
@@ -92,14 +92,32 @@
             <label class="form-label small fw-semibold text-muted text-uppercase" style="letter-spacing:.05em">MES 추출 파일 경로</label>
             <input type="text" class="form-control font-monospace" id="mes-path"
                    placeholder="예: C:\Downloads\20260521100349.xls">
-            <div id="railway-hint" class="text-muted small mt-1 d-none">☁️ 클라우드 접속 중 — 견적 생성 클릭 시 파일 선택창이 열립니다</div>
           </div>
           <div class="col-md-2">
-            <button id="gen-btn" class="btn btn-primary w-100 fw-semibold" onclick="generate()">📊 견적 생성</button>
+            <button class="btn btn-primary w-100 fw-semibold" onclick="generate()">📊 견적 생성</button>
           </div>
         </div>
-        <!-- Railway용 숨김 파일 입력 -->
-        <input type="file" id="mes-file-hidden" style="display:none" accept=".xlsx,.xls,.csv">
+
+        <!-- Railway 클라우드용 파일 업로드 (접어두기) -->
+        <div class="mt-3">
+          <button class="btn btn-link btn-sm text-muted p-0" type="button"
+                  data-bs-toggle="collapse" data-bs-target="#upload-section">
+            ☁️ 클라우드(Railway) 접속 중이면 클릭 → MES 파일 직접 업로드
+          </button>
+          <div class="collapse mt-2" id="upload-section">
+            <div class="p-3 rounded" style="background:#f8f9fa;border:1px dashed #dee2e6">
+              <div class="small text-muted mb-2">MES 파일을 xlsx로 저장 후 업로드하세요. 마스터파일은 자동 적용됩니다.</div>
+              <div class="row g-2 align-items-end">
+                <div class="col-md-10">
+                  <input type="file" class="form-control form-control-sm" id="mes-file" accept=".xlsx,.xls,.csv">
+                </div>
+                <div class="col-md-2">
+                  <button class="btn btn-success btn-sm w-100" onclick="generateUpload()">업로드 생성</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
 
         <div id="path-error" class="alert alert-danger mt-3 mb-0 d-none"></div>
       </div>
@@ -298,18 +316,11 @@
     document.addEventListener('DOMContentLoaded', async () => {
       detailModal = new bootstrap.Modal(document.getElementById('detailModal'));
 
-      // 서버 platform으로 로컬/Railway 판단 (hostname 기반 아님)
-      const ver = await fetch('/api/version').then(r => r.json()).catch(() => ({}));
-      window._isLocal = (ver.platform === 'win32');
-
       // 저장된 경로 불러오기
       const cfg = await fetch('/api/config').then(r => r.json()).catch(() => ({}));
       if (cfg.mes_path) {
         const el = document.getElementById('mes-path');
         if (el) el.value = cfg.mes_path;
-      }
-      if (!window._isLocal) {
-        document.getElementById('railway-hint').classList.remove('d-none');
       }
       if (cfg.master_path) {
         savedMasterPath = cfg.master_path;
@@ -345,14 +356,8 @@
     function fmt(n, dec=2) { return (n||0).toLocaleString('en',{minimumFractionDigits:dec}); }
     function fmtKRW(n)      { return (n||0).toLocaleString('ko'); }
 
-    /* ── 견적 생성 ── */
+    /* ── 경로 방식 생성 (로컬 서버) ── */
     async function generate() {
-      if (!window._isLocal) {
-        // Railway: 파일 선택창 자동 오픈
-        document.getElementById('mes-file-hidden').click();
-        return;
-      }
-      // 로컬: 경로 방식
       const mesPath    = document.getElementById('mes-path').value.trim();
       const masterPath = document.getElementById('master-path').value.trim() || savedMasterPath;
       const errDiv = document.getElementById('path-error');
@@ -361,7 +366,7 @@
         errDiv.classList.remove('d-none'); return;
       }
       if (!masterPath) {
-        errDiv.textContent = '마스터파일 경로를 입력해 주세요.';
+        errDiv.textContent = '마스터파일 경로를 입력해 주세요. (최초 1회 입력 후 자동 저장됩니다)';
         errDiv.classList.remove('d-none');
         document.getElementById('master-edit-row').classList.remove('d-none'); return;
       }
@@ -378,6 +383,7 @@
         });
         const data = await res.json();
         if (data.error) { errDiv.textContent='❌ '+data.error; errDiv.classList.remove('d-none'); return; }
+        // 마스터 경로 저장 성공 시 UI 갱신
         savedMasterPath = masterPath;
         showMasterSaved(masterPath);
         restoreResult(data);
@@ -390,34 +396,34 @@
       }
     }
 
-    /* ── Railway: 파일 선택 후 자동 생성 ── */
-    document.addEventListener('DOMContentLoaded', () => {
-      document.getElementById('mes-file-hidden').addEventListener('change', async function() {
-        const file = this.files[0];
-        if (!file) return;
-        const errDiv = document.getElementById('path-error');
-        errDiv.classList.add('d-none');
-        document.getElementById('loading').classList.remove('d-none');
-        document.getElementById('results').classList.add('d-none');
-        document.getElementById('gen-btn').disabled = true;
-        document.getElementById('loading-msg').textContent = '파일 분석 중… (10~30초 소요)';
-        try {
-          const fd = new FormData();
-          fd.append('mes_file', file);
-          const res  = await fetch('/api/quotation/generate-upload', { method:'POST', body: fd });
-          const data = await res.json();
-          if (data.error) { errDiv.textContent='❌ '+data.error; errDiv.classList.remove('d-none'); return; }
-          restoreResult(data);
-          try { sessionStorage.setItem('quotation_result', JSON.stringify(data)); } catch {}
-        } catch(e) {
-          errDiv.textContent='❌ 오류: '+e.message; errDiv.classList.remove('d-none');
-        } finally {
-          document.getElementById('loading').classList.add('d-none');
-          document.getElementById('gen-btn').disabled = false;
-          this.value = ''; // 같은 파일 재선택 가능하도록 초기화
-        }
-      });
-    });
+    /* ── 파일 업로드 방식 생성 (Railway 클라우드) ── */
+    async function generateUpload() {
+      const mesFile    = document.getElementById('mes-file').files[0];
+      const masterFile = document.getElementById('master-file').files[0];
+      const errDiv = document.getElementById('path-error');
+      if (!mesFile || !masterFile) {
+        errDiv.textContent = 'MES 파일과 마스터파일을 모두 업로드해 주세요.';
+        errDiv.classList.remove('d-none'); return;
+      }
+      errDiv.classList.add('d-none');
+      document.getElementById('loading').classList.remove('d-none');
+      document.getElementById('results').classList.add('d-none');
+      document.getElementById('loading-msg').textContent = '파일 분석 중… (10~30초 소요)';
+      try {
+        const fd = new FormData();
+        fd.append('mes_file', mesFile);
+        fd.append('master_file', masterFile);
+        const res  = await fetch('/api/quotation/generate-upload', { method:'POST', body: fd });
+        const data = await res.json();
+        if (data.error) { errDiv.textContent='❌ '+data.error; errDiv.classList.remove('d-none'); return; }
+        restoreResult(data);
+        try { sessionStorage.setItem('quotation_result', JSON.stringify(data)); } catch {}
+      } catch(e) {
+        errDiv.textContent='❌ 오류: '+e.message; errDiv.classList.remove('d-none');
+      } finally {
+        document.getElementById('loading').classList.add('d-none');
+      }
+    }
 
     /* ── 필터 ── */
     function applyFilter() {
