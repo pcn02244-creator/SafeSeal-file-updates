@@ -1006,14 +1006,26 @@ app.post('/api/quotation/generate-upload', upload.fields([
   if (!masterFile && !hasMasterCache) return res.status(400).json({ error: '마스터파일을 업로드해 주세요.' });
 
   try {
-    const mesWb   = XLSX.read(mesFile.buffer, { cellText: true, raw: false });
-    const mesSheetName = mesWb.SheetNames[0];
-    const mesRows = XLSX.utils.sheet_to_json(mesWb.Sheets[mesSheetName], { header: 1, defval: '' });
+    const mesWb = XLSX.read(mesFile.buffer, { cellText: true, raw: false });
+    // 반입번호 헤더가 있는 시트 자동 탐색
+    let mesSheetName = mesWb.SheetNames[0];
+    for (const sn of mesWb.SheetNames) {
+      const testRows = XLSX.utils.sheet_to_json(mesWb.Sheets[sn], { header: 1, defval: '', range: 0 });
+      for (let ri = 0; ri < Math.min(5, testRows.length); ri++) {
+        if (testRows[ri].includes('반입번호')) { mesSheetName = sn; break; }
+      }
+    }
+    const mesAllRows = XLSX.utils.sheet_to_json(mesWb.Sheets[mesSheetName], { header: 1, defval: '' });
+    // 헤더 행 위치 자동 탐색 (반입번호가 있는 행)
+    let mesHeaderRow = 0;
+    for (let ri = 0; ri < Math.min(5, mesAllRows.length); ri++) {
+      if (mesAllRows[ri].includes('반입번호')) { mesHeaderRow = ri; break; }
+    }
+    // 반입번호 컬럼 인덱스 자동 탐색
+    const mesOrderCol = mesAllRows[mesHeaderRow].indexOf('반입번호');
+    const mesRows = mesAllRows;
     fs.writeFileSync(path.join(DATA_DIR, 'mes_converted.csv'),
       XLSX.utils.sheet_to_csv(mesWb.Sheets[mesSheetName]), 'utf8');
-    // DEBUG: MES 파싱 확인용 (추후 제거)
-    const mesDebug = { sheetName: mesSheetName, totalRows: mesRows.length, header: mesRows[0] ? mesRows[0].slice(0,6) : [], sampleOrderNos: [] };
-    for (let di = 1; di < Math.min(6, mesRows.length); di++) mesDebug.sampleOrderNos.push(String(mesRows[di][3]||''));
 
     let msRows;
     if (masterFile) {
@@ -1026,18 +1038,26 @@ app.post('/api/quotation/generate-upload', upload.fields([
       msRows = XLSX.utils.sheet_to_json(masterWb.Sheets[masterWb.SheetNames[0]], { header: 1, defval: '' });
     }
 
+    // 헤더에서 컬럼 인덱스 동적 결정
+    const hdr = mesAllRows[mesHeaderRow];
+    const COL_ORDER   = mesOrderCol >= 0 ? mesOrderCol : 3;
+    const COL_SN      = hdr.indexOf('SN') >= 0 ? hdr.indexOf('SN') : 5;
+    const COL_PROCESS = hdr.indexOf('SafeSeal타입') >= 0 ? hdr.indexOf('SafeSeal타입') : 2;
+    const COL_MATPN   = hdr.indexOf('사용자재목록') >= 0 ? hdr.indexOf('사용자재목록') : 8;
+    const COL_MATQTY  = hdr.indexOf('사용수량목록') >= 0 ? hdr.indexOf('사용수량목록') : 9;
+
     const mesGroups = {};
-    for (let i = 1; i < mesRows.length; i++) {
+    for (let i = mesHeaderRow + 1; i < mesRows.length; i++) {
       const r = mesRows[i];
-      const orderNo = String(r[3] || '').trim();
+      const orderNo = String(r[COL_ORDER] || '').trim();
       if (!orderNo) continue;
-      const snField  = String(r[5] || '').trim();
+      const snField  = String(r[COL_SN] || '').trim();
       const spaceIdx = snField.indexOf(' ');
       const pn = spaceIdx > 0 ? snField.slice(0, spaceIdx) : snField;
       const sn = spaceIdx > 0 ? snField.slice(spaceIdx + 1) : '';
-      const processType = normalizeProcessKey(String(r[2] || ''));
-      const matPN  = String(r[8] || '').trim();
-      const matQty = parseInt(String(r[9] || '').replace(/[^0-9]/g, '')) || 0;
+      const processType = normalizeProcessKey(String(r[COL_PROCESS] || ''));
+      const matPN  = String(r[COL_MATPN] || '').trim();
+      const matQty = parseInt(String(r[COL_MATQTY] || '').replace(/[^0-9]/g, '')) || 0;
       if (!mesGroups[orderNo]) mesGroups[orderNo] = { processType, pn, sn, materials: [] };
       if (matPN) mesGroups[orderNo].materials.push({ pn: matPN, qty: matQty || 1 });
     }
