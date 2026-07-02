@@ -80,6 +80,7 @@
       <a href="history.html"   class="nav-link text-white">이력 조회</a>
       <a href="quotation.html" class="nav-link text-white active">견적 생성</a>
       <a href="master-fill.html" class="nav-link text-white">마스터 업데이트</a>
+          <button class="btn btn-outline-light btn-sm ms-3" onclick="(function(){var u=prompt('DRM Bridge 서버 주소',localStorage.getItem('drm_bridge_url')||'http://localhost:3001');if(u)localStorage.setItem('drm_bridge_url',u.replace(/\/$/,''));})()">DRM 서버</button>
     </div>
   </nav>
 

@@ -3,8 +3,16 @@
    데이터 저장: localStorage (Supabase 연결 전)
 ══════════════════════════════════════════════════════ */
 
-const APP_VERSION   = 'v20260702-pages';
+const APP_VERSION   = 'v20260703-pages';
 const EXCHANGE_RATE = 1511.26;
+
+// DRM Bridge 서버 주소 (localStorage에 저장, 기본값 localhost)
+function getDrmBridgeUrl() {
+  return localStorage.getItem('drm_bridge_url') || 'http://localhost:3001';
+}
+function setDrmBridgeUrl(url) {
+  localStorage.setItem('drm_bridge_url', url.replace(/\/$/, ''));
+}
 
 // ── localStorage 래퍼 ─────────────────────────────────
 const DB = {
@@ -72,12 +80,13 @@ async function parseExcel(file, type) {
     }
   }
 
-  // DRM 파일 → 로컬 DRM Bridge 서버로 전송
+  // DRM 파일 → DRM Bridge 서버로 전송
+  const bridgeUrl = getDrmBridgeUrl();
   try {
     const form = new FormData();
     form.append('file', file);
     form.append('type', type || 'mes');
-    const resp = await fetch('http://localhost:3001/drm-convert', { method: 'POST', body: form });
+    const resp = await fetch(bridgeUrl + '/drm-convert', { method: 'POST', body: form });
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({}));
       throw new Error(err.error || `브리지 오류 ${resp.status}`);
@@ -85,9 +94,21 @@ async function parseExcel(file, type) {
     const csv = await resp.text();
     return XLSX.read(csv, { type: 'string' });
   } catch (e) {
-    if (e.message.includes('fetch') || e.message.includes('Failed') || e.message.includes('NetworkError') || e.message.includes('ERR_CONNECTION')) {
-      throw new Error('DRM 파일 처리를 위해 로컬 서버가 필요합니다.\n\n' +
-        '바탕화면 spare-parts-app 폴더에서\n"start-drm-bridge.bat" 을 더블클릭 후 다시 시도하세요.');
+    const isConnErr = ['fetch', 'Failed', 'NetworkError', 'ERR_CONNECTION', 'ECONNREFUSED'].some(k => e.message.includes(k));
+    if (isConnErr) {
+      const url = prompt(
+        `DRM 파일 처리 서버에 연결할 수 없습니다.\n\n` +
+        `현재 설정된 주소: ${bridgeUrl}\n\n` +
+        `서버를 운영하는 담당자의 IP 주소를 입력하세요.\n` +
+        `(예: http://192.168.1.50:3001)\n\n` +
+        `[취소] 시 기본값(localhost:3001) 유지`,
+        bridgeUrl
+      );
+      if (url && url.trim()) {
+        setDrmBridgeUrl(url.trim());
+        return parseExcel(file, type); // 새 주소로 재시도
+      }
+      throw new Error(`DRM Bridge 서버(${bridgeUrl})에 연결할 수 없습니다.\n담당자에게 start-drm-bridge.bat 실행을 요청하세요.`);
     }
     throw new Error('DRM 변환 실패: ' + e.message);
   }

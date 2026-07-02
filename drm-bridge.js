@@ -110,12 +110,19 @@ app.post('/drm-convert', upload.single('file'), (req, res) => {
   }
 });
 
-app.listen(PORT, '127.0.0.1', () => {
+app.listen(PORT, '0.0.0.0', () => {
+  const nets = os.networkInterfaces();
+  const ips  = [];
+  for (const iface of Object.values(nets)) {
+    for (const n of iface) {
+      if (n.family === 'IPv4' && !n.internal) ips.push(n.address);
+    }
+  }
   console.log('');
   console.log('====================================');
   console.log(' DRM Bridge 서버 실행 중');
-  console.log(` 포트: http://localhost:${PORT}`);
-  console.log(' GitHub Pages에서 DRM 파일 자동 처리');
+  console.log(` localhost:    http://localhost:${PORT}`);
+  ips.forEach(ip => console.log(` 네트워크IP:  http://${ip}:${PORT}  ← 다른 사람에게 이 주소 알려주세요`));
   console.log(' 종료: Ctrl+C');
   console.log('====================================');
   console.log('');
