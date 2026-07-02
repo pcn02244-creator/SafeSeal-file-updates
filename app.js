@@ -1420,15 +1420,14 @@ function buildMasterFillResult() {
   if (!fs.existsSync(mesCsvPath))    throw new Error('먼저 견적 생성을 실행해 MES 파일을 변환하세요.');
   if (!fs.existsSync(masterCsvPath)) throw new Error('먼저 견적 생성을 실행해 마스터파일을 변환하세요.');
 
-  // ── MES: 작업완료만 수집 ──
+  // ── MES: 전체 수집 (상태 무관) ──
   const mesWb   = XLSX.readFile(mesCsvPath, { cellText: true, raw: false });
   const mesRows = XLSX.utils.sheet_to_json(mesWb.Sheets[mesWb.SheetNames[0]], { header: 1, defval: '' });
   const mesByOrder = {};
   for (let i = 1; i < mesRows.length; i++) {
     const r = mesRows[i];
-    if (String(r[11] || '').trim() !== '작업완료') continue;
     const orderNo = String(r[3] || '').trim();
-    if (!orderNo) continue;
+    if (!orderNo || orderNo === '반입번호') continue;
     const process = String(r[2] || '').trim();
     const matPN   = String(r[8] || '').trim();
     const matQty  = parseInt(String(r[9] || '').replace(/[^0-9]/g, '')) || 1;
@@ -1492,14 +1491,37 @@ function buildMasterFillResult() {
   };
 }
 
-app.post('/api/master/fill-preview', (req, res) => {
-  try { res.json(buildMasterFillResult()); }
+function cacheUploadedFiles(req) {
+  const mesFile    = req.files?.mes_file?.[0];
+  const masterFile = req.files?.master_file?.[0];
+  if (mesFile) {
+    const mesWb = XLSX.read(mesFile.buffer, { cellText: true, raw: false });
+    fs.writeFileSync(path.join(DATA_DIR, 'mes_converted.csv'),
+      XLSX.utils.sheet_to_csv(mesWb.Sheets[mesWb.SheetNames[0]]), 'utf8');
+  }
+  if (masterFile) {
+    const masterWb = XLSX.read(masterFile.buffer, { cellText: true, raw: false });
+    const msName   = masterWb.SheetNames.find(n => /safeseal master/i.test(n)) || masterWb.SheetNames[1] || masterWb.SheetNames[0];
+    fs.writeFileSync(path.join(DATA_DIR, 'master_converted.csv'),
+      XLSX.utils.sheet_to_csv(masterWb.Sheets[msName]), 'utf8');
+  }
+}
+
+app.post('/api/master/fill-preview', upload.fields([
+  { name: 'mes_file', maxCount: 1 },
+  { name: 'master_file', maxCount: 1 }
+]), (req, res) => {
+  try { cacheUploadedFiles(req); res.json(buildMasterFillResult()); }
   catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 // ── API: 마스터 업데이트 프리뷰 엑셀 다운로드 ────────────
-app.post('/api/master/fill-excel', (req, res) => {
+app.post('/api/master/fill-excel', upload.fields([
+  { name: 'mes_file', maxCount: 1 },
+  { name: 'master_file', maxCount: 1 }
+]), (req, res) => {
   try {
+    cacheUploadedFiles(req);
     const { stats, updates } = buildMasterFillResult();
     const COLS = ['AT','AU','AV','AW','AX','AY','AZ','BA','BB','BC','BD','BE','BF'];
     const COL_LABELS = {

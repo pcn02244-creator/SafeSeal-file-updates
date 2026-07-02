@@ -100,9 +100,18 @@
           </div>
         </div>
 
+        <!-- 마스터파일 (선택) -->
+        <div class="mb-3">
+          <label class="form-label small fw-semibold text-muted text-uppercase" style="letter-spacing:.05em">마스터파일 <span class="text-success fw-normal">(선택 — 없으면 서버 저장본 자동 적용)</span></label>
+          <div class="drop-zone" id="master-drop-zone" onclick="document.getElementById('master-file-input').click()">
+            <input type="file" id="master-file-input" accept=".xlsx,.xls">
+            <div id="master-drop-label"><div style="font-size:1.5rem">📂</div><div class="small mt-1 fw-semibold">마스터 Excel 드래그 또는 클릭</div></div>
+            <div id="master-drop-filename" class="fw-semibold text-success d-none"></div>
+          </div>
+        </div>
+
         <div class="d-flex gap-3 align-items-center">
           <button class="btn btn-primary fw-semibold px-4" id="gen-btn" onclick="generate()">📊 견적 생성</button>
-          <span class="small text-muted">마스터파일은 서버 저장본 자동 적용</span>
         </div>
 
         <div id="path-error" class="alert alert-danger mt-3 mb-0 d-none"></div>
@@ -298,32 +307,28 @@
     }
 
     /* ── 드래그앤드롭 초기화 ── */
-    const _dropZone  = document.getElementById('mes-drop-zone');
-    const _fileInput = document.getElementById('mes-file-input');
-
-    _fileInput.addEventListener('change', () => _updateDropLabel(_fileInput.files[0]));
-    _dropZone.addEventListener('dragover',  e => { e.preventDefault(); _dropZone.classList.add('dragover'); });
-    _dropZone.addEventListener('dragleave', ()  => _dropZone.classList.remove('dragover'));
-    _dropZone.addEventListener('drop', e => {
-      e.preventDefault();
-      _dropZone.classList.remove('dragover');
-      const file = e.dataTransfer.files[0];
-      if (file) {
-        const dt = new DataTransfer();
-        dt.items.add(file);
-        _fileInput.files = dt.files;
-        _updateDropLabel(file);
-      }
-    });
-
-    function _updateDropLabel(file) {
-      if (!file) return;
-      document.getElementById('drop-label').classList.add('d-none');
-      const fn = document.getElementById('drop-filename');
-      fn.textContent = '✅ ' + file.name;
-      fn.classList.remove('d-none');
-      _dropZone.classList.add('has-file');
+    function initDrop(dzId, inputId, labelId, nameId) {
+      const dz  = document.getElementById(dzId);
+      const inp = document.getElementById(inputId);
+      inp.addEventListener('change', () => _setFile(dz, inp.files[0], labelId, nameId));
+      dz.addEventListener('dragover',  e => { e.preventDefault(); dz.classList.add('dragover'); });
+      dz.addEventListener('dragleave', ()  => dz.classList.remove('dragover'));
+      dz.addEventListener('drop', e => {
+        e.preventDefault(); dz.classList.remove('dragover');
+        const f = e.dataTransfer.files[0]; if (!f) return;
+        const dt = new DataTransfer(); dt.items.add(f); inp.files = dt.files;
+        _setFile(dz, f, labelId, nameId);
+      });
     }
+    function _setFile(dz, file, labelId, nameId) {
+      document.getElementById(labelId).classList.add('d-none');
+      const fn = document.getElementById(nameId);
+      fn.textContent = '✅ ' + file.name; fn.classList.remove('d-none');
+      dz.classList.add('has-file');
+    }
+    initDrop('mes-drop-zone',    'mes-file-input',    'drop-label',        'drop-filename');
+    initDrop('master-drop-zone', 'master-file-input', 'master-drop-label', 'master-drop-filename');
+    const _fileInput = document.getElementById('mes-file-input');
 
     document.addEventListener('DOMContentLoaded', () => {
       detailModal = new bootstrap.Modal(document.getElementById('detailModal'));
@@ -352,6 +357,8 @@
       try {
         const fd = new FormData();
         fd.append('mes_file', mesFile);
+        const masterFile = document.getElementById('master-file-input').files[0];
+        if (masterFile) fd.append('master_file', masterFile);
         const res  = await fetch('/api/quotation/generate-upload', { method:'POST', body: fd });
         const data = await res.json();
         if (data.error) { errDiv.textContent='❌ '+data.error; errDiv.classList.remove('d-none'); return; }

@@ -21,6 +21,11 @@
     .skip-cell { color:#adb5bd; font-style:italic; font-size:.78rem; }
     .write-cell { color:#198754; font-size:.82rem; font-weight:500; }
     .empty-cell { color:#dee2e6; font-size:.78rem; }
+    .drop-zone { border:2px dashed #adb5bd; border-radius:8px; padding:18px 12px; text-align:center;
+      cursor:pointer; transition:border-color .2s,background .2s; background:#fafbfc; }
+    .drop-zone:hover,.drop-zone.dragover { border-color:#1a73e8; background:#eef4ff; }
+    .drop-zone.has-file { border-color:#28a745; background:#f0fff4; }
+    .drop-zone input[type=file] { display:none; }
   </style>
 </head>
 <body>
@@ -54,11 +59,31 @@
     <!-- 오류 -->
     <div id="error-msg" class="alert alert-danger d-none mb-4"></div>
 
-    <!-- 실행 버튼 -->
+    <!-- 파일 업로드 (선택) -->
     <div class="card mb-4" style="border:none;border-radius:10px;box-shadow:0 1px 6px rgba(0,0,0,.07)">
-      <div class="card-body d-flex align-items-center gap-3">
-        <div class="text-muted small">견적 생성에서 사용한 MES·마스터파일 경로가 자동으로 사용됩니다.</div>
-        <button class="btn btn-primary ms-auto" id="preview-btn" onclick="runPreview()">🔍 프리뷰 생성</button>
+      <div class="card-body">
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold text-muted text-uppercase" style="letter-spacing:.05em">MES 파일 <span class="text-success fw-normal">(선택 — 없으면 서버 캐시 사용)</span></label>
+            <div class="drop-zone" id="mes-dz" onclick="document.getElementById('mf-mes').click()">
+              <input type="file" id="mf-mes" accept=".xlsx,.xls,.csv">
+              <div id="mes-dz-label"><div style="font-size:1.5rem">📂</div><div class="small mt-1">MES 파일 드래그 또는 클릭</div></div>
+              <div id="mes-dz-name" class="fw-semibold text-success small d-none"></div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold text-muted text-uppercase" style="letter-spacing:.05em">마스터파일 <span class="text-success fw-normal">(선택 — 없으면 서버 저장본 사용)</span></label>
+            <div class="drop-zone" id="master-dz" onclick="document.getElementById('mf-master').click()">
+              <input type="file" id="mf-master" accept=".xlsx,.xls">
+              <div id="master-dz-label"><div style="font-size:1.5rem">📂</div><div class="small mt-1">마스터 Excel 드래그 또는 클릭</div></div>
+              <div id="master-dz-name" class="fw-semibold text-success small d-none"></div>
+            </div>
+          </div>
+        </div>
+        <div class="d-flex align-items-center gap-3">
+          <button class="btn btn-primary fw-semibold px-4" id="preview-btn" onclick="runPreview()">🔍 프리뷰 생성</button>
+          <span class="small text-muted">파일을 올리지 않으면 서버에 저장된 최신본이 자동 사용됩니다.</span>
+        </div>
       </div>
     </div>
 
@@ -131,6 +156,29 @@
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <script>
+    /* ── 드래그앤드롭 초기화 ── */
+    function initDrop(dzId, inputId, labelId, nameId) {
+      const dz = document.getElementById(dzId);
+      const inp = document.getElementById(inputId);
+      inp.addEventListener('change', () => setFile(dz, inp.files[0], labelId, nameId));
+      dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dragover'); });
+      dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
+      dz.addEventListener('drop', e => {
+        e.preventDefault(); dz.classList.remove('dragover');
+        const f = e.dataTransfer.files[0]; if (!f) return;
+        const dt = new DataTransfer(); dt.items.add(f); inp.files = dt.files;
+        setFile(dz, f, labelId, nameId);
+      });
+    }
+    function setFile(dz, file, labelId, nameId) {
+      document.getElementById(labelId).classList.add('d-none');
+      const n = document.getElementById(nameId);
+      n.textContent = '✅ ' + file.name; n.classList.remove('d-none');
+      dz.classList.add('has-file');
+    }
+    initDrop('mes-dz',    'mf-mes',    'mes-dz-label',    'mes-dz-name');
+    initDrop('master-dz', 'mf-master', 'master-dz-label', 'master-dz-name');
+
     let previewData = null;
     let activeCardId = 'card-update';
 
@@ -214,9 +262,13 @@
       document.getElementById('results').classList.add('d-none');
       document.getElementById('loading').classList.remove('d-none');
       document.getElementById('preview-btn').disabled = true;
-
       try {
-        const res  = await fetch('/api/master/fill-preview', { method:'POST', headers:{'Content-Type':'application/json'}, body:'{}' });
+        const fd = new FormData();
+        const mesF    = document.getElementById('mf-mes').files[0];
+        const masterF = document.getElementById('mf-master').files[0];
+        if (mesF)    fd.append('mes_file',    mesF);
+        if (masterF) fd.append('master_file', masterF);
+        const res  = await fetch('/api/master/fill-preview', { method:'POST', body: fd });
         const data = await res.json();
         if (data.error) { showError(data.error); return; }
         applyPreviewData(data);
