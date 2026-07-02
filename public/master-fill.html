@@ -6,6 +6,8 @@
   <title>마스터 업데이트 - 파트 단가 관리 시스템</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="style.css" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="js/core.js"></script>
   <style>
     body { background:#f0f2f5; }
     .stat-card { background:#fff; border-radius:10px; border-left:4px solid #dee2e6;
@@ -194,7 +196,8 @@
       filterTable('updates');
     }
 
-    document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('DOMContentLoaded', async () => {
+      await initData();
       try {
         const saved = sessionStorage.getItem('masterfill_result');
         if (saved) applyPreviewData(JSON.parse(saved));
@@ -263,14 +266,9 @@
       document.getElementById('loading').classList.remove('d-none');
       document.getElementById('preview-btn').disabled = true;
       try {
-        const fd = new FormData();
         const mesF    = document.getElementById('mf-mes').files[0];
         const masterF = document.getElementById('mf-master').files[0];
-        if (mesF)    fd.append('mes_file',    mesF);
-        if (masterF) fd.append('master_file', masterF);
-        const res  = await fetch('/api/master/fill-preview', { method:'POST', body: fd });
-        const data = await res.json();
-        if (data.error) { showError(data.error); return; }
+        const data = await buildMasterFillResult(mesF || null, masterF || null);
         applyPreviewData(data);
         try { sessionStorage.setItem('masterfill_result', JSON.stringify(data)); } catch {}
       } catch(e) { showError('오류: ' + e.message); }
@@ -280,19 +278,19 @@
       }
     }
 
-    async function downloadExcel() {
-      const btn = document.getElementById('excel-btn');
-      btn.disabled = true; btn.textContent = '생성 중…';
-      try {
-        const res = await fetch('/api/master/fill-excel', { method:'POST', headers:{'Content-Type':'application/json'}, body:'{}' });
-        if (!res.ok) { const d = await res.json(); alert('❌ ' + d.error); return; }
-        const blob = await res.blob();
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = `마스터업데이트_${new Date().toISOString().slice(0,10)}.xlsx`;
-        a.click();
-      } catch(e) { alert('❌ ' + e.message); }
-      finally { btn.disabled = false; btn.textContent = '📥 엑셀 다운로드'; }
+    function downloadExcel() {
+      if (!previewData || !previewData.updates.length) { alert('업데이트 대상이 없습니다.'); return; }
+      const rows = [['행','수주번호','PN','SN','AT','AU','AW','AX','AY','AZ','BA','BB','BC','BD','BE','BF']];
+      for (const u of previewData.updates) {
+        const w = u.toWrite;
+        rows.push([u.excelRow, u.orderNo, u.pn||'', u.sn||'',
+          w.AT||'', w.AU||'', w.AW||'', w.AX||'', w.AY||'',
+          w.AZ||'', w.BA||'', w.BB||'', w.BC||'', w.BD||'', w.BE||'', w.BF||'']);
+      }
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, '마스터업데이트');
+      XLSX.writeFile(wb, `마스터업데이트_${new Date().toISOString().slice(0,10)}.xlsx`);
     }
 
     function showError(msg) {

@@ -1,0 +1,5 @@
+{
+  "WIPE DOWN":  { "name": "Wipe-down",  "usd": 190,    "krw": 286900 },
+  "CHEM SOAK":  { "name": "Chem soak",  "usd": 339.43, "krw": 513000 },
+  "REFURB":     { "name": "Refurb",     "usd": 423.43, "krw": 639900 }
+}

@@ -6,6 +6,8 @@
   <title>견적 생성 - 파트 단가 관리 시스템</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="style.css" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="js/core.js"></script>
 
   <style>
     body { background: #f0f2f5; }
@@ -330,8 +332,9 @@
     initDrop('master-drop-zone', 'master-file-input', 'master-drop-label', 'master-drop-filename');
     const _fileInput = document.getElementById('mes-file-input');
 
-    document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('DOMContentLoaded', async () => {
       detailModal = new bootstrap.Modal(document.getElementById('detailModal'));
+      await initData();
       try {
         const saved = sessionStorage.getItem('quotation_result');
         if (saved) restoreResult(JSON.parse(saved));
@@ -355,13 +358,8 @@
       document.getElementById('gen-btn').disabled = true;
       document.getElementById('loading-msg').textContent = '파일 분석 중… (10~30초 소요)';
       try {
-        const fd = new FormData();
-        fd.append('mes_file', mesFile);
         const masterFile = document.getElementById('master-file-input').files[0];
-        if (masterFile) fd.append('master_file', masterFile);
-        const res  = await fetch('/api/quotation/generate-upload', { method:'POST', body: fd });
-        const data = await res.json();
-        if (data.error) { errDiv.textContent='❌ '+data.error; errDiv.classList.remove('d-none'); return; }
+        const data = await generateQuotation(mesFile, masterFile);
         restoreResult(data);
         try { sessionStorage.setItem('quotation_result', JSON.stringify(data)); } catch {}
       } catch(e) {
@@ -642,22 +640,10 @@
     }
 
     /* ── 엑셀 다운로드 ── */
-    async function exportExcel() {
+    function exportExcel() {
       const src = filteredData.length ? filteredData : quotationData;
       if (!src.length) { alert('내보낼 데이터가 없습니다.'); return; }
-      try {
-        const res = await fetch('/api/quotation/excel', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ quotation: src })
-        });
-        if (!res.ok) { const d = await res.json(); alert('❌ ' + (d.error || '엑셀 생성 실패')); return; }
-        const blob = await res.blob();
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = `견적_${new Date().toISOString().slice(0,10)}.xlsx`;
-        a.click();
-      } catch(e) { alert('❌ 오류: ' + e.message); }
+      try { downloadQuotationExcel(src); } catch(e) { alert('❌ 오류: ' + e.message); }
     }
 
     /* ── CSV ── */
