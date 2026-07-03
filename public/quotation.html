@@ -90,27 +90,32 @@
     <div class="card mb-4" style="border:none;border-radius:10px;box-shadow:0 1px 6px rgba(0,0,0,.07)">
       <div class="card-body">
 
-        <!-- MES 파일 드래그앤드롭 -->
-        <div class="mb-3">
-          <label class="form-label small fw-semibold text-muted text-uppercase" style="letter-spacing:.05em">MES 추출 파일</label>
-          <div class="drop-zone" id="mes-drop-zone" onclick="document.getElementById('mes-file-input').click()">
-            <input type="file" id="mes-file-input" accept=".xlsx,.xls,.csv">
-            <div id="drop-label">
-              <div style="font-size:2rem">📂</div>
-              <div class="mt-1 fw-semibold">MES 파일을 여기에 드래그하거나 클릭해서 선택</div>
-              <div class="small text-muted mt-1">.xlsx / .xls 지원</div>
+        <div class="row g-3 mb-3">
+          <!-- MES 파일 -->
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold text-muted text-uppercase mb-2" style="letter-spacing:.06em">MES 추출 파일 <span class="text-danger">*</span></label>
+            <div class="drop-zone" id="mes-drop-zone" onclick="document.getElementById('mes-file-input').click()">
+              <input type="file" id="mes-file-input" accept=".xlsx,.xls,.csv">
+              <div id="drop-label">
+                <div style="font-size:2rem;line-height:1">📄</div>
+                <div class="fw-semibold mt-2">드래그하거나 클릭해서 선택</div>
+                <div class="small text-muted mt-1">.xlsx / .xls / .csv</div>
+              </div>
+              <div id="drop-filename" class="fw-semibold text-success d-none"></div>
             </div>
-            <div id="drop-filename" class="fw-semibold text-success d-none"></div>
           </div>
-        </div>
-
-        <!-- 마스터파일 (선택) -->
-        <div class="mb-3">
-          <label class="form-label small fw-semibold text-muted text-uppercase" style="letter-spacing:.05em">마스터파일 <span class="text-success fw-normal">(선택 — 없으면 서버 저장본 자동 적용)</span></label>
-          <div class="drop-zone" id="master-drop-zone" onclick="document.getElementById('master-file-input').click()">
-            <input type="file" id="master-file-input" accept=".xlsx,.xls">
-            <div id="master-drop-label"><div style="font-size:1.5rem">📂</div><div class="small mt-1 fw-semibold">마스터 Excel 드래그 또는 클릭</div></div>
-            <div id="master-drop-filename" class="fw-semibold text-success d-none"></div>
+          <!-- 마스터 파일 -->
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold text-muted text-uppercase mb-2" style="letter-spacing:.06em">마스터 파일 <span class="text-muted fw-normal">(선택)</span></label>
+            <div class="drop-zone" id="master-drop-zone" onclick="document.getElementById('master-file-input').click()">
+              <input type="file" id="master-file-input" accept=".xlsx,.xls">
+              <div id="master-drop-label">
+                <div style="font-size:2rem;line-height:1">📋</div>
+                <div class="fw-semibold mt-2">드래그하거나 클릭해서 선택</div>
+                <div class="small text-muted mt-1">.xlsx / .xls</div>
+              </div>
+              <div id="master-drop-filename" class="fw-semibold text-success d-none"></div>
+            </div>
           </div>
         </div>
 
