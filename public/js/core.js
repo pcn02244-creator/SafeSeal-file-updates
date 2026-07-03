@@ -1,43 +1,106 @@
 /* ══════════════════════════════════════════════════════
    core.js — 클라이언트 전용 비즈니스 로직
-   데이터 저장: localStorage (Supabase 연결 전)
+   데이터 저장: Supabase (localStorage는 세션 캐시)
 ══════════════════════════════════════════════════════ */
 
-const APP_VERSION   = 'v20260703-pages';
-const EXCHANGE_RATE = 1511.26;
+const APP_VERSION    = 'v20260703-supabase';
+const EXCHANGE_RATE  = 1511.26;
+const SB_URL         = 'https://ydekxlonxjwfhdhhbpdc.supabase.co';
+const SB_KEY         = 'sb_publishable_aCdcvXkU_hz35DpyrmSCkw_F8TYKZUJ';
 
+let _sb = null;
+function getSB() {
+  if (!_sb && window.supabase) _sb = window.supabase.createClient(SB_URL, SB_KEY);
+  return _sb;
+}
 
-// ── localStorage 래퍼 ─────────────────────────────────
+// ── localStorage 캐시 래퍼 ────────────────────────────
 const DB = {
   _g: k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
   _s: (k, v) => localStorage.setItem(k, JSON.stringify(v)),
-  parts:        { get: () => DB._g('parts')         || [], set: v => DB._s('parts', v) },
-  usage:        { get: () => DB._g('usage')         || [], set: v => DB._s('usage', v) },
-  lots:         { get: () => DB._g('lots')          || [], set: v => DB._s('lots', v) },
-  processCosts: { get: () => DB._g('process_costs') || {}, set: v => DB._s('process_costs', v) },
+  parts:        { get: () => DB._g('parts')         || [], set: v => { DB._s('parts', v);        _sbSync('parts', v); } },
+  usage:        { get: () => DB._g('usage')         || [], set: v => { DB._s('usage', v);         _sbSync('usage', v); } },
+  lots:         { get: () => DB._g('lots')          || [], set: v => { DB._s('lots', v);          _sbSync('lots', v); } },
+  processCosts: { get: () => DB._g('process_costs') || {}, set: v => { DB._s('process_costs', v); _sbSync('process_costs', v); } },
 };
 
-// ── 최초 1회: 백업 데이터로 초기화 ───────────────────
-async function initData() {
-  if (localStorage.getItem('data_initialized')) return;
+// Supabase에 백그라운드 동기화 (fire & forget)
+async function _sbSync(table, data) {
+  const sb = getSB();
+  if (!sb) return;
   try {
-    const base = (() => {
-      const segs = location.pathname.split('/');
-      if (segs.length > 2 && segs[1]) return '/' + segs[1];
-      return '';
-    })();
+    if (table === 'process_costs') {
+      const rows = Object.entries(data).map(([key, v]) => ({ key, name: v.name, usd: v.usd, krw: v.krw }));
+      await sb.from('process_costs').upsert(rows, { onConflict: 'key' });
+    } else if (table === 'parts') {
+      await sb.from('parts').upsert(data, { onConflict: 'part_number' });
+    } else {
+      await sb.from(table).upsert(data, { onConflict: 'id' });
+    }
+  } catch(e) { console.warn('Supabase sync 오류:', e.message); }
+}
+
+// ── 초기화: Supabase에서 읽어 로컬 캐시 갱신 ─────────
+async function initData() {
+  const sb = getSB();
+  if (!sb) {
+    // Supabase 없을 때 백업 JSON으로 폴백
+    if (localStorage.getItem('data_initialized')) return;
+    try {
+      const base = (() => { const s = location.pathname.split('/'); return s.length > 2 && s[1] ? '/' + s[1] : ''; })();
+      const [parts, usage, lots, pc] = await Promise.all([
+        fetch(`${base}/data/parts.json`).then(r => r.json()),
+        fetch(`${base}/data/usage.json`).then(r => r.json()),
+        fetch(`${base}/data/lots.json`).then(r => r.json()),
+        fetch(`${base}/data/process_costs.json`).then(r => r.json()),
+      ]);
+      DB._s('parts', parts); DB._s('usage', usage); DB._s('lots', lots); DB._s('process_costs', pc);
+      localStorage.setItem('data_initialized', '1');
+    } catch(e) { console.warn('초기 데이터 로드 실패:', e); }
+    return;
+  }
+
+  // Supabase에서 최신 데이터 로드
+  const [p, u, l, c] = await Promise.all([
+    sb.from('parts').select('*').order('id'),
+    sb.from('usage').select('*').order('id'),
+    sb.from('lots').select('*').order('id'),
+    sb.from('process_costs').select('*'),
+  ]);
+
+  if (p.data) DB._s('parts', p.data);
+  if (u.data) DB._s('usage', u.data);
+  if (l.data) DB._s('lots', l.data);
+  if (c.data) {
+    const obj = {};
+    c.data.forEach(r => { obj[r.key] = { name: r.name, usd: r.usd, krw: r.krw }; });
+    DB._s('process_costs', obj);
+  }
+
+  // Supabase가 비어있으면 백업 JSON으로 초기 데이터 업로드
+  if (!p.data?.length) await _uploadBackupData(sb);
+}
+
+async function _uploadBackupData(sb) {
+  try {
+    const base = (() => { const s = location.pathname.split('/'); return s.length > 2 && s[1] ? '/' + s[1] : ''; })();
     const [parts, usage, lots, pc] = await Promise.all([
       fetch(`${base}/data/parts.json`).then(r => r.json()),
       fetch(`${base}/data/usage.json`).then(r => r.json()),
       fetch(`${base}/data/lots.json`).then(r => r.json()),
       fetch(`${base}/data/process_costs.json`).then(r => r.json()),
     ]);
-    DB.parts.set(parts);
-    DB.usage.set(usage);
-    DB.lots.set(lots);
-    DB.processCosts.set(pc);
-    localStorage.setItem('data_initialized', '1');
-  } catch(e) { console.warn('초기 데이터 로드 실패:', e); }
+    const pcRows = Object.entries(pc).map(([key, v]) => ({ key, name: v.name, usd: v.usd, krw: v.krw }));
+    await Promise.all([
+      sb.from('parts').upsert(parts, { onConflict: 'part_number' }),
+      sb.from('usage').upsert(usage, { onConflict: 'id' }),
+      sb.from('lots').upsert(lots,  { onConflict: 'id' }),
+      sb.from('process_costs').upsert(pcRows, { onConflict: 'key' }),
+    ]);
+    // 로컬 캐시 갱신
+    DB._s('parts', parts); DB._s('usage', usage); DB._s('lots', lots); DB._s('process_costs', pc);
+    console.log('✅ Supabase 초기 데이터 업로드 완료');
+  } catch(e) { console.warn('초기 데이터 업로드 실패:', e); }
 }
 
 // ── 헬퍼 ─────────────────────────────────────────────
