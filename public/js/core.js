@@ -278,6 +278,18 @@ async function generateQuotation(mesFile, masterFile) {
     });
   }
 
+  const debug = {
+    masterTotalRows: msRows.length,
+    masterFiltered: masterTargets.length,
+    mesGroupCount: Object.keys(mesGroups).length,
+    partsCount: parts.length,
+    processCostKeys: Object.keys(processCosts),
+    masterHeader: (msRows[1] || []).slice(0, 22).map((v,i) => `[${i}]${v}`).join(' | '),
+    sampleMasterOrders: masterTargets.slice(0, 3).map(t => t.orderNo),
+    sampleMesOrders: Object.keys(mesGroups).slice(0, 3),
+  };
+  console.log('[DEBUG]', debug);
+
   return {
     summary: {
       totalMES: masterTargets.length, quotationCount: quotation.length, issueCount: issues.length,
@@ -288,7 +300,7 @@ async function generateQuotation(mesFile, masterFile) {
       totalUSD:        quotation.reduce((s,q)=>s+q.totalUSD,0),
       totalKRW:        quotation.reduce((s,q)=>s+q.totalKRW,0),
     },
-    quotation, issues,
+    quotation, issues, debug,
   };
 }
 
