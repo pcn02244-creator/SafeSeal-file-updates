@@ -165,7 +165,7 @@ async function generateQuotation(mesFile, masterFile) {
     if (matPN) mesGroups[orderNo].materials.push({ pn: matPN, qty: matQty || 1 });
   }
   // MES 캐시 저장
-  localStorage.setItem('mes_rows_cache', JSON.stringify(mesAllRows));
+  try { localStorage.setItem('mes_rows_cache', JSON.stringify(mesAllRows)); } catch {}
 
   let msRows;
   if (masterFile) {
@@ -173,7 +173,7 @@ async function generateQuotation(mesFile, masterFile) {
     const msName   = masterWb.SheetNames.find(n => /safeseal master/i.test(n))
                      || masterWb.SheetNames[1] || masterWb.SheetNames[0];
     msRows = XLSX.utils.sheet_to_json(masterWb.Sheets[msName], { header: 1, defval: '' });
-    localStorage.setItem('master_rows_cache', JSON.stringify(msRows));
+    try { localStorage.setItem('master_rows_cache', JSON.stringify(msRows)); } catch {}
   } else {
     const cached = localStorage.getItem('master_rows_cache');
     if (!cached) throw new Error('마스터파일을 업로드해 주세요.');
@@ -369,7 +369,7 @@ async function buildMasterFillResult(mesFile, masterFile) {
     const msName   = masterWb.SheetNames.find(n => /safeseal master/i.test(n))
                      || masterWb.SheetNames[1] || masterWb.SheetNames[0];
     masterRows = XLSX.utils.sheet_to_json(masterWb.Sheets[msName], { header: 1, defval: '' });
-    localStorage.setItem('master_rows_cache', JSON.stringify(masterRows));
+    try { localStorage.setItem('master_rows_cache', JSON.stringify(masterRows)); } catch {}
   } else {
     const cached = localStorage.getItem('master_rows_cache');
     if (!cached) throw new Error('마스터파일을 업로드해 주세요.');
