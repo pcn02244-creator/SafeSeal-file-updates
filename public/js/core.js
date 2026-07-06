@@ -156,12 +156,18 @@ async function parseExcel(file, drmType) {
 
 // ── 견적 생성 ─────────────────────────────────────────
 async function generateQuotation(mesFile, masterFile) {
-  const mesWb       = await parseExcel(mesFile);
+  // SheetJS가 XLS 특정 컬럼을 바이너리로 오독하는 문제 → drm-bridge(Excel COM) 우선 사용
+  let mesWb;
+  try {
+    mesWb = await _drmBridgeParse(mesFile, 'mes');
+  } catch(e) {
+    mesWb = await parseExcel(mesFile); // drm-bridge 미실행 시 fallback
+  }
   const mesAllRows  = XLSX.utils.sheet_to_json(mesWb.Sheets[mesWb.SheetNames[0]], { header: 1, defval: '' });
 
-  let mesHeaderRow = 0, mesOrderCol = -1;
-  // 1차: 컬럼 이름으로 탐색 (trim 처리)
-  const ORDER_COL_NAMES = ['반출번호', '수주번호', '반입번호'];
+  // 헤더 탐색 (trim 비교)
+  let mesHeaderRow = 0, mesOrderCol = 3;
+  const ORDER_COL_NAMES = ['반입번호', '반출번호', '수주번호'];
   outer: for (let ri = 0; ri < Math.min(10, mesAllRows.length); ri++) {
     const row = mesAllRows[ri];
     for (let ci = 0; ci < row.length; ci++) {
@@ -170,21 +176,6 @@ async function generateQuotation(mesFile, masterFile) {
       }
     }
   }
-  // 2차: 값 패턴으로 탐색 (YYMMDD-NNN-N 형태)
-  if (mesOrderCol < 0) {
-    const ORDER_PAT = /^\d{6}-\d{3,4}-\d+$/;
-    outer2: for (let ri = 1; ri < Math.min(30, mesAllRows.length); ri++) {
-      const row = mesAllRows[ri];
-      for (let ci = 0; ci < row.length; ci++) {
-        if (ORDER_PAT.test(String(row[ci] || '').trim())) {
-          mesOrderCol = ci;
-          mesHeaderRow = Math.max(0, ri - 1);
-          break outer2;
-        }
-      }
-    }
-  }
-  if (mesOrderCol < 0) mesOrderCol = 3; // 최후 기본값
   const hdr = mesAllRows[mesHeaderRow];
   function _findMesCol(name, def) {
     for (let ci = 0; ci < hdr.length; ci++) {
