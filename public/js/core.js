@@ -190,12 +190,13 @@ async function generateQuotation(mesFile, masterFile) {
   try { localStorage.setItem('mes_rows_cache', JSON.stringify(mesAllRows)); } catch {}
 
   let masterTargets = [];
+  let msRows = [];
   if (masterFile) {
     // 마스터파일 업로드됨 → 파싱 후 Supabase 동기화
     const masterWb = await parseExcel(masterFile, 'master');
     const msName   = masterWb.SheetNames.find(n => /safeseal master/i.test(n))
                      || masterWb.SheetNames[1] || masterWb.SheetNames[0];
-    const msRows   = XLSX.utils.sheet_to_json(masterWb.Sheets[msName], { header: 1, defval: '' });
+    msRows = XLSX.utils.sheet_to_json(masterWb.Sheets[msName], { header: 1, defval: '' });
     const now      = new Date().toISOString();
     for (let i = 2; i < msRows.length; i++) {
       const r        = msRows[i];
@@ -348,6 +349,7 @@ async function generateQuotation(mesFile, masterFile) {
     sampleDataRow: dbgSampleRow.slice(0,22).map((v,i)=>`[${i}]${v||'빈칸'}`).join(' | '),
     sampleMasterOrders: masterTargets.slice(0,3).map(t=>t.orderNo),
     sampleMesOrders: Object.keys(mesGroups).slice(0,3),
+    issueBreakdown: issues.reduce((acc, i) => { acc[i.issue] = (acc[i.issue]||0)+1; return acc; }, {}),
   };
   console.log('[DEBUG]', JSON.stringify(debug, null, 2));
 

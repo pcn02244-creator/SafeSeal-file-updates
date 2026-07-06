@@ -371,17 +371,14 @@
         try { sessionStorage.setItem('quotation_result', JSON.stringify(data)); } catch {}
         if (data.summary.quotationCount === 0 && data.debug) {
           const d = data.debug;
+          const issueText = Object.entries(d.issueBreakdown||{}).map(([k,v])=>`${k}: ${v}건`).join(' / ') || '없음';
           errDiv.innerHTML = `<b>⚠️ 견적 0건 — 원인 진단</b><br><br>
+            <b>이슈 내역:</b> ${issueText}<br><br>
+            <b>마스터 수주번호 샘플:</b> [${(d.sampleMasterOrders||[]).join(' | ')}]<br>
+            <b>MES 반입번호 샘플:</b> [${(d.sampleMesOrders||[]).join(' | ')}]<br><br>
             <b>마스터파일:</b> 전체 ${d.masterTotalRows}행 → 필터통과 ${d.masterFiltered}행<br>
-            &nbsp;&nbsp;• 수주번호(K열=10) 없어서 제외: ${d.skipNoOrder}행<br>
-            &nbsp;&nbsp;• 세정일(T열=19) 없어서 제외: ${d.skipNoClnDate}행<br>
-            &nbsp;&nbsp;• 납기완료(U열=20) 있어서 제외: ${d.skipHasDelivery}행<br><br>
-            <b>공정단가 등록:</b> [${d.processCostKeys.join(', ')||'없음'}]<br>
-            <b>파트 등록 수:</b> ${d.partsCount}개<br>
-            <b>MES 수주건수:</b> ${d.mesGroupCount}건<br><br>
-            <b>마스터 0행:</b> <small>${d.masterHeader1}</small><br>
-            <b>마스터 1행:</b> <small>${d.masterHeader2}</small><br>
-            <b>마스터 2행(첫데이터):</b> <small>${d.sampleDataRow}</small>`;
+            &nbsp;&nbsp;• 수주번호 없어서 제외: ${d.skipNoOrder}행 / 세정일 없어서: ${d.skipNoClnDate}행 / 납기완료 있어서: ${d.skipHasDelivery}행<br>
+            <b>MES 수주건수:</b> ${d.mesGroupCount}건 / <b>파트:</b> ${d.partsCount}개 / <b>공정단가:</b> [${d.processCostKeys.join(', ')||'없음'}]`;
           errDiv.classList.remove('d-none');
         }
       } catch(e) {
