@@ -123,11 +123,33 @@ function readFileAsArrayBuffer(file) {
   });
 }
 
-async function parseExcel(file) {
+async function _drmBridgeParse(file, type) {
+  const form = new FormData();
+  form.append('file', file);
+  form.append('type', type || 'mes');
+  const res = await fetch('http://localhost:3001/drm-convert', { method: 'POST', body: form });
+  if (!res.ok) throw new Error('DRM 브리지 오류 ' + res.status);
+  const csv = await res.text();
+  return XLSX.read(csv, { type: 'string' });
+}
+
+function _isDrmWorkbook(wb) {
+  try {
+    const sh = wb.Sheets[wb.SheetNames[0]];
+    const a1 = sh && sh['A1'];
+    const v  = a1 ? String(a1.v || a1.w || '') : '';
+    return /drm|fasoo|encrypt/i.test(v);
+  } catch { return false; }
+}
+
+async function parseExcel(file, drmType) {
   const buf = await readFileAsArrayBuffer(file);
   try {
-    return XLSX.read(buf, { cellText: true, raw: false });
+    const wb = XLSX.read(buf, { cellText: true, raw: false });
+    if (drmType && _isDrmWorkbook(wb)) return await _drmBridgeParse(file, drmType);
+    return wb;
   } catch (e) {
+    if (drmType) return await _drmBridgeParse(file, drmType);
     throw new Error('파일을 읽을 수 없습니다: ' + e.message);
   }
 }
@@ -169,7 +191,7 @@ async function generateQuotation(mesFile, masterFile) {
 
   let msRows;
   if (masterFile) {
-    const masterWb = await parseExcel(masterFile);
+    const masterWb = await parseExcel(masterFile, 'master');
     const msName   = masterWb.SheetNames.find(n => /safeseal master/i.test(n))
                      || masterWb.SheetNames[1] || masterWb.SheetNames[0];
     msRows = XLSX.utils.sheet_to_json(masterWb.Sheets[msName], { header: 1, defval: '' });
@@ -394,7 +416,7 @@ async function buildMasterFillResult(mesFile, masterFile) {
 
   let masterRows;
   if (masterFile) {
-    const masterWb = await parseExcel(masterFile);
+    const masterWb = await parseExcel(masterFile, 'master');
     const msName   = masterWb.SheetNames.find(n => /safeseal master/i.test(n))
                      || masterWb.SheetNames[1] || masterWb.SheetNames[0];
     masterRows = XLSX.utils.sheet_to_json(masterWb.Sheets[msName], { header: 1, defval: '' });
