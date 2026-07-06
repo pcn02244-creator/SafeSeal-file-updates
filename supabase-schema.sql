@@ -55,8 +55,19 @@ create table if not exists process_costs (
   krw float8
 );
 
+create table if not exists master_jobs (
+  order_no text primary key,
+  pn text,
+  sn text,
+  po text,
+  tkm_no text,
+  cln_date text,
+  synced_at text
+);
+
 -- anon 키로 읽기/쓰기 허용
 grant select, insert, update, delete on parts to anon;
 grant select, insert, update, delete on usage to anon;
 grant select, insert, update, delete on lots to anon;
 grant select, insert, update, delete on process_costs to anon;
+grant select, insert, update, delete on master_jobs to anon;

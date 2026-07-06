@@ -189,30 +189,52 @@ async function generateQuotation(mesFile, masterFile) {
   // MES 캐시 저장
   try { localStorage.setItem('mes_rows_cache', JSON.stringify(mesAllRows)); } catch {}
 
-  let msRows;
+  let masterTargets = [];
   if (masterFile) {
+    // 마스터파일 업로드됨 → 파싱 후 Supabase 동기화
     const masterWb = await parseExcel(masterFile, 'master');
     const msName   = masterWb.SheetNames.find(n => /safeseal master/i.test(n))
                      || masterWb.SheetNames[1] || masterWb.SheetNames[0];
-    msRows = XLSX.utils.sheet_to_json(masterWb.Sheets[msName], { header: 1, defval: '' });
-    try { localStorage.setItem('master_rows_cache', JSON.stringify(msRows)); } catch {}
+    const msRows   = XLSX.utils.sheet_to_json(masterWb.Sheets[msName], { header: 1, defval: '' });
+    const now      = new Date().toISOString();
+    for (let i = 2; i < msRows.length; i++) {
+      const r        = msRows[i];
+      const clnDate  = String(r[19] || '').trim();
+      const delivery = String(r[20] || '').trim();
+      const orderNo  = String(r[10] || '').trim();
+      if (!clnDate || delivery || !orderNo) continue;
+      masterTargets.push({
+        orderNo, pn: String(r[6]||'').trim(), sn: String(r[7]||'').trim(),
+        po: String(r[8]||'').trim(), tkmNo: String(r[9]||'').trim(),
+      });
+    }
+    // Supabase에 동기화 (백그라운드)
+    (async () => {
+      const sb = getSB();
+      if (!sb || !masterTargets.length) return;
+      try {
+        await sb.from('master_jobs').delete().neq('order_no', '');
+        const rows = masterTargets.map(t => ({
+          order_no: t.orderNo, pn: t.pn, sn: t.sn,
+          po: t.po, tkm_no: t.tkmNo, cln_date: now, synced_at: now,
+        }));
+        await sb.from('master_jobs').upsert(rows, { onConflict: 'order_no' });
+        console.log(`✅ master_jobs 동기화 완료: ${rows.length}건`);
+      } catch(e) { console.warn('master_jobs 동기화 오류:', e.message); }
+    })();
   } else {
-    const cached = localStorage.getItem('master_rows_cache');
-    if (!cached) throw new Error('마스터파일을 업로드해 주세요.');
-    msRows = JSON.parse(cached);
-  }
-
-  const masterTargets = [];
-  for (let i = 2; i < msRows.length; i++) {
-    const r = msRows[i];
-    const clnDate  = String(r[19] || '').trim();
-    const delivery = String(r[20] || '').trim();
-    const orderNo  = String(r[10] || '').trim();
-    if (!clnDate || delivery || !orderNo) continue;
-    masterTargets.push({
-      orderNo, pn: String(r[6]||'').trim(), sn: String(r[7]||'').trim(),
-      po: String(r[8]||'').trim(), tkmNo: String(r[9]||'').trim(),
-    });
+    // 마스터파일 없음 → Supabase에서 자동 로드
+    const sb = getSB();
+    if (sb) {
+      const { data, error } = await sb.from('master_jobs').select('*');
+      if (!error && data && data.length > 0) {
+        masterTargets = data.map(r => ({
+          orderNo: r.order_no, pn: r.pn || '', sn: r.sn || '',
+          po: r.po || '', tkmNo: r.tkm_no || '',
+        }));
+      }
+    }
+    if (!masterTargets.length) throw new Error('마스터 데이터가 없습니다. 관리자가 마스터파일을 한 번 업로드해야 합니다.');
   }
 
   const parts = DB.parts.get();
