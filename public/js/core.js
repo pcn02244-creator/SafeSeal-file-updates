@@ -278,17 +278,34 @@ async function generateQuotation(mesFile, masterFile) {
     });
   }
 
+  // 왜 필터에서 걸리는지 분석
+  let dbgSkipNoClnDate = 0, dbgSkipDelivery = 0, dbgSkipNoOrder = 0;
+  for (let i = 2; i < msRows.length; i++) {
+    const r = msRows[i];
+    const _ord = String(r[10]||'').trim();
+    const _cln = String(r[19]||'').trim();
+    const _del = String(r[20]||'').trim();
+    if (!_ord) dbgSkipNoOrder++;
+    if (!_cln) dbgSkipNoClnDate++;
+    if (_del)  dbgSkipDelivery++;
+  }
+  const dbgSampleRow = msRows[2] || [];
   const debug = {
     masterTotalRows: msRows.length,
     masterFiltered: masterTargets.length,
     mesGroupCount: Object.keys(mesGroups).length,
     partsCount: parts.length,
     processCostKeys: Object.keys(processCosts),
-    masterHeader: (msRows[1] || []).slice(0, 22).map((v,i) => `[${i}]${v}`).join(' | '),
-    sampleMasterOrders: masterTargets.slice(0, 3).map(t => t.orderNo),
-    sampleMesOrders: Object.keys(mesGroups).slice(0, 3),
+    skipNoOrder: dbgSkipNoOrder,
+    skipNoClnDate: dbgSkipNoClnDate,
+    skipHasDelivery: dbgSkipDelivery,
+    masterHeader1: (msRows[0]||[]).slice(0,22).map((v,i)=>`[${i}]${v||'빈칸'}`).join(' | '),
+    masterHeader2: (msRows[1]||[]).slice(0,22).map((v,i)=>`[${i}]${v||'빈칸'}`).join(' | '),
+    sampleDataRow: dbgSampleRow.slice(0,22).map((v,i)=>`[${i}]${v||'빈칸'}`).join(' | '),
+    sampleMasterOrders: masterTargets.slice(0,3).map(t=>t.orderNo),
+    sampleMesOrders: Object.keys(mesGroups).slice(0,3),
   };
-  console.log('[DEBUG]', debug);
+  console.log('[DEBUG]', JSON.stringify(debug, null, 2));
 
   return {
     summary: {
