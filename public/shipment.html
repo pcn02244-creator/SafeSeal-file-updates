@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>출하관리</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="style.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+  <script src="js/core.js?v=20260707A"></script>
+  <script src="js/auth.js"></script>
+  <style>
+    body { background: #f0f2f5; }
+    .po-row { transition: background .12s; }
+    .po-row:hover { background: #f8f9ff; }
+    .po-row.selected { background: #e8f0fe; }
+    .po-detail { background: #f8f9fa; border-left: 3px solid #1a73e8; }
+    .action-bar { background: #1a73e8; color: #fff; border-radius: 8px; padding: 10px 18px; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .ptn-candidate { cursor: pointer; padding: 2px 6px; border-radius: 4px; background: #e8f0fe; color: #1a73e8; font-family: monospace; font-size: .82rem; }
+    .ptn-candidate:hover { background: #1a73e8; color: #fff; }
+  </style>
+</head>
+<body>
+  <nav class="navbar navbar-dark bg-primary px-4">
+    <span class="navbar-brand fw-bold">⚙️ 파트 단가 관리 시스템</span>
+    <div class="d-flex gap-3">
+      <a href="parts-mgmt.html"  class="nav-link text-white">파트 단가 관리</a>
+      <a href="quotation.html"   class="nav-link text-white">견적 생성</a>
+      <a href="shipment.html"    class="nav-link text-white active">출하관리</a>
+      <a href="master-fill.html" class="nav-link text-white">마스터 업데이트</a>
+    </div>
+  </nav>
+
+  <div class="container-fluid p-4">
+
+    <!-- 선택 액션 바 -->
+    <div id="action-bar" class="action-bar d-none mb-3 d-flex align-items-center gap-3 flex-wrap">
+      <span class="fw-semibold" id="selected-count">0건 선택</span>
+      <div class="vr opacity-50"></div>
+      <button class="btn btn-sm btn-light" onclick="openDateModal()">📅 출하일 일괄 변경</button>
+      <button class="btn btn-sm btn-light" onclick="openPtnModal()">📎 PTN 업로드</button>
+      <button class="btn btn-sm btn-warning" onclick="generateStatements()">🖨️ 거래명세서 생성
+        <span class="badge bg-dark ms-1" style="font-size:.65rem">준비중</span>
+      </button>
+      <button class="btn btn-sm btn-outline-light ms-auto" onclick="clearSelection()">✕ 해제</button>
+    </div>
+
+    <!-- 검색/필터 헤더 -->
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-body py-3">
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+          <h5 class="mb-0 me-2">📦 출하 PO 목록</h5>
+          <input type="text" class="form-control form-control-sm" id="search-input"
+            placeholder="PO번호 / 0247# 검색" oninput="renderList()" style="width:220px">
+          <select class="form-select form-select-sm" id="ptn-filter" onchange="renderList()" style="width:150px">
+            <option value="">전체 상태</option>
+            <option value="uploaded">PTN 업로드됨</option>
+            <option value="missing">PTN 미업로드</option>
+          </select>
+          <span class="text-muted small ms-auto" id="po-count-label"></span>
+          <button class="btn btn-outline-primary btn-sm" onclick="loadData()">🔄 새로고침</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 로딩 -->
+    <div id="loading" class="text-center py-5">
+      <div class="spinner-border text-primary"></div>
+      <div class="mt-2 text-muted small">데이터 로드 중...</div>
+    </div>
+
+    <!-- PO 리스트 -->
+    <div id="po-container" class="d-none">
+      <div class="card shadow-sm">
+        <div class="card-header bg-white py-2 d-flex align-items-center gap-2 border-bottom">
+          <input type="checkbox" id="select-all-chk" class="form-check-input" onchange="toggleSelectAll(this)">
+          <label for="select-all-chk" class="mb-0 small text-muted" style="cursor:pointer">전체 선택</label>
+          <div class="ms-auto d-flex gap-2 align-items-center small text-muted">
+            <span class="status-dot bg-success"></span>PTN 완료
+            <span class="status-dot bg-secondary ms-2"></span>PTN 미등록
+          </div>
+        </div>
+        <div id="po-list"></div>
+      </div>
+      <div class="d-flex justify-content-center gap-1 mt-3" id="pagination"></div>
+    </div>
+  </div>
+
+  <!-- ══ 출하일 일괄 변경 모달 ══ -->
+  <div class="modal fade" id="dateModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title">📅 출하일 일괄 변경</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">출하일 <span class="text-danger">*</span></label>
+            <input type="date" class="form-control" id="new-ship-date">
+          </div>
+          <div class="alert alert-light py-2">
+            <div class="small text-muted mb-1">적용 대상 PO</div>
+            <div id="date-modal-targets" class="d-flex flex-wrap gap-1"></div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+          <button class="btn btn-primary" onclick="applyDate()">적용</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ PTN 업로드 모달 ══ -->
+  <div class="modal fade" id="ptnModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header" style="background:#1e2a3a;color:#fff">
+          <h5 class="modal-title">📎 PTN 업로드 및 PO 연결</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+
+          <!-- Step 1: 파일 선택 -->
+          <div id="ptn-step1">
+            <div class="mb-3">
+              <label class="form-label fw-semibold">PTN PDF 파일 선택</label>
+              <input type="file" class="form-control" id="ptn-file-input" accept=".pdf" onchange="analyzePtn(this)">
+              <div class="form-text">PTN(Packing/Transport Notice) PDF 파일을 업로드하면 PO번호·0247번호를 자동으로 추출합니다.</div>
+            </div>
+            <div id="ptn-loading" class="d-none text-center py-3">
+              <div class="spinner-border spinner-border-sm text-primary me-2"></div>
+              <span class="text-muted">PDF 분석 중...</span>
+            </div>
+          </div>
+
+          <!-- Step 2: 매핑 확인 -->
+          <div id="ptn-step2" class="d-none">
+            <div class="mb-3">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="fw-semibold small">📄 추출 결과</span>
+                <span class="badge bg-secondary font-monospace" id="ptn-filename-badge"></span>
+              </div>
+              <div id="ptn-matches" class="border rounded p-2 bg-light" style="font-size:.85rem"></div>
+            </div>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label fw-semibold">PTN 번호 (출하번호) <span class="text-danger">*</span></label>
+                <input type="text" class="form-control font-monospace" id="ptn-no-input" placeholder="자동 추출 또는 직접 입력">
+                <div class="form-text">후보를 클릭하면 자동 입력됩니다.</div>
+                <div id="ptn-candidates" class="d-flex flex-wrap gap-1 mt-1"></div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label fw-semibold">연결할 PO</label>
+                <div id="ptn-po-list" class="border rounded p-2 bg-light" style="min-height:42px;max-height:100px;overflow-y:auto"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+          <button class="btn btn-primary d-none" id="ptn-save-btn" onclick="savePtn()">💾 저장</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+
+    let dateModal, ptnModal;
+    let poGroups     = [];   // { po, tkmNos[], pns[], orders[], shipment }
+    let filteredGrps = [];
+    let selectedPos  = new Set();
+    let currentPage  = 1;
+    const PAGE_SIZE  = 25;
+    let ptnPdfText   = '';
+    let ptnFileName  = '';
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      dateModal = new bootstrap.Modal(document.getElementById('dateModal'));
+      ptnModal  = new bootstrap.Modal(document.getElementById('ptnModal'));
+      await initData();
+      await loadData();
+    });
+
+    /* ════ 데이터 로드 ════ */
+    async function loadData() {
+      document.getElementById('loading').classList.remove('d-none');
+      document.getElementById('po-container').classList.add('d-none');
+
+      const sb = getSB();
+      let jobs = [], ships = [];
+      if (sb) {
+        const [j, s] = await Promise.all([
+          sb.from('master_jobs').select('*'),
+          sb.from('shipments').select('*'),
+        ]);
+        jobs  = j.data  || [];
+        ships = s.data  || [];
+      }
+
+      // shipments → po 기준 Map
+      const shipMap = {};
+      ships.forEach(s => { shipMap[s.po] = s; });
+
+      // master_jobs → po 기준 그룹
+      const grpMap = {};
+      jobs.forEach(j => {
+        const po = j.po || '(PO없음)';
+        if (!grpMap[po]) grpMap[po] = { po, tkmNos: new Set(), pns: new Set(), orders: [] };
+        grpMap[po].orders.push(j);
+        if (j.tkm_no) grpMap[po].tkmNos.add(j.tkm_no);
+        if (j.pn)     grpMap[po].pns.add(j.pn);
+      });
+
+      poGroups = Object.values(grpMap).map(g => ({
+        po:       g.po,
+        tkmNos:   [...g.tkmNos],
+        pns:      [...g.pns],
+        orders:   g.orders,
+        shipment: shipMap[g.po] || null,
+      })).sort((a, b) => a.po.localeCompare(b.po));
+
+      document.getElementById('loading').classList.add('d-none');
+      document.getElementById('po-container').classList.remove('d-none');
+      renderList();
+    }
+
+    /* ════ 리스트 렌더 ════ */
+    function renderList() {
+      const search    = document.getElementById('search-input').value.trim().toLowerCase();
+      const ptnFilter = document.getElementById('ptn-filter').value;
+
+      filteredGrps = poGroups.filter(g => {
+        const matchSearch = !search
+          || g.po.toLowerCase().includes(search)
+          || g.tkmNos.some(t => t.toLowerCase().includes(search));
+        const matchPtn = !ptnFilter
+          || (ptnFilter === 'uploaded' &&  g.shipment?.ptn_no)
+          || (ptnFilter === 'missing'  && !g.shipment?.ptn_no);
+        return matchSearch && matchPtn;
+      });
+
+      const total = filteredGrps.length;
+      const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+      currentPage = Math.min(currentPage, pages);
+      document.getElementById('po-count-label').textContent = `총 ${total}건`;
+
+      const start   = (currentPage - 1) * PAGE_SIZE;
+      const pageArr = filteredGrps.slice(start, start + PAGE_SIZE);
+      const list    = document.getElementById('po-list');
+
+      if (!pageArr.length) {
+        list.innerHTML = '<div class="text-center text-muted py-5">해당하는 PO가 없습니다.</div>';
+        document.getElementById('pagination').innerHTML = '';
+        return;
+      }
+
+      list.innerHTML = pageArr.map((g, i) => {
+        const idx      = start + i;
+        const hasPtn   = !!g.shipment?.ptn_no;
+        const shipDate = g.shipment?.ship_date || '';
+        const isSel    = selectedPos.has(g.po);
+        const tkmShow  = g.tkmNos.slice(0, 3).join(', ') + (g.tkmNos.length > 3 ? ` 외 ${g.tkmNos.length - 3}건` : '');
+        return `
+          <div class="po-row d-flex align-items-center gap-2 px-3 py-2 border-bottom${isSel ? ' selected' : ''}"
+               data-idx="${idx}" style="cursor:pointer" onclick="handleRowClick(event,${idx})">
+            <input type="checkbox" class="form-check-input flex-shrink-0" ${isSel ? 'checked' : ''}
+              onclick="event.stopPropagation(); toggleSelect(${idx})">
+            <span class="status-dot ${hasPtn ? 'bg-success' : 'bg-secondary'} flex-shrink-0" style="width:10px;height:10px"></span>
+            <span class="fw-semibold font-monospace small flex-shrink-0" style="min-width:180px">${g.po}</span>
+            <span class="text-muted small flex-grow-1" style="min-width:160px">
+              ${tkmShow ? `<span class="text-dark">0247:</span> ${tkmShow}` : '<span class="text-muted">0247# 없음</span>'}
+            </span>
+            <span class="text-muted small flex-shrink-0" style="min-width:80px">SN ${g.orders.length}건</span>
+            <span class="small flex-shrink-0" style="min-width:100px">
+              ${shipDate ? `<span class="badge bg-info text-dark">📅 ${shipDate}</span>` : '<span class="text-muted small">출하일 미등록</span>'}
+            </span>
+            <span class="flex-shrink-0" style="min-width:110px">
+              ${hasPtn
+                ? `<span class="badge bg-success">✅ PTN 등록됨</span>`
+                : `<span class="badge bg-light text-secondary border">PTN 없음</span>`}
+            </span>
+            <div class="d-flex gap-1 flex-shrink-0">
+              <button class="btn btn-outline-secondary btn-sm py-0 px-2"
+                title="상세 펼치기" onclick="event.stopPropagation(); toggleDetail(${idx})">▾</button>
+              <button class="btn btn-outline-primary btn-sm py-0 px-2"
+                title="PTN 업로드" onclick="event.stopPropagation(); openSinglePtn(${idx})">📎</button>
+            </div>
+          </div>
+          <div id="detail-${idx}" class="po-detail d-none px-4 py-3">
+            <div class="small text-muted mb-2">
+              PN: <strong>${g.pns.join(', ') || '-'}</strong>
+              ${hasPtn ? ` &nbsp;|&nbsp; PTN번호: <code>${g.shipment.ptn_no}</code> (${g.shipment.ptn_filename || ''})` : ''}
+            </div>
+            <table class="table table-sm mb-0" style="font-size:.8rem">
+              <thead class="table-dark"><tr><th>수주번호</th><th>PN</th><th>SN</th><th>0247#</th><th>세정일</th></tr></thead>
+              <tbody>
+                ${g.orders.map(o => `<tr>
+                  <td class="font-monospace">${o.order_no}</td>
+                  <td>${o.pn||'-'}</td>
+                  <td>${o.sn||'-'}</td>
+                  <td>${o.tkm_no||'-'}</td>
+                  <td>${o.cln_date||'-'}</td>
+                </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>`;
+      }).join('');
+
+      renderPagination(pages);
+      updateActionBar();
+    }
+
+    function renderPagination(pages) {
+      const pg = document.getElementById('pagination');
+      if (pages <= 1) { pg.innerHTML = ''; return; }
+      const s = Math.max(1, currentPage - 2), e = Math.min(pages, s + 4);
+      let html = currentPage > 1
+        ? `<button class="btn btn-sm btn-outline-secondary" onclick="goPage(${currentPage-1})">‹</button>` : '';
+      for (let i = s; i <= e; i++)
+        html += `<button class="btn btn-sm ${i===currentPage?'btn-primary':'btn-outline-secondary'}" onclick="goPage(${i})">${i}</button>`;
+      if (currentPage < pages)
+        html += `<button class="btn btn-sm btn-outline-secondary" onclick="goPage(${currentPage+1})">›</button>`;
+      pg.innerHTML = html;
+    }
+
+    function goPage(n) { currentPage = n; renderList(); }
+
+    /* ════ 선택/확장 ════ */
+    function handleRowClick(e, idx) {
+      if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
+      toggleDetail(idx);
+    }
+
+    function toggleDetail(idx) {
+      document.getElementById('detail-' + idx)?.classList.toggle('d-none');
+    }
+
+    function toggleSelect(idx) {
+      const po = filteredGrps[idx]?.po;
+      if (!po) return;
+      if (selectedPos.has(po)) selectedPos.delete(po); else selectedPos.add(po);
+      renderList();
+    }
+
+    function toggleSelectAll(chk) {
+      if (chk.checked) filteredGrps.forEach(g => selectedPos.add(g.po));
+      else selectedPos.clear();
+      renderList();
+    }
+
+    function clearSelection() { selectedPos.clear(); renderList(); }
+
+    function updateActionBar() {
+      const bar = document.getElementById('action-bar');
+      if (selectedPos.size > 0) {
+        bar.classList.remove('d-none');
+        document.getElementById('selected-count').textContent = `${selectedPos.size}건 선택`;
+      } else {
+        bar.classList.add('d-none');
+      }
+    }
+
+    /* ════ 출하일 변경 ════ */
+    function openDateModal() {
+      if (!selectedPos.size) return;
+      document.getElementById('date-modal-targets').innerHTML =
+        [...selectedPos].map(po => `<span class="badge bg-secondary font-monospace">${po}</span>`).join('');
+      document.getElementById('new-ship-date').value = '';
+      dateModal.show();
+    }
+
+    async function applyDate() {
+      const date = document.getElementById('new-ship-date').value;
+      if (!date) { alert('출하일을 선택해 주세요.'); return; }
+      const sb = getSB();
+      if (!sb) { alert('Supabase 연결이 필요합니다.'); return; }
+
+      const targets = [...selectedPos];
+      // 기존 shipment가 있으면 update, 없으면 insert
+      const { data: existing } = await sb.from('shipments').select('id,po').in('po', targets);
+      const existingPos = new Set((existing||[]).map(r => r.po));
+      const { data: maxRow } = await sb.from('shipments').select('id').order('id', { ascending: false }).limit(1);
+      let nextId = (maxRow?.[0]?.id || 0) + 1;
+
+      const updates = targets.filter(po =>  existingPos.has(po))
+        .map(po => sb.from('shipments').update({ ship_date: date }).eq('po', po));
+      const inserts = targets.filter(po => !existingPos.has(po))
+        .map(po => sb.from('shipments').insert({ id: nextId++, po, ship_date: date, created_at: new Date().toISOString().slice(0,10) }));
+
+      await Promise.all([...updates, ...inserts]);
+      dateModal.hide();
+      clearSelection();
+      await loadData();
+    }
+
+    /* ════ PTN 업로드 ════ */
+    function openPtnModal() {
+      if (!selectedPos.size) return;
+      resetPtnModal();
+      document.getElementById('ptn-po-list').innerHTML =
+        [...selectedPos].map(po => `<span class="badge bg-primary font-monospace me-1">${po}</span>`).join('');
+      ptnModal.show();
+    }
+
+    function openSinglePtn(idx) {
+      const po = filteredGrps[idx]?.po;
+      if (!po) return;
+      selectedPos.clear();
+      selectedPos.add(po);
+      updateActionBar();
+      openPtnModal();
+    }
+
+    function resetPtnModal() {
+      document.getElementById('ptn-step2').classList.add('d-none');
+      document.getElementById('ptn-loading').classList.add('d-none');
+      document.getElementById('ptn-save-btn').classList.add('d-none');
+      document.getElementById('ptn-file-input').value = '';
+      document.getElementById('ptn-no-input').value   = '';
+      document.getElementById('ptn-candidates').innerHTML = '';
+      document.getElementById('ptn-matches').innerHTML    = '';
+      ptnPdfText  = '';
+      ptnFileName = '';
+    }
+
+    async function analyzePtn(input) {
+      const file = input.files[0];
+      if (!file) return;
+      ptnFileName = file.name;
+      document.getElementById('ptn-loading').classList.remove('d-none');
+      document.getElementById('ptn-step2').classList.add('d-none');
+
+      try {
+        const ab  = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: ab }).promise;
+        let text  = '';
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page    = await pdf.getPage(i);
+          const content = await page.getTextContent();
+          text += content.items.map(it => it.str).join(' ') + '\n';
+        }
+        ptnPdfText = text;
+
+        // 선택된 PO / 0247# 매칭
+        const matchResults = [...selectedPos].map(po => {
+          const g       = poGroups.find(x => x.po === po);
+          const poFound = text.includes(po);
+          const tkmHit  = (g?.tkmNos || []).filter(t => t && text.includes(t));
+          return { po, poFound, tkmHit };
+        });
+
+        // 바코드/PTN 번호 후보 추출 (영숫자+하이픈, 6~25자)
+        const raw = [...new Set(text.match(/[A-Z0-9][A-Z0-9\-]{5,24}/g) || [])];
+        // 이미 알고 있는 PO/수주번호 제외
+        const knownPOs  = new Set(poGroups.map(g => g.po));
+        const knownTKMs = new Set(poGroups.flatMap(g => g.tkmNos));
+        const candidates = raw.filter(v => !knownPOs.has(v) && !knownTKMs.has(v)).slice(0, 8);
+
+        document.getElementById('ptn-loading').classList.add('d-none');
+        document.getElementById('ptn-step2').classList.remove('d-none');
+        document.getElementById('ptn-save-btn').classList.remove('d-none');
+        document.getElementById('ptn-filename-badge').textContent = ptnFileName;
+
+        // 매칭 결과 테이블
+        document.getElementById('ptn-matches').innerHTML = `
+          <table class="table table-sm mb-1">
+            <thead><tr><th>PO번호</th><th>0247# 매칭</th><th>PO 텍스트 발견</th></tr></thead>
+            <tbody>
+              ${matchResults.map(r => `<tr>
+                <td class="font-monospace">${r.po}</td>
+                <td>${r.tkmHit.length
+                  ? r.tkmHit.map(t => `<span class="badge bg-success">${t}</span>`).join(' ')
+                  : '<span class="text-muted">미발견</span>'}</td>
+                <td>${r.poFound
+                  ? '<span class="badge bg-success">✅ 발견</span>'
+                  : '<span class="badge bg-warning text-dark">⚠️ 미발견</span>'}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>`;
+
+        // PTN 번호 후보
+        document.getElementById('ptn-candidates').innerHTML =
+          candidates.length
+            ? candidates.map(c =>
+                `<span class="ptn-candidate" onclick="document.getElementById('ptn-no-input').value='${c}'">${c}</span>`
+              ).join('')
+            : '<span class="text-muted small">자동 추출 불가 — 직접 입력해 주세요</span>';
+
+        if (candidates.length) document.getElementById('ptn-no-input').value = candidates[0];
+
+      } catch(e) {
+        document.getElementById('ptn-loading').classList.add('d-none');
+        document.getElementById('ptn-step2').classList.add('d-none');
+        alert('PDF 분석 실패: ' + e.message);
+      }
+    }
+
+    async function savePtn() {
+      const ptnNo = document.getElementById('ptn-no-input').value.trim();
+      if (!ptnNo) { alert('PTN 번호를 입력해 주세요.'); return; }
+      const sb = getSB();
+      if (!sb) { alert('Supabase 연결이 필요합니다.'); return; }
+
+      const today   = new Date().toISOString().slice(0, 10);
+      const targets = [...selectedPos];
+
+      const { data: existing } = await sb.from('shipments').select('id,po').in('po', targets);
+      const existingPos = new Set((existing||[]).map(r => r.po));
+      const { data: maxRow } = await sb.from('shipments').select('id').order('id', { ascending: false }).limit(1);
+      let nextId = (maxRow?.[0]?.id || 0) + 1;
+
+      const ptnData = {
+        ptn_no:          ptnNo,
+        ptn_filename:    ptnFileName,
+        ptn_text:        ptnPdfText.slice(0, 2000),
+        ptn_uploaded_at: today,
+      };
+
+      const ups = targets.filter(po =>  existingPos.has(po))
+        .map(po => sb.from('shipments').update(ptnData).eq('po', po));
+      const ins = targets.filter(po => !existingPos.has(po))
+        .map(po => sb.from('shipments').insert({ id: nextId++, po, ...ptnData, created_at: today }));
+
+      await Promise.all([...ups, ...ins]);
+      ptnModal.hide();
+      clearSelection();
+      await loadData();
+    }
+
+    /* ════ 거래명세서 생성 (준비 중) ════ */
+    function generateStatements() {
+      const pos = [...selectedPos];
+      alert(`[준비 중] 거래명세서 일괄 생성\n\n선택 PO: ${pos.join(', ')}\n\n거래명세서 양식(바코드 형식 포함)이 확정되면 자동 생성이 가능합니다.\n담당자에게 양식을 공유받아 주세요.`);
+    }
+  </script>
+</body>
+</html>

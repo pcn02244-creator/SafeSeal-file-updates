@@ -65,9 +65,22 @@ create table if not exists master_jobs (
   synced_at text
 );
 
+create table if not exists shipments (
+  id int primary key,
+  po text not null,
+  ship_date text,
+  ptn_no text,
+  ptn_filename text,
+  ptn_text text,
+  ptn_uploaded_at text,
+  notes text,
+  created_at text
+);
+
 -- anon 키로 읽기/쓰기 허용
 grant select, insert, update, delete on parts to anon;
 grant select, insert, update, delete on usage to anon;
 grant select, insert, update, delete on lots to anon;
 grant select, insert, update, delete on process_costs to anon;
 grant select, insert, update, delete on master_jobs to anon;
+grant select, insert, update, delete on shipments to anon;
