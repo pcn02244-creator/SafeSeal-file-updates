@@ -87,14 +87,32 @@ try {
 }
 
 // 헬스체크
-app.get('/ping', (req, res) => res.json({ ok: true, version: '1.0' }));
+app.get('/ping', (req, res) => res.json({ ok: true, version: '2.0' }));
+
+// 경로로 직접 파일 읽기 (공유폴더 자동 로드용)
+app.get('/read-file', (req, res) => {
+  const filePath = decodeURIComponent(req.query.path || '');
+  const type     = req.query.type || 'master';
+  if (!filePath) return res.status(400).json({ error: 'path required' });
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: '파일 없음: ' + filePath });
+  try {
+    console.log(`[DRM] 경로 읽기: ${filePath} (${type})`);
+    const csv = excelToCsv(filePath, type);
+    console.log(`[DRM] 완료: ${csv.split('\n').length}행`);
+    res.type('text/plain; charset=utf-8').send(csv);
+  } catch(e) {
+    console.error('[DRM] 오류:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // DRM 파일 변환 (MES 또는 마스터)
 app.post('/drm-convert', upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: '파일이 없습니다.' });
 
   const type    = req.body.type || 'mes'; // 'mes' | 'master'
-  const tmpPath = path.join(TMP, 'drm_input_' + Date.now() + '.xlsx');
+  const origExt = path.extname(req.file.originalname || '').toLowerCase() || '.xlsx';
+  const tmpPath = path.join(TMP, 'drm_input_' + Date.now() + origExt);
 
   try {
     fs.writeFileSync(tmpPath, req.file.buffer);
