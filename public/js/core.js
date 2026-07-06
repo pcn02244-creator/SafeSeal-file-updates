@@ -161,7 +161,9 @@ async function generateQuotation(mesFile, masterFile) {
 
   let mesHeaderRow = 0, mesOrderCol = 3;
   for (let ri = 0; ri < Math.min(5, mesAllRows.length); ri++) {
-    const idx = mesAllRows[ri].indexOf('반입번호');
+    const idxOut = mesAllRows[ri].indexOf('반출번호');
+    const idxIn  = mesAllRows[ri].indexOf('반입번호');
+    const idx    = idxOut >= 0 ? idxOut : idxIn;
     if (idx >= 0) { mesHeaderRow = ri; mesOrderCol = idx; break; }
   }
   const hdr = mesAllRows[mesHeaderRow];
