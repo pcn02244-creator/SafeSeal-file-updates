@@ -160,18 +160,27 @@ async function generateQuotation(mesFile, masterFile) {
   const mesAllRows  = XLSX.utils.sheet_to_json(mesWb.Sheets[mesWb.SheetNames[0]], { header: 1, defval: '' });
 
   let mesHeaderRow = 0, mesOrderCol = 3;
-  for (let ri = 0; ri < Math.min(5, mesAllRows.length); ri++) {
-    const idxOut = mesAllRows[ri].indexOf('반출번호');
-    const idxIn  = mesAllRows[ri].indexOf('반입번호');
-    const idx    = idxOut >= 0 ? idxOut : idxIn;
-    if (idx >= 0) { mesHeaderRow = ri; mesOrderCol = idx; break; }
+  const ORDER_COL_NAMES = ['반출번호', '수주번호', '반입번호'];
+  outer: for (let ri = 0; ri < Math.min(10, mesAllRows.length); ri++) {
+    const row = mesAllRows[ri];
+    for (let ci = 0; ci < row.length; ci++) {
+      if (ORDER_COL_NAMES.includes(String(row[ci] || '').trim())) {
+        mesHeaderRow = ri; mesOrderCol = ci; break outer;
+      }
+    }
   }
   const hdr = mesAllRows[mesHeaderRow];
+  function _findMesCol(name, def) {
+    for (let ci = 0; ci < hdr.length; ci++) {
+      if (String(hdr[ci]||'').trim() === name) return ci;
+    }
+    return def;
+  }
   const COL_ORDER   = mesOrderCol;
-  const COL_SN      = hdr.indexOf('SN')           >= 0 ? hdr.indexOf('SN')           : 5;
-  const COL_PROCESS = hdr.indexOf('SafeSeal타입') >= 0 ? hdr.indexOf('SafeSeal타입') : 2;
-  const COL_MATPN   = hdr.indexOf('사용자재목록') >= 0 ? hdr.indexOf('사용자재목록') : 8;
-  const COL_MATQTY  = hdr.indexOf('사용수량목록') >= 0 ? hdr.indexOf('사용수량목록') : 9;
+  const COL_SN      = _findMesCol('SN', 5);
+  const COL_PROCESS = _findMesCol('SafeSeal타입', 2);
+  const COL_MATPN   = _findMesCol('사용자재목록', 8);
+  const COL_MATQTY  = _findMesCol('사용수량목록', 9);
 
   const mesGroups = {};
   for (let i = mesHeaderRow + 1; i < mesAllRows.length; i++) {
@@ -349,8 +358,11 @@ async function generateQuotation(mesFile, masterFile) {
     masterHeader1: (msRows[0]||[]).slice(0,22).map((v,i)=>`[${i}]${v||'빈칸'}`).join(' | '),
     masterHeader2: (msRows[1]||[]).slice(0,22).map((v,i)=>`[${i}]${v||'빈칸'}`).join(' | '),
     sampleDataRow: dbgSampleRow.slice(0,22).map((v,i)=>`[${i}]${v||'빈칸'}`).join(' | '),
+    mesHeaderRow,
+    mesOrderCol,
+    mesHeader: (mesAllRows[mesHeaderRow]||[]).slice(0,15).map((v,i)=>`[${i}]${String(v||'').slice(0,20)}`).join(' | '),
     sampleMasterOrders: masterTargets.slice(0,3).map(t=>t.orderNo),
-    sampleMesOrders: Object.keys(mesGroups).slice(0,3),
+    sampleMesOrders: Object.keys(mesGroups).slice(0,3).map(v=>v.slice(0,30)),
     issueBreakdown: issues.reduce((acc, i) => { acc[i.issue] = (acc[i.issue]||0)+1; return acc; }, {}),
   };
   console.log('[DEBUG]', JSON.stringify(debug, null, 2));
