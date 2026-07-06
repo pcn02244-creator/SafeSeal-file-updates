@@ -215,6 +215,7 @@ async function generateQuotation(mesFile, masterFile) {
     const msName   = masterWb.SheetNames.find(n => /safeseal master/i.test(n))
                      || masterWb.SheetNames[1] || masterWb.SheetNames[0];
     msRows = XLSX.utils.sheet_to_json(masterWb.Sheets[msName], { header: 1, defval: '' });
+    try { localStorage.setItem('master_rows_cache', JSON.stringify(msRows)); } catch {}
     const now      = new Date().toISOString();
     for (let i = 2; i < msRows.length; i++) {
       const r        = msRows[i];
@@ -449,7 +450,8 @@ function calcMasterFillData(mesData, partsMap) {
 async function buildMasterFillResult(mesFile, masterFile) {
   let mesRows;
   if (mesFile) {
-    const mesWb  = await parseExcel(mesFile);
+    let mesWb;
+    try { mesWb = await _drmBridgeParse(mesFile, 'mes'); } catch { mesWb = await parseExcel(mesFile); }
     const allRows = XLSX.utils.sheet_to_json(mesWb.Sheets[mesWb.SheetNames[0]], { header: 1, defval: '' });
     localStorage.setItem('mes_rows_cache', JSON.stringify(allRows));
     mesRows = allRows;
@@ -530,19 +532,27 @@ async function buildMasterFillResult(mesFile, masterFile) {
 
 // ── 클라이언트 Excel 다운로드 (견적) ─────────────────
 function downloadQuotationExcel(quotation) {
-  const PART_TYPE_ORDER = ['Wafer Seal', 'Contact Pin', 'Lead In', 'Screw', 'Retainer'];
-  const usedTypes = PART_TYPE_ORDER.filter(pt => quotation.some(q => q.replParts.some(p => p.partType === pt)));
+  const FIXED_PARTS = [
+    { type: 'Wafer Seal',  label: 'Wafer Seal'   },
+    { type: 'Contact Pin', label: 'Contact Pin'   },
+    { type: 'Retainer',    label: 'Retainer ring' },
+    { type: 'Screw',       label: 'Screw'         },
+    { type: 'Lead In',     label: 'Lead In'       },
+  ];
   const headers = [
     'SS P/N', 'SS S/N', 'PO', '0247#', 'Process',
-    'Cleaning(USD)', 'Cleaning(KRW)',
-    ...usedTypes.flatMap(pt => [`${pt}(USD)`, `${pt}(KRW)`]),
-    'Total(USD)', 'Total(KRW)', 'Remark',
+    'Cleaning price\n(USD)', 'Cleaning price\n(KRW)',
+    ...FIXED_PARTS.flatMap(p => [`${p.label}\n(USD)`, `${p.label}\n(KRW)`]),
+    'Total\n(USD)', 'Total\n(KRW)', 'Remark',
   ];
-  const rows = [headers];
+  const rows = [
+    new Array(headers.length).fill(''), // 빈 제목행
+    headers,
+  ];
   for (const q of quotation) {
-    const partCols = usedTypes.flatMap(pt => {
-      const p = q.replParts.find(r => r.partType === pt);
-      return p ? [p.totalUSD, p.totalKRW] : ['', ''];
+    const partCols = FIXED_PARTS.flatMap(fp => {
+      const p = q.replParts.find(r => r.partType === fp.type);
+      return p ? [p.totalUSD, p.totalKRW] : [0, 0];
     });
     const remark = q.replParts.map(p => `${p.pn} ×${p.qty}`).join('\n');
     rows.push([q.pn, q.sn, q.po, q.tkmNo, q.processName||q.process,
@@ -550,8 +560,8 @@ function downloadQuotationExcel(quotation) {
       q.totalUSD, q.totalKRW, remark]);
   }
   const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!rows'] = [{ hpt: 15 }, { hpt: 32 }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, '견적');
-  const dateStr = new Date().toISOString().slice(0,10).replace(/-/g,'');
-  XLSX.writeFile(wb, `견적_${dateStr}.xlsx`);
+  XLSX.writeFile(wb, `견적_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
