@@ -3,7 +3,7 @@
    데이터 저장: Supabase (localStorage는 세션 캐시)
 ══════════════════════════════════════════════════════ */
 
-const APP_VERSION    = 'v20260703-supabase';
+const APP_VERSION    = 'v20260706E';
 const EXCHANGE_RATE  = 1511.26;
 const SB_URL         = 'https://ydekxlonxjwfhdhhbpdc.supabase.co';
 const SB_KEY         = 'sb_publishable_aCdcvXkU_hz35DpyrmSCkw_F8TYKZUJ';

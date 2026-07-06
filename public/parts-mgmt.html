@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>파트 단가 관리</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="style.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="js/core.js?v=20260706E"></script>
+  <script src="js/auth.js"></script>
+  <style>
+    body { background: #f0f2f5; }
+    .lot-active-row   { border-left: 4px solid #198754 !important; background-color: #f0fff4 !important; }
+    .lot-consumed-row { opacity: 0.45; }
+    .part-group-header { background: #f8f9fa; font-weight: 600; font-size: .85rem; }
+    .filter-card { cursor: pointer; transition: transform .1s; }
+    .filter-card:hover { transform: translateY(-2px); }
+  </style>
+</head>
+<body>
+  <nav class="navbar navbar-dark bg-primary px-4">
+    <span class="navbar-brand fw-bold">⚙️ 파트 단가 관리 시스템</span>
+    <div class="d-flex gap-3">
+      <a href="parts-mgmt.html" class="nav-link text-white active">파트 단가 관리</a>
+      <a href="quotation.html"  class="nav-link text-white">견적 생성</a>
+      <a href="master-fill.html" class="nav-link text-white">마스터 업데이트</a>
+    </div>
+  </nav>
+
+  <div class="container-fluid p-4">
+    <ul class="nav nav-tabs mb-4" id="mainTabs" role="tablist">
+      <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-dashboard" type="button">📊 현황</button></li>
+      <li class="nav-item"><button class="nav-link"        data-bs-toggle="tab" data-bs-target="#tab-parts"    type="button">💲 파트 관리</button></li>
+      <li class="nav-item"><button class="nav-link"        data-bs-toggle="tab" data-bs-target="#tab-lots"     type="button">📦 배치 관리</button></li>
+      <li class="nav-item"><button class="nav-link"        data-bs-toggle="tab" data-bs-target="#tab-history"  type="button">📋 이력 조회</button></li>
+    </ul>
+
+    <div class="tab-content">
+
+      <!-- ═══ 탭1: 현황 ═══ -->
+      <div class="tab-pane fade show active" id="tab-dashboard">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h5 class="mb-0">📊 파트별 현황</h5>
+          <button class="btn btn-outline-primary btn-sm" onclick="loadDashboard()">🔄 새로고침</button>
+        </div>
+        <div class="row g-3 mb-4">
+          <div class="col-md-3">
+            <div class="card text-center border-0 shadow-sm filter-card" onclick="setDashFilter('')" id="d-card-all">
+              <div class="card-body py-3"><div class="fs-2 fw-bold text-primary" id="d-cnt-total">-</div><div class="text-muted small">전체 파트</div></div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="card text-center border-0 shadow-sm filter-card" onclick="setDashFilter('asis')" id="d-card-asis">
+              <div class="card-body py-3"><div class="fs-2 fw-bold text-success" id="d-cnt-asis">-</div><div class="text-muted small">🟢 As-is 진행 중</div></div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="card text-center border-0 shadow-sm filter-card bg-warning-subtle" onclick="setDashFilter('near,switch')" id="d-card-near">
+              <div class="card-body py-3"><div class="fs-2 fw-bold text-warning" id="d-cnt-near">-</div><div class="text-muted small">🟡 전환 임박</div></div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="card text-center border-0 shadow-sm filter-card bg-danger-subtle" onclick="setDashFilter('tobe,sajup')" id="d-card-tobe">
+              <div class="card-body py-3"><div class="fs-2 fw-bold text-danger" id="d-cnt-tobe">-</div><div class="text-muted small">🔴 To-be 전환됨</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="card shadow-sm">
+          <div class="card-body p-0">
+            <table class="table table-hover mb-0 align-middle">
+              <thead class="table-dark">
+                <tr>
+                  <th>Type</th><th>Part Number</th><th>Description</th>
+                  <th class="text-center">누적 사용</th><th class="text-center">Onhand</th>
+                  <th class="text-center">Q'ty 기준</th><th class="text-center">잔여 As-is</th>
+                  <th class="text-end">As-is 단가</th><th class="text-end">To-be 단가</th>
+                  <th class="text-end">현재 판가</th><th class="text-center">사급 (입고/사용)</th>
+                  <th class="text-center">상태</th>
+                </tr>
+              </thead>
+              <tbody id="d-dashboard-body">
+                <tr><td colspan="12" class="text-center text-muted py-4">불러오는 중...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ 탭2: 파트 관리 ═══ -->
+      <div class="tab-pane fade" id="tab-parts">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h5 class="mb-0">💲 고객사 견적 단가 관리</h5>
+          <button class="btn btn-primary btn-sm" onclick="openAddPartModal()">+ 파트 추가</button>
+        </div>
+        <div class="card shadow-sm">
+          <div class="card-body p-0">
+            <table class="table table-hover mb-0 align-middle">
+              <thead class="table-dark">
+                <tr>
+                  <th>Type</th><th>Part Number</th><th>Description</th><th>Mfg</th>
+                  <th class="text-center">Q'ty 기준</th><th class="text-center">Unit</th>
+                  <th class="text-end">As-is 단가 ($)</th><th class="text-end">To-be 단가 ($)</th>
+                  <th class="text-center">관리</th>
+                </tr>
+              </thead>
+              <tbody id="p-parts-body">
+                <tr><td colspan="9" class="text-center text-muted py-4">불러오는 중...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ 탭3: 배치 관리 ═══ -->
+      <div class="tab-pane fade" id="tab-lots">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h5 class="mb-0">📦 구매 배치 관리 <span class="badge bg-secondary">FIFO 자동 적용</span></h5>
+          <div class="d-flex gap-2 align-items-center">
+            <select class="form-select form-select-sm w-auto" id="l-part-filter" onchange="loadLotsTab()">
+              <option value="">전체 파트</option>
+            </select>
+            <button class="btn btn-outline-secondary btn-sm" id="l-toggle-consumed" onclick="toggleConsumed()">🕐 소진완료 보기</button>
+            <button class="btn btn-primary btn-sm" onclick="openAddLotModal()">+ 배치 추가</button>
+          </div>
+        </div>
+        <div id="l-lots-container"></div>
+      </div>
+
+      <!-- ═══ 탭4: 이력 조회 ═══ -->
+      <div class="tab-pane fade" id="tab-history">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h5 class="mb-0">📋 사용 이력 조회</h5>
+          <div class="d-flex gap-2 align-items-center">
+            <select class="form-select form-select-sm" id="h-filter-pn" onchange="loadHistoryTab()" style="width:280px">
+              <option value="">전체 파트</option>
+            </select>
+            <button class="btn btn-outline-primary btn-sm" onclick="loadHistoryTab()">🔄 새로고침</button>
+          </div>
+        </div>
+        <div class="card shadow-sm">
+          <div class="card-body p-0">
+            <table class="table table-hover mb-0 align-middle">
+              <thead class="table-dark">
+                <tr>
+                  <th>날짜</th><th>Part Number</th><th>Description</th>
+                  <th class="text-center">이번 수량</th><th class="text-center">누적 수량</th>
+                  <th class="text-center">단가 구분</th><th class="text-end">적용 단가 ($)</th>
+                  <th class="text-end">청구 금액 ($)</th><th>입력자</th><th>비고</th>
+                  <th class="text-center">삭제</th>
+                </tr>
+              </thead>
+              <tbody id="h-history-body">
+                <tr><td colspan="11" class="text-center text-muted py-4">불러오는 중...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="mt-3 text-end" id="h-total-row"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 파트 추가/수정 모달 -->
+  <div class="modal fade" id="partModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title" id="p-modal-title">파트 추가</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Type</label>
+            <select class="form-select" id="p-f-type">
+              <option value="Wafer Seal">Wafer Seal</option>
+              <option value="Contact Pin">Contact Pin</option>
+              <option value="Retainer">Retainer</option>
+              <option value="Screw">Screw</option>
+              <option value="Lead In">Lead In</option>
+              <option value="기타">기타</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Part Number <span class="text-danger">*</span></label>
+            <input type="text" class="form-control font-monospace" id="p-f-pn" placeholder="예: A0435265">
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Description</label>
+            <input type="text" class="form-control" id="p-f-desc">
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Mfg (제조사)</label>
+            <input type="text" class="form-control" id="p-f-mfg">
+          </div>
+          <div class="row g-2">
+            <div class="col-6">
+              <label class="form-label fw-semibold">Q'ty 기준</label>
+              <input type="number" class="form-control" id="p-f-qty" placeholder="0" min="0">
+              <div class="form-text">이 수량 초과 시 To-be 단가 적용</div>
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold">Unit</label>
+              <input type="text" class="form-control" id="p-f-unit" value="EA">
+            </div>
+          </div>
+          <div class="row g-2 mt-1">
+            <div class="col-6">
+              <label class="form-label fw-semibold">As-is 단가 ($) <span class="text-danger">*</span></label>
+              <input type="number" class="form-control" id="p-f-asis" placeholder="0.00" step="0.01" min="0">
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold">To-be 단가 ($)</label>
+              <input type="number" class="form-control" id="p-f-tobe" placeholder="0.00" step="0.01" min="0">
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+          <button class="btn btn-primary" onclick="savePart()">저장</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 판가 입력 모달 -->
+  <div class="modal fade" id="priceModal" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+      <div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title">판가 입력</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="l-price-lot-id">
+          <div class="mb-2 small text-muted" id="l-price-lot-info"></div>
+          <label class="form-label fw-semibold">판가 (USD) <span class="text-danger">*</span></label>
+          <input type="number" class="form-control" id="l-f-selling-price" placeholder="0.00" step="0.01" min="0">
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+          <button class="btn btn-primary" onclick="savePrice()">저장</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 배치 추가 모달 -->
+  <div class="modal fade" id="addLotModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title">배치 추가</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Part Number <span class="text-danger">*</span></label>
+            <select class="form-select font-monospace" id="l-add-pn"></select>
+          </div>
+          <div class="row g-2">
+            <div class="col-6">
+              <label class="form-label fw-semibold">PO번호</label>
+              <input type="text" class="form-control font-monospace" id="l-add-po">
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold">공급처</label>
+              <input type="text" class="form-control" id="l-add-supplier">
+            </div>
+          </div>
+          <div class="row g-2 mt-1">
+            <div class="col-6">
+              <label class="form-label fw-semibold">발주수량 <span class="text-danger">*</span></label>
+              <input type="number" class="form-control" id="l-add-qty" min="1">
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold">구매단가 ($)</label>
+              <input type="number" class="form-control" id="l-add-purchase" step="0.01" min="0">
+            </div>
+          </div>
+          <div class="row g-2 mt-1">
+            <div class="col-6">
+              <label class="form-label fw-semibold">판가 ($)</label>
+              <input type="number" class="form-control" id="l-add-selling" step="0.01" min="0">
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold">발주일</label>
+              <input type="date" class="form-control" id="l-add-date">
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+          <button class="btn btn-primary" onclick="addLot()">추가</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    let partModal, priceModal, addLotModal;
+    let editingPartId = null;
+    let showConsumed  = false;
+    let lotsData      = [];
+    let dashAllData   = [];
+    let dashFilter    = '';
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      partModal   = new bootstrap.Modal(document.getElementById('partModal'));
+      priceModal  = new bootstrap.Modal(document.getElementById('priceModal'));
+      addLotModal = new bootstrap.Modal(document.getElementById('addLotModal'));
+
+      await initData();
+      populatePartSelects();
+      loadDashboard();
+
+      document.getElementById('mainTabs').addEventListener('shown.bs.tab', e => {
+        const t = e.target.dataset.bsTarget;
+        if (t === '#tab-parts')   loadPartsTab();
+        if (t === '#tab-lots')    loadLotsTab();
+        if (t === '#tab-history') loadHistoryTab();
+      });
+
+      // URL hash로 탭 직접 열기 (예: parts-mgmt.html#tab-lots)
+      const hash = location.hash;
+      if (hash) {
+        const btn = document.querySelector(`[data-bs-target="${hash}"]`);
+        if (btn) new bootstrap.Tab(btn).show();
+      }
+      // ?pn= 파라미터로 배치 탭 필터 설정
+      const pn = new URLSearchParams(location.search).get('pn');
+      if (pn) {
+        document.getElementById('l-part-filter').value = pn;
+        const lotsBtn = document.querySelector('[data-bs-target="#tab-lots"]');
+        if (lotsBtn) new bootstrap.Tab(lotsBtn).show();
+      }
+    });
+
+    function populatePartSelects() {
+      const parts = DB.parts.get();
+      const lotsFilter = document.getElementById('l-part-filter');
+      const prevFilter = lotsFilter.value;
+      lotsFilter.innerHTML = '<option value="">전체 파트</option>';
+      parts.forEach(p => { lotsFilter.innerHTML += `<option value="${p.part_number}">${p.part_number} (${p.type||'-'})</option>`; });
+      if (prevFilter) lotsFilter.value = prevFilter;
+
+      const addSel = document.getElementById('l-add-pn');
+      addSel.innerHTML = '';
+      parts.forEach(p => { addSel.innerHTML += `<option value="${p.part_number}">${p.part_number} · ${p.type||'-'}</option>`; });
+
+      const histFilter = document.getElementById('h-filter-pn');
+      const prevHist = histFilter.value;
+      histFilter.innerHTML = '<option value="">전체 파트</option>';
+      parts.forEach(p => { histFilter.innerHTML += `<option value="${p.part_number}">${p.part_number} (${p.type||''})</option>`; });
+      if (prevHist) histFilter.value = prevHist;
+    }
+
+    /* ══════ 현황 탭 ══════ */
+    function loadDashboard() {
+      const parts = DB.parts.get();
+      const usage = DB.usage.get();
+      dashAllData = parts.map(p => {
+        const cum       = usage.filter(u => u.part_number === p.part_number).reduce((s,u) => s + u.quantity, 0);
+        const exceeded  = p.qty_threshold > 0 && cum > p.qty_threshold;
+        const near      = p.qty_threshold > 0 && !exceeded && cum >= p.qty_threshold * 0.8;
+        let status = 'asis';
+        if (exceeded) status = p.price_to_be > 0 ? 'tobe' : 'sajup';
+        else if (near) status = 'near';
+        const remaining     = p.qty_threshold > 0 ? Math.max(0, p.qty_threshold - cum) : null;
+        const current_price = (exceeded && p.price_to_be > 0) ? p.price_to_be : (p.price_as_is || 0);
+        return { ...p, cumulative: cum, remaining, current_price, status };
+      });
+      document.getElementById('d-cnt-total').textContent = dashAllData.length;
+      document.getElementById('d-cnt-asis').textContent  = dashAllData.filter(d => d.status === 'asis'  || d.status === 'fixed').length;
+      document.getElementById('d-cnt-near').textContent  = dashAllData.filter(d => d.status === 'near'  || d.status === 'switch').length;
+      document.getElementById('d-cnt-tobe').textContent  = dashAllData.filter(d => d.status === 'tobe'  || d.status === 'sajup').length;
+      renderDashTable();
+    }
+
+    function setDashFilter(s) {
+      dashFilter = s;
+      document.querySelectorAll('#tab-dashboard .filter-card').forEach(c => { c.style.outline = ''; });
+      const cardMap = { '': 'd-card-all', 'asis': 'd-card-asis', 'near,switch': 'd-card-near', 'tobe,sajup': 'd-card-tobe' };
+      const card = document.getElementById(cardMap[s]);
+      if (card) card.style.outline = '3px solid #0d6efd';
+      renderDashTable();
+    }
+
+    function renderDashTable() {
+      const statuses = dashFilter ? dashFilter.split(',') : null;
+      const filtered = statuses ? dashAllData.filter(d => statuses.includes(d.status)) : dashAllData;
+      const tbody    = document.getElementById('d-dashboard-body');
+      if (!filtered.length) {
+        tbody.innerHTML = `<tr><td colspan="12" class="text-center text-muted py-4">${dashFilter ? '해당 상태의 파트가 없습니다.' : '등록된 파트가 없습니다.'}</td></tr>`;
+        return;
+      }
+      const si = {
+        asis:   { badge: '<span class="badge bg-success">🟢 As-is</span>',              row: '' },
+        near:   { badge: '<span class="badge bg-warning text-dark">🟡 전환 임박</span>', row: 'table-warning' },
+        switch: { badge: '<span class="badge bg-warning text-dark">🟡 전환 시점!</span>',row: 'table-warning' },
+        tobe:   { badge: '<span class="badge bg-danger">🔴 To-be</span>',               row: 'table-danger'  },
+        sajup:  { badge: '<span class="badge bg-danger">🔴 사급 전환</span>',           row: 'table-danger'  },
+        fixed:  { badge: '<span class="badge bg-secondary">고정가</span>',              row: '' },
+      };
+      tbody.innerHTML = filtered.map(d => {
+        const s = si[d.status] || si.fixed;
+        const tobeDisp = d.price_to_be > 0
+          ? `$${d.price_to_be.toLocaleString('en',{minimumFractionDigits:2})}`
+          : (d.qty_threshold > 0 ? '<span class="text-muted small">사급</span>' : '-');
+        const remDisp = d.remaining != null
+          ? (d.remaining === 0 ? '<span class="text-danger fw-bold">0</span>' : d.remaining.toLocaleString())
+          : '-';
+        return `<tr class="${s.row}" style="cursor:pointer" onclick="switchToLots('${d.part_number}')" title="배치 보기">
+          <td><span class="badge bg-secondary">${d.type||'-'}</span></td>
+          <td class="fw-semibold font-monospace small">${d.part_number}</td>
+          <td class="small text-muted">${d.description||'-'}</td>
+          <td class="text-center fw-bold">${d.cumulative.toLocaleString()}</td>
+          <td class="text-center">${d.onhand_qty != null ? d.onhand_qty.toLocaleString() : '-'}</td>
+          <td class="text-center">${d.qty_threshold > 0 ? d.qty_threshold.toLocaleString() : '-'}</td>
+          <td class="text-center">${remDisp}</td>
+          <td class="text-end">$${(d.price_as_is||0).toLocaleString('en',{minimumFractionDigits:2})}</td>
+          <td class="text-end">${tobeDisp}</td>
+          <td class="text-end fw-bold text-primary">$${d.current_price.toLocaleString('en',{minimumFractionDigits:2})}</td>
+          <td class="text-center">${d.sajup_received > 0
+            ? `<span class="small">입고 <strong>${d.sajup_received}</strong> / 사용 <strong>${d.sajup_used}</strong><br><span class="text-muted">잔여 ${d.sajup_received - d.sajup_used}</span></span>`
+            : '<span class="text-muted small">-</span>'}</td>
+          <td class="text-center">${s.badge}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    function switchToLots(pn) {
+      document.getElementById('l-part-filter').value = pn;
+      new bootstrap.Tab(document.querySelector('[data-bs-target="#tab-lots"]')).show();
+    }
+
+    /* ══════ 파트 관리 탭 ══════ */
+    function loadPartsTab() {
+      const parts = DB.parts.get();
+      const tbody = document.getElementById('p-parts-body');
+      if (!parts.length) {
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">등록된 파트가 없습니다.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = parts.map(p => `
+        <tr>
+          <td><span class="badge bg-secondary">${p.type||'-'}</span></td>
+          <td class="fw-semibold font-monospace">${p.part_number}</td>
+          <td class="small text-muted">${p.description||'-'}</td>
+          <td class="small">${p.mfg||'-'}</td>
+          <td class="text-center">${(p.qty_threshold||0).toLocaleString()}</td>
+          <td class="text-center">${p.unit||'EA'}</td>
+          <td class="text-end">$${(p.price_as_is||0).toLocaleString('en',{minimumFractionDigits:2})}</td>
+          <td class="text-end">$${(p.price_to_be||0).toLocaleString('en',{minimumFractionDigits:2})}</td>
+          <td class="text-center">
+            <button class="btn btn-outline-secondary btn-sm me-1" onclick="openEditPartModal(${p.id})">수정</button>
+            <button class="btn btn-outline-danger btn-sm" onclick="deletePart(${p.id},'${p.part_number}')">삭제</button>
+          </td>
+        </tr>`).join('');
+    }
+
+    function openAddPartModal() {
+      editingPartId = null;
+      document.getElementById('p-modal-title').textContent = '파트 추가';
+      ['p-f-pn','p-f-desc','p-f-mfg','p-f-qty','p-f-asis','p-f-tobe'].forEach(id => { document.getElementById(id).value = ''; });
+      document.getElementById('p-f-type').value = 'Wafer Seal';
+      document.getElementById('p-f-unit').value = 'EA';
+      partModal.show();
+    }
+
+    function openEditPartModal(id) {
+      const p = DB.parts.get().find(x => x.id === id);
+      if (!p) return;
+      editingPartId = id;
+      document.getElementById('p-modal-title').textContent = '파트 수정';
+      document.getElementById('p-f-type').value = p.type  || 'Wafer Seal';
+      document.getElementById('p-f-pn').value   = p.part_number;
+      document.getElementById('p-f-desc').value = p.description || '';
+      document.getElementById('p-f-mfg').value  = p.mfg  || '';
+      document.getElementById('p-f-qty').value  = p.qty_threshold  || 0;
+      document.getElementById('p-f-unit').value = p.unit || 'EA';
+      document.getElementById('p-f-asis').value = p.price_as_is || 0;
+      document.getElementById('p-f-tobe').value = p.price_to_be || 0;
+      partModal.show();
+    }
+
+    async function savePart() {
+      const pn   = document.getElementById('p-f-pn').value.trim();
+      const asis = document.getElementById('p-f-asis').value;
+      if (!pn || !asis) { alert('Part Number와 As-is 단가는 필수입니다.'); return; }
+      const body = {
+        type:          document.getElementById('p-f-type').value,
+        part_number:   pn,
+        description:   document.getElementById('p-f-desc').value.trim(),
+        mfg:           document.getElementById('p-f-mfg').value.trim(),
+        qty_threshold: parseInt(document.getElementById('p-f-qty').value)  || 0,
+        unit:          document.getElementById('p-f-unit').value || 'EA',
+        price_as_is:   parseFloat(asis) || 0,
+        price_to_be:   parseFloat(document.getElementById('p-f-tobe').value) || 0,
+      };
+      const sb = getSB();
+      if (sb) {
+        if (editingPartId) {
+          await sb.from('parts').update(body).eq('id', editingPartId);
+        } else {
+          const parts = DB.parts.get();
+          const newId = parts.length ? Math.max(...parts.map(p => p.id)) + 1 : 1;
+          await sb.from('parts').insert({ id: newId, ...body });
+        }
+        const { data } = await sb.from('parts').select('*').order('id');
+        if (data) { DB._s('parts', data); populatePartSelects(); }
+      } else {
+        const parts = DB.parts.get();
+        if (editingPartId) {
+          const idx = parts.findIndex(p => p.id === editingPartId);
+          if (idx >= 0) parts[idx] = { ...parts[idx], ...body };
+        } else {
+          const newId = parts.length ? Math.max(...parts.map(p => p.id)) + 1 : 1;
+          parts.push({ id: newId, ...body });
+        }
+        DB._s('parts', parts); populatePartSelects();
+      }
+      partModal.hide();
+      loadPartsTab(); loadDashboard();
+    }
+
+    async function deletePart(id, pn) {
+      if (!confirm(`"${pn}" 파트를 삭제하시겠습니까?\n이력 데이터는 유지됩니다.`)) return;
+      const sb = getSB();
+      if (sb) {
+        await sb.from('parts').delete().eq('id', id);
+        const { data } = await sb.from('parts').select('*').order('id');
+        if (data) { DB._s('parts', data); populatePartSelects(); }
+      } else {
+        DB._s('parts', DB.parts.get().filter(p => p.id !== id)); populatePartSelects();
+      }
+      loadPartsTab(); loadDashboard();
+    }
+
+    /* ══════ 배치 관리 탭 ══════ */
+    function loadLotsTab() {
+      const pn = document.getElementById('l-part-filter').value;
+      lotsData = DB.lots.get();
+      if (pn) lotsData = lotsData.filter(l => l.part_number === pn);
+      renderLots();
+    }
+
+    function toggleConsumed() {
+      showConsumed = !showConsumed;
+      const btn = document.getElementById('l-toggle-consumed');
+      btn.textContent = showConsumed ? '🕐 소진완료 숨기기' : '🕐 소진완료 보기';
+      btn.className   = showConsumed ? 'btn btn-secondary btn-sm' : 'btn btn-outline-secondary btn-sm';
+      renderLots();
+    }
+
+    function renderLots() {
+      const container = document.getElementById('l-lots-container');
+      const filtered  = showConsumed ? lotsData : lotsData.filter(l => l.lot_status !== 'consumed');
+      if (!filtered.length) {
+        container.innerHTML = `<div class="text-center text-muted py-5">${lotsData.length ? '소진완료 배치만 있습니다. [소진완료 보기]를 클릭하세요.' : '배치 데이터가 없습니다. [+ 배치 추가]를 이용하세요.'}</div>`;
+        return;
+      }
+      const groups = {};
+      filtered.forEach(l => {
+        const key = l.part_number || '(미매칭)';
+        if (!groups[key]) groups[key] = { type: l.part_type, lots: [] };
+        groups[key].lots.push(l);
+      });
+      container.innerHTML = Object.entries(groups).map(([pn, g]) => {
+        const act = g.lots.find(l => l.lot_status === 'active');
+        const priceHtml = act && act.selling_price > 0
+          ? `<span class="text-success fw-bold">현재 판가 $${act.selling_price.toLocaleString('en',{minimumFractionDigits:2})}</span>`
+          : `<span class="text-warning fw-semibold">판가 미입력</span>`;
+        const rows = g.lots.map(l => {
+          const isA = l.lot_status==='active', isC = l.lot_status==='consumed';
+          const badge = { active:'<span class="badge bg-success">▶ 소진중</span>', pending:'<span class="badge bg-secondary">대기</span>', consumed:'<span class="badge bg-light text-muted border">소진완료</span>' }[l.lot_status] || '';
+          const sp = l.selling_price > 0
+            ? `<span class="${isA?'fw-bold text-success fs-6':'text-muted'}">$${l.selling_price.toLocaleString('en',{minimumFractionDigits:2})}</span>`
+            : (isA ? '<span class="badge bg-warning text-dark">미입력 !</span>' : '<span class="text-muted small">-</span>');
+          const qty = isA
+            ? `<strong class="text-success">${(l.lot_remaining||0).toLocaleString()}</strong> / ${(l.ordered_qty||0).toLocaleString()}`
+            : isC ? `<span class="text-muted">${(l.ordered_qty||0).toLocaleString()} (소진)</span>`
+            : `${(l.lot_remaining||0).toLocaleString()} / ${(l.ordered_qty||0).toLocaleString()}`;
+          return `<tr class="${isA?'lot-active-row':isC?'lot-consumed-row':''}">
+            <td class="font-monospace small text-muted">${l.po_number||'-'}</td>
+            <td class="small">${l.supplier||'-'}</td>
+            <td class="text-center">${qty}</td>
+            <td class="text-end text-muted small">$${(l.purchase_price||0).toLocaleString('en',{minimumFractionDigits:0})}</td>
+            <td class="text-end">${sp}</td>
+            <td class="text-center">${badge}</td>
+            <td class="text-center">
+              <button class="btn btn-outline-primary btn-sm me-1" onclick="openPriceModal(${l.id},'${l.part_number}','${(l.po_number||'').replace(/'/g,"\\'")}',${l.purchase_price||0},${l.selling_price||0})">판가</button>
+              <button class="btn btn-outline-danger btn-sm" onclick="deleteLot(${l.id})">삭제</button>
+            </td>
+          </tr>`;
+        }).join('');
+        return `<div class="card shadow-sm mb-3">
+          <div class="card-header part-group-header d-flex justify-content-between align-items-center py-2">
+            <span><span class="badge bg-secondary me-2">${g.type||'-'}</span><span class="font-monospace">${pn}</span></span>
+            <span class="small">${priceHtml}</span>
+          </div>
+          <div class="card-body p-0">
+            <table class="table table-hover mb-0 align-middle">
+              <thead class="table-light">
+                <tr><th class="small">PO번호</th><th class="small">공급처</th><th class="text-center small">잔여/발주</th><th class="text-end small">구매단가</th><th class="text-end small">판가</th><th class="text-center small">상태</th><th class="text-center small">관리</th></tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    function openPriceModal(id, pn, po, purchasePrice, sellingPrice) {
+      document.getElementById('l-price-lot-id').value    = id;
+      document.getElementById('l-price-lot-info').textContent = `${pn} · ${po||'-'} · 구매단가 $${(purchasePrice||0).toLocaleString('en',{minimumFractionDigits:0})}`;
+      document.getElementById('l-f-selling-price').value = sellingPrice > 0 ? sellingPrice : '';
+      priceModal.show();
+    }
+
+    async function savePrice() {
+      const id    = parseInt(document.getElementById('l-price-lot-id').value);
+      const price = parseFloat(document.getElementById('l-f-selling-price').value);
+      if (!price) { alert('판가를 입력해 주세요.'); return; }
+      const sb = getSB();
+      if (sb) {
+        await sb.from('lots').update({ selling_price: price }).eq('id', id);
+        const { data } = await sb.from('lots').select('*').order('id');
+        if (data) DB._s('lots', data);
+      } else {
+        const lots = DB.lots.get();
+        const idx  = lots.findIndex(l => l.id === id);
+        if (idx >= 0) lots[idx].selling_price = price;
+        DB._s('lots', lots);
+      }
+      priceModal.hide(); loadLotsTab();
+    }
+
+    function openAddLotModal() {
+      ['l-add-po','l-add-supplier','l-add-qty','l-add-purchase','l-add-selling','l-add-date'].forEach(id => { document.getElementById(id).value = ''; });
+      addLotModal.show();
+    }
+
+    async function addLot() {
+      const pn  = document.getElementById('l-add-pn').value;
+      const qty = document.getElementById('l-add-qty').value;
+      if (!pn || !qty) { alert('Part Number와 발주수량은 필수입니다.'); return; }
+      const body = {
+        part_number:    pn,
+        po_number:      document.getElementById('l-add-po').value.trim(),
+        supplier:       document.getElementById('l-add-supplier').value.trim(),
+        ordered_qty:    parseInt(qty),
+        lot_remaining:  parseInt(qty),
+        purchase_price: parseFloat(document.getElementById('l-add-purchase').value) || 0,
+        selling_price:  parseFloat(document.getElementById('l-add-selling').value)  || 0,
+        order_date:     document.getElementById('l-add-date').value,
+        lot_status:     'pending',
+      };
+      const sb   = getSB();
+      const lots = DB.lots.get();
+      const newId = lots.length ? Math.max(...lots.map(l => l.id)) + 1 : 1;
+      if (sb) {
+        await sb.from('lots').insert({ id: newId, ...body });
+        const { data } = await sb.from('lots').select('*').order('id');
+        if (data) DB._s('lots', data);
+      } else {
+        lots.push({ id: newId, ...body }); DB._s('lots', lots);
+      }
+      addLotModal.hide(); loadLotsTab();
+    }
+
+    async function deleteLot(id) {
+      if (!confirm('이 배치를 삭제하시겠습니까?')) return;
+      const sb = getSB();
+      if (sb) {
+        await sb.from('lots').delete().eq('id', id);
+        const { data } = await sb.from('lots').select('*').order('id');
+        if (data) DB._s('lots', data);
+      } else {
+        DB._s('lots', DB.lots.get().filter(l => l.id !== id));
+      }
+      loadLotsTab();
+    }
+
+    /* ══════ 이력 조회 탭 ══════ */
+    function loadHistoryTab() {
+      const pn       = document.getElementById('h-filter-pn').value;
+      const partsMap = {};
+      DB.parts.get().forEach(p => { partsMap[p.part_number] = p; });
+
+      const allUsage = [...DB.usage.get()].sort((a,b) => {
+        if (a.date !== b.date) return a.date > b.date ? 1 : -1;
+        return (a.id||0) - (b.id||0);
+      });
+      const cumulMap = {};
+      const enriched = allUsage.map(r => {
+        cumulMap[r.part_number] = (cumulMap[r.part_number]||0) + r.quantity;
+        const cum = cumulMap[r.part_number];
+        const p   = partsMap[r.part_number] || {};
+        const exceeded      = p.qty_threshold > 0 && cum > p.qty_threshold;
+        const applied_price = exceeded && p.price_to_be > 0 ? p.price_to_be : (p.price_as_is||0);
+        return { ...r, description: p.description||'', cumulative: cum,
+          price_type: exceeded ? 'To-be' : 'As-is',
+          applied_price, total_amount: applied_price * r.quantity };
+      });
+      enriched.sort((a,b) => a.date > b.date ? -1 : 1);
+      const filtered = pn ? enriched.filter(r => r.part_number === pn) : enriched;
+
+      const tbody = document.getElementById('h-history-body');
+      if (!filtered.length) {
+        tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted py-4">이력이 없습니다.</td></tr>';
+        document.getElementById('h-total-row').innerHTML = '';
+        return;
+      }
+      tbody.innerHTML = filtered.map(r => `<tr class="${r.price_type==='To-be'?'table-danger':''}">
+        <td>${r.date}</td>
+        <td class="fw-semibold font-monospace">${r.part_number}</td>
+        <td class="small text-muted">${r.description||'-'}</td>
+        <td class="text-center">${r.quantity.toLocaleString()}</td>
+        <td class="text-center fw-bold">${r.cumulative.toLocaleString()}</td>
+        <td class="text-center"><span class="badge ${r.price_type==='To-be'?'bg-danger':'bg-success'}">${r.price_type}</span></td>
+        <td class="text-end">$${(r.applied_price||0).toLocaleString('en',{minimumFractionDigits:2})}</td>
+        <td class="text-end fw-bold">$${(r.total_amount||0).toLocaleString('en',{minimumFractionDigits:2})}</td>
+        <td><span class="badge bg-light text-dark">${r.team||'-'}</span></td>
+        <td class="small text-muted">${r.note||''}</td>
+        <td class="text-center"><button class="btn btn-outline-danger btn-sm py-0" onclick="deleteUsage(${r.id})">삭제</button></td>
+      </tr>`).join('');
+      const totalAmt = filtered.reduce((s,r) => s+(r.total_amount||0), 0);
+      const totalQty = filtered.reduce((s,r) => s+r.quantity, 0);
+      document.getElementById('h-total-row').innerHTML =
+        `<span class="text-muted me-3">총 ${filtered.length}건 / ${totalQty.toLocaleString()}개</span>
+         <strong class="text-primary">합계: $${totalAmt.toLocaleString('en',{minimumFractionDigits:2})}</strong>`;
+    }
+
+    async function deleteUsage(id) {
+      if (!confirm('이 이력을 삭제하시겠습니까?')) return;
+      const sb = getSB();
+      if (sb) {
+        await sb.from('usage').delete().eq('id', id);
+        const { data } = await sb.from('usage').select('*').order('id');
+        if (data) DB._s('usage', data);
+      } else {
+        DB._s('usage', DB.usage.get().filter(r => r.id !== id));
+      }
+      loadHistoryTab();
+    }
+  </script>
+</body>
+</html>
