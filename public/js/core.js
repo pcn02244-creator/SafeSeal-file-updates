@@ -127,7 +127,7 @@ async function _drmBridgeParse(file, type) {
   const form = new FormData();
   form.append('file', file);
   form.append('type', type || 'mes');
-  const res = await fetch('http://localhost:3001/drm-convert', { method: 'POST', body: form, signal: AbortSignal.timeout(3000) });
+  const res = await fetch('http://localhost:3001/drm-convert', { method: 'POST', body: form });
   if (!res.ok) throw new Error('DRM 브리지 오류 ' + res.status);
   const csv = await res.text();
   return XLSX.read(csv, { type: 'string' });
