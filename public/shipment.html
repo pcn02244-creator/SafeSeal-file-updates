@@ -216,13 +216,15 @@
           <div class="card border-0 shadow-sm mb-3">
             <div class="card-body">
               <div class="d-flex align-items-center gap-3 flex-wrap">
-                <div class="fw-semibold">① 견적 Excel 업로드</div>
-                <input type="file" class="form-control form-control-sm" id="stmt-quot-input"
-                  accept=".xlsx,.xls" onchange="onQuotUpload(this)" style="max-width:300px">
-                <span class="text-muted small">USD/KRW 금액 자동 매핑</span>
+                <div class="fw-semibold">① 견적 금액</div>
                 <span id="stmt-quot-status" class="small"></span>
+                <label class="text-muted small ms-2 mb-0" style="cursor:pointer">
+                  수동 업로드
+                  <input type="file" class="d-none" id="stmt-quot-input"
+                    accept=".xlsx,.xls" onchange="onQuotUpload(this)">
+                </label>
               </div>
-              <div class="form-text mt-1">견적 생성 페이지에서 다운로드한 Excel 파일을 업로드하세요. 업로드 없이도 데이터만 진행 가능합니다.</div>
+              <div class="form-text mt-1">견적 생성 시 금액이 자동으로 로드됩니다. 다른 파일을 쓰려면 "수동 업로드"를 클릭하세요.</div>
             </div>
           </div>
 
@@ -235,7 +237,7 @@
             <div class="card-body p-0">
               <div id="stmt-preview-wrap" style="overflow-x:auto;max-height:300px">
                 <div class="text-center text-muted py-4 small" id="stmt-no-preview">
-                  견적 Excel 업로드 후 "미리보기 새로고침"을 클릭하세요.
+                  PO를 선택하면 자동으로 미리보기가 표시됩니다.
                 </div>
                 <table class="table table-sm table-bordered mb-0 d-none" id="stmt-preview-table" style="font-size:.75rem;white-space:nowrap">
                   <thead class="table-dark">
@@ -714,13 +716,27 @@
       // 모달 초기화
       document.getElementById('stmt-po-tags').innerHTML =
         [...selectedPos].map(po => `<span class="badge bg-primary font-monospace">${po}</span>`).join(' ');
-      document.getElementById('stmt-quot-status').textContent = '';
       document.getElementById('stmt-quot-input').value = '';
-      document.getElementById('stmt-no-preview').classList.remove('d-none');
-      document.getElementById('stmt-preview-table').classList.add('d-none');
       document.getElementById('stmt-drm-log').textContent = '';
-      quotAmounts = {};
-      yjleeRows   = [];
+      yjleeRows = [];
+
+      // 견적 금액 캐시 자동 로드
+      try {
+        const cached = JSON.parse(localStorage.getItem('quotation_amounts_cache') || '{}');
+        quotAmounts = cached;
+        const cnt = Object.keys(cached).length;
+        const status = document.getElementById('stmt-quot-status');
+        if (cnt > 0) {
+          status.textContent = `✅ 견적 금액 ${cnt}건 자동 로드됨`;
+          status.className   = 'small text-success fw-semibold';
+        } else {
+          status.textContent = '견적 생성 후 자동 로드됩니다';
+          status.className   = 'small text-muted';
+          quotAmounts = {};
+        }
+      } catch { quotAmounts = {}; }
+
+      buildPreview();
 
       // drm-bridge 연결 확인
       checkDrmBridge();
