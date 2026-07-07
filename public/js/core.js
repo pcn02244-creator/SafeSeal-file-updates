@@ -3,7 +3,7 @@
    데이터 저장: Supabase (localStorage는 세션 캐시)
 ══════════════════════════════════════════════════════ */
 
-const APP_VERSION    = 'v20260706E';
+const APP_VERSION    = 'v20260707B';
 const EXCHANGE_RATE  = 1511.26;
 const SB_URL         = 'https://ydekxlonxjwfhdhhbpdc.supabase.co';
 const SB_KEY         = 'sb_publishable_aCdcvXkU_hz35DpyrmSCkw_F8TYKZUJ';
@@ -308,8 +308,14 @@ async function generateQuotation(mesFile, masterFile) {
           detail: `파트 "${mat.pn}" 단가 정보 없음`, action: '파트 단가 시스템에서 해당 파트 등록/단가 입력' });
         hasBlockingIssue = true; continue;
       }
+      // A0405465(기본 Screw): 15개 = 1 SET → set 단위로 청구
+      const _calcBillingQty = (pn, mesQty) => {
+        if (pn === BASIC_SCREW_PN) return Math.max(1, Math.round(mesQty / BASIC_SCREW_UNIT));
+        const us = pi.unitSize > 1 ? pi.unitSize : 1;
+        return us > 1 ? Math.round(mesQty / us) : mesQty;
+      };
       if (isWipeDown && REFURB_ONLY_TYPES.includes(pi.partType)) {
-        const billingQty  = pi.unitSize > 1 ? Math.round(mat.qty / pi.unitSize) : mat.qty;
+        const billingQty  = _calcBillingQty(mat.pn, mat.qty);
         issues.push({ 수주번호: orderNo, po, pn, sn, issue: '공정-파트 불일치',
           detail: `${mes.processType} 공정에 ${pi.partType}(${mat.pn}) 발생 — MES 입력 오류 가능성. 해당 파트는 견적에서 제외됨.`,
           action: 'MES 확인 후 이상 없으면 [수동 포함] 클릭', canManualInclude: true,
@@ -322,7 +328,7 @@ async function generateQuotation(mesFile, masterFile) {
               priceStatus: pi.priceStatus } } });
         continue;
       }
-      const billingQty = pi.unitSize > 1 ? Math.round(mat.qty / pi.unitSize) : mat.qty;
+      const billingQty = _calcBillingQty(mat.pn, mat.qty);
       const totalUSD   = pi.unitPrice * billingQty;
       replParts.push({
         pn: pi.canonicalPN||mat.pn, description: pi.description, partType: pi.partType,
