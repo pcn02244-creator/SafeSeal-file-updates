@@ -127,7 +127,7 @@ async function _drmBridgeParse(file, type) {
   const form = new FormData();
   form.append('file', file);
   form.append('type', type || 'mes');
-  const res = await fetch('http://localhost:3001/drm-convert', { method: 'POST', body: form });
+  const res = await fetch('http://localhost:3001/drm-convert', { method: 'POST', body: form, signal: AbortSignal.timeout(10000) });
   if (!res.ok) throw new Error('DRM 브리지 오류 ' + res.status);
   const csv = await res.text();
   return XLSX.read(csv, { type: 'string' });
@@ -144,14 +144,15 @@ function _isDrmWorkbook(wb) {
 
 async function parseExcel(file, drmType) {
   const buf = await readFileAsArrayBuffer(file);
+  let wb;
   try {
-    const wb = XLSX.read(buf, { cellText: true, raw: false });
-    if (drmType && _isDrmWorkbook(wb)) return await _drmBridgeParse(file, drmType);
-    return wb;
+    wb = XLSX.read(buf, { cellText: true, raw: false });
   } catch (e) {
     if (drmType) return await _drmBridgeParse(file, drmType);
     throw new Error('파일을 읽을 수 없습니다: ' + e.message);
   }
+  if (drmType && _isDrmWorkbook(wb)) return await _drmBridgeParse(file, drmType);
+  return wb;
 }
 
 // ── 견적 생성 ─────────────────────────────────────────
@@ -161,7 +162,8 @@ async function generateQuotation(mesFile, masterFile) {
   try {
     mesWb = await _drmBridgeParse(mesFile, 'mes');
   } catch(e) {
-    mesWb = await parseExcel(mesFile); // drm-bridge 미실행 시 fallback
+    mesWb = await parseExcel(mesFile);
+    if (_isDrmWorkbook(mesWb)) throw new Error('MES 파일이 DRM 보호되어 있습니다. drm-bridge를 실행한 후 다시 시도하세요.');
   }
   const mesAllRows  = XLSX.utils.sheet_to_json(mesWb.Sheets[mesWb.SheetNames[0]], { header: 1, defval: '' });
 
