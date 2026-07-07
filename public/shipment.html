@@ -28,6 +28,9 @@
     .sidebar-active { background: #e8f0fe !important; color: #1a73e8 !important; }
     .quick-btn { border: none; text-align: left; padding: 7px 10px; border-radius: 6px; width: 100%; cursor: pointer; font-size: .82rem; margin-bottom: 6px; transition: filter .12s; }
     .quick-btn:hover { filter: brightness(.93); }
+    .ptn-dropzone { border: 2px dashed #8db4e2; border-radius: 10px; padding: 36px 20px; text-align: center; cursor: pointer; transition: background .15s, border-color .15s; background: #f8fbff; user-select: none; }
+    .ptn-dropzone:hover, .ptn-dropzone.drag-over { background: #e8f0fe; border-color: #1a73e8; }
+    .ptn-dropzone.has-file { border-style: solid; border-color: #34a853; background: #f0fbf4; }
   </style>
 </head>
 <body>
@@ -36,8 +39,8 @@
     <div class="d-flex gap-3">
       <a href="parts-mgmt.html"  class="nav-link text-white">파트 단가 관리</a>
       <a href="quotation.html"   class="nav-link text-white">견적 생성</a>
-      <a href="shipment.html"    class="nav-link text-white active">출하관리</a>
       <a href="master-fill.html" class="nav-link text-white">마스터 업데이트</a>
+      <a href="shipment.html"    class="nav-link text-white active">출하관리</a>
     </div>
   </nav>
 
@@ -151,43 +154,36 @@
     <div class="modal-dialog modal-lg">
       <div class="modal-content">
         <div class="modal-header" style="background:#1e2a3a;color:#fff">
-          <h5 class="modal-title">📎 PTN 업로드 및 PO 연결</h5>
+          <h5 class="modal-title">📎 PTN 업로드</h5>
           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body">
 
-          <!-- Step 1: 파일 선택 -->
-          <div id="ptn-step1">
-            <div class="mb-3">
-              <label class="form-label fw-semibold">PTN PDF 파일 선택</label>
-              <input type="file" class="form-control" id="ptn-file-input" accept=".pdf" onchange="analyzePtn(this)">
-              <div class="form-text">PTN(Packing/Transport Notice) PDF 파일을 업로드하면 PO번호·0247번호를 자동으로 추출합니다.</div>
-            </div>
-            <div id="ptn-loading" class="d-none text-center py-3">
-              <div class="spinner-border spinner-border-sm text-primary me-2"></div>
-              <span class="text-muted">PDF 분석 중...</span>
-            </div>
+          <!-- 드래그앤드롭 존 -->
+          <div id="ptn-dropzone" class="ptn-dropzone mb-3">
+            <input type="file" id="ptn-file-input" accept=".pdf" class="d-none">
+            <div id="ptn-drop-icon" style="font-size:2.4rem;line-height:1">📄</div>
+            <div id="ptn-drop-text" class="fw-semibold mt-2">PTN PDF를 여기에 드래그하거나 클릭</div>
+            <div id="ptn-drop-sub" class="text-muted small mt-1">PDF 파일 지원</div>
           </div>
 
-          <!-- Step 2: 매핑 확인 -->
-          <div id="ptn-step2" class="d-none">
-            <div class="mb-3">
-              <div class="d-flex justify-content-between align-items-center mb-2">
-                <span class="fw-semibold small">📄 추출 결과</span>
-                <span class="badge bg-secondary font-monospace" id="ptn-filename-badge"></span>
-              </div>
-              <div id="ptn-matches" class="border rounded p-2 bg-light" style="font-size:.85rem"></div>
-            </div>
+          <!-- 로딩 -->
+          <div id="ptn-loading" class="d-none text-center py-3">
+            <div class="spinner-border spinner-border-sm text-primary me-2"></div>
+            <span class="text-muted">PDF 분석 중...</span>
+          </div>
+
+          <!-- 결과 -->
+          <div id="ptn-results" class="d-none">
             <div class="row g-3">
               <div class="col-md-6">
-                <label class="form-label fw-semibold">PTN 번호 (출하번호) <span class="text-danger">*</span></label>
+                <label class="form-label fw-semibold small">PTN 번호 <span class="text-danger">*</span></label>
                 <input type="text" class="form-control font-monospace" id="ptn-no-input" placeholder="자동 추출 또는 직접 입력">
-                <div class="form-text">후보를 클릭하면 자동 입력됩니다.</div>
                 <div id="ptn-candidates" class="d-flex flex-wrap gap-1 mt-1"></div>
               </div>
               <div class="col-md-6">
-                <label class="form-label fw-semibold">연결할 PO</label>
-                <div id="ptn-po-list" class="border rounded p-2 bg-light" style="min-height:42px;max-height:100px;overflow-y:auto"></div>
+                <label class="form-label fw-semibold small">PDF에서 찾은 PO</label>
+                <div id="ptn-po-list" class="border rounded p-2 bg-light" style="min-height:42px;max-height:120px;overflow-y:auto;font-size:.85rem"></div>
               </div>
             </div>
           </div>
@@ -329,6 +325,7 @@
     document.addEventListener('DOMContentLoaded', async () => {
       dateModal = new bootstrap.Modal(document.getElementById('dateModal'));
       ptnModal  = new bootstrap.Modal(document.getElementById('ptnModal'));
+      setupPtnDropzone();
       await initData();
       await loadData();
     });
@@ -347,6 +344,21 @@
         ]);
         jobs  = j.data  || [];
         ships = s.data  || [];
+      }
+
+      // Supabase에 데이터 없으면 마스터 캐시에서 PO 목록 로드
+      if (!jobs.length) {
+        try {
+          const CI    = { no:0, pn:6, sn:7, po:8, tkm:9 };
+          const cache = JSON.parse(localStorage.getItem('master_rows_cache') || '[]');
+          const start = cache.findIndex(r => r[CI.po] && /^[A-Z0-9]/.test(String(r[CI.po])));
+          for (let i = (start < 0 ? 2 : start); i < cache.length; i++) {
+            const r  = cache[i];
+            const po = String(r[CI.po] || '').trim();
+            if (!po || po.toLowerCase() === 'po') continue;
+            jobs.push({ order_no: String(r[CI.no]||''), pn: String(r[CI.pn]||''), sn: String(r[CI.sn]||''), po, tkm_no: String(r[CI.tkm]||'') });
+          }
+        } catch {}
       }
 
       // shipments → po 기준 Map
@@ -554,11 +566,23 @@
     }
 
     /* ════ PTN 업로드 ════ */
+    function setupPtnDropzone() {
+      const zone  = document.getElementById('ptn-dropzone');
+      const input = document.getElementById('ptn-file-input');
+      zone.addEventListener('click',      () => input.click());
+      input.addEventListener('change',    () => { if (input.files[0]) handlePtnFile(input.files[0]); });
+      zone.addEventListener('dragover',   e  => { e.preventDefault(); zone.classList.add('drag-over'); });
+      zone.addEventListener('dragleave',  () => zone.classList.remove('drag-over'));
+      zone.addEventListener('drop',       e  => {
+        e.preventDefault();
+        zone.classList.remove('drag-over');
+        const f = e.dataTransfer.files[0];
+        if (f) handlePtnFile(f);
+      });
+    }
+
     function openPtnModal() {
       resetPtnModal();
-      document.getElementById('ptn-po-list').innerHTML = selectedPos.size
-        ? [...selectedPos].map(po => `<span class="badge bg-primary font-monospace me-1">${po}</span>`).join('')
-        : '<span class="text-muted small">연결할 PO가 없습니다. 목록에서 PO를 선택하면 자동 연결됩니다.</span>';
       ptnModal.show();
     }
 
@@ -572,85 +596,75 @@
     }
 
     function resetPtnModal() {
-      document.getElementById('ptn-step2').classList.add('d-none');
+      const zone = document.getElementById('ptn-dropzone');
+      zone.classList.remove('has-file', 'drag-over');
+      document.getElementById('ptn-drop-icon').textContent = '📄';
+      document.getElementById('ptn-drop-text').textContent = 'PTN PDF를 여기에 드래그하거나 클릭';
+      document.getElementById('ptn-drop-sub').textContent  = 'PDF 파일 지원';
       document.getElementById('ptn-loading').classList.add('d-none');
+      document.getElementById('ptn-results').classList.add('d-none');
       document.getElementById('ptn-save-btn').classList.add('d-none');
       document.getElementById('ptn-file-input').value = '';
       document.getElementById('ptn-no-input').value   = '';
       document.getElementById('ptn-candidates').innerHTML = '';
-      document.getElementById('ptn-matches').innerHTML    = '';
       ptnPdfText  = '';
       ptnFileName = '';
     }
 
-    async function analyzePtn(input) {
-      const file = input.files[0];
-      if (!file) return;
+    async function handlePtnFile(file) {
+      if (!file.name.toLowerCase().endsWith('.pdf')) { alert('PDF 파일만 업로드 가능합니다.'); return; }
       ptnFileName = file.name;
+
+      const zone = document.getElementById('ptn-dropzone');
+      zone.classList.add('has-file');
+      document.getElementById('ptn-drop-icon').textContent = '✅';
+      document.getElementById('ptn-drop-text').textContent = file.name;
+      document.getElementById('ptn-drop-sub').textContent  = '클릭하면 다른 파일로 교체';
+
       document.getElementById('ptn-loading').classList.remove('d-none');
-      document.getElementById('ptn-step2').classList.add('d-none');
+      document.getElementById('ptn-results').classList.add('d-none');
+      document.getElementById('ptn-save-btn').classList.add('d-none');
 
       try {
         const ab  = await file.arrayBuffer();
         const pdf = await pdfjsLib.getDocument({ data: ab }).promise;
         let text  = '';
         for (let i = 1; i <= pdf.numPages; i++) {
-          const page    = await pdf.getPage(i);
-          const content = await page.getTextContent();
-          text += content.items.map(it => it.str).join(' ') + '\n';
+          const page = await pdf.getPage(i);
+          const ct   = await page.getTextContent();
+          text += ct.items.map(it => it.str).join(' ') + '\n';
         }
         ptnPdfText = text;
 
-        // 선택된 PO / 0247# 매칭
-        const matchResults = [...selectedPos].map(po => {
-          const g       = poGroups.find(x => x.po === po);
-          const poFound = text.includes(po);
-          const tkmHit  = (g?.tkmNos || []).filter(t => t && text.includes(t));
-          return { po, poFound, tkmHit };
-        });
-
-        // 바코드/PTN 번호 후보 추출 (영숫자+하이픈, 6~25자)
-        const raw = [...new Set(text.match(/[A-Z0-9][A-Z0-9\-]{5,24}/g) || [])];
-        // 이미 알고 있는 PO/수주번호 제외
+        // PDF에서 PO 자동 매칭
         const knownPOs  = new Set(poGroups.map(g => g.po));
         const knownTKMs = new Set(poGroups.flatMap(g => g.tkmNos));
+        const foundPOs  = [...knownPOs].filter(po => po && text.includes(po));
+
+        // selectedPos 자동 업데이트
+        selectedPos = new Set(foundPOs);
+        updateActionBar();
+
+        // PTN 번호 후보 (알려진 PO/TKM 제외)
+        const raw        = [...new Set(text.match(/[A-Z0-9][A-Z0-9\-]{5,24}/g) || [])];
         const candidates = raw.filter(v => !knownPOs.has(v) && !knownTKMs.has(v)).slice(0, 8);
 
         document.getElementById('ptn-loading').classList.add('d-none');
-        document.getElementById('ptn-step2').classList.remove('d-none');
+        document.getElementById('ptn-results').classList.remove('d-none');
         document.getElementById('ptn-save-btn').classList.remove('d-none');
-        document.getElementById('ptn-filename-badge').textContent = ptnFileName;
 
-        // 매칭 결과 테이블
-        document.getElementById('ptn-matches').innerHTML = `
-          <table class="table table-sm mb-1">
-            <thead><tr><th>PO번호</th><th>0247# 매칭</th><th>PO 텍스트 발견</th></tr></thead>
-            <tbody>
-              ${matchResults.map(r => `<tr>
-                <td class="font-monospace">${r.po}</td>
-                <td>${r.tkmHit.length
-                  ? r.tkmHit.map(t => `<span class="badge bg-success">${t}</span>`).join(' ')
-                  : '<span class="text-muted">미발견</span>'}</td>
-                <td>${r.poFound
-                  ? '<span class="badge bg-success">✅ 발견</span>'
-                  : '<span class="badge bg-warning text-dark">⚠️ 미발견</span>'}</td>
-              </tr>`).join('')}
-            </tbody>
-          </table>`;
+        document.getElementById('ptn-po-list').innerHTML = foundPOs.length
+          ? foundPOs.map(po => `<span class="badge bg-success font-monospace me-1 mb-1">${po}</span>`).join('')
+          : '<span class="text-muted small">PDF에서 PO를 자동 인식하지 못했습니다.</span>';
 
-        // PTN 번호 후보
-        document.getElementById('ptn-candidates').innerHTML =
-          candidates.length
-            ? candidates.map(c =>
-                `<span class="ptn-candidate" onclick="document.getElementById('ptn-no-input').value='${c}'">${c}</span>`
-              ).join('')
-            : '<span class="text-muted small">자동 추출 불가 — 직접 입력해 주세요</span>';
+        document.getElementById('ptn-candidates').innerHTML = candidates
+          .map(c => `<span class="ptn-candidate" onclick="document.getElementById('ptn-no-input').value='${c}'">${c}</span>`)
+          .join('');
 
         if (candidates.length) document.getElementById('ptn-no-input').value = candidates[0];
 
       } catch(e) {
         document.getElementById('ptn-loading').classList.add('d-none');
-        document.getElementById('ptn-step2').classList.add('d-none');
         alert('PDF 분석 실패: ' + e.message);
       }
     }
