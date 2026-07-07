@@ -3,7 +3,7 @@
    데이터 저장: Supabase (localStorage는 세션 캐시)
 ══════════════════════════════════════════════════════ */
 
-const APP_VERSION    = 'v20260707B';
+const APP_VERSION    = 'v20260707C';
 const EXCHANGE_RATE  = 1511.26;
 const SB_URL         = 'https://ydekxlonxjwfhdhhbpdc.supabase.co';
 const SB_KEY         = 'sb_publishable_aCdcvXkU_hz35DpyrmSCkw_F8TYKZUJ';
@@ -538,17 +538,26 @@ async function buildMasterFillResult(mesFile, masterFile) {
 
 // ── 클라이언트 Excel 다운로드 (견적) ─────────────────
 function downloadQuotationExcel(quotation) {
-  const FIXED_PARTS = [
+  const PART_ORDER = [
     { type: 'Wafer Seal',  label: 'Wafer Seal'   },
     { type: 'Contact Pin', label: 'Contact Pin'   },
     { type: 'Retainer',    label: 'Retainer ring' },
     { type: 'Screw',       label: 'Screw'         },
     { type: 'Lead In',     label: 'Lead In'       },
   ];
+
+  // 전체 견적 중 실제 금액이 있는 파트 타입만 컬럼으로 포함
+  const usedTypes = new Set(
+    quotation.flatMap(q => q.replParts)
+      .filter(p => p.totalUSD > 0)
+      .map(p => p.partType)
+  );
+  const activeParts = PART_ORDER.filter(p => usedTypes.has(p.type));
+
   const headers = [
     'SS P/N', 'SS S/N', 'PO', '0247#', 'Process',
     'Cleaning price\n(USD)', 'Cleaning price\n(KRW)',
-    ...FIXED_PARTS.flatMap(p => [`${p.label}\n(USD)`, `${p.label}\n(KRW)`]),
+    ...activeParts.flatMap(p => [`${p.label}\n(USD)`, `${p.label}\n(KRW)`]),
     'Total\n(USD)', 'Total\n(KRW)', 'Remark',
   ];
   const rows = [
@@ -556,7 +565,7 @@ function downloadQuotationExcel(quotation) {
     headers,
   ];
   for (const q of quotation) {
-    const partCols = FIXED_PARTS.flatMap(fp => {
+    const partCols = activeParts.flatMap(fp => {
       const p = q.replParts.find(r => r.partType === fp.type);
       return p ? [p.totalUSD, p.totalKRW] : [0, 0];
     });
