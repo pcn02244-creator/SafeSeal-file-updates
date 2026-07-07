@@ -128,6 +128,105 @@ app.post('/drm-convert', upload.single('file'), (req, res) => {
   }
 });
 
+// YJLEE 시트 채우기 + 매크로 실행
+app.post('/fill-statement', express.json({ limit: '10mb' }), (req, res) => {
+  const {
+    template_path, output_path, rows,
+    run_macro = true, macro_name = 'YJLEE', data_row_start = 4,
+  } = req.body;
+
+  if (!template_path) return res.status(400).json({ error: 'template_path required' });
+  if (!output_path)   return res.status(400).json({ error: 'output_path required' });
+  if (!rows || !rows.length) return res.status(400).json({ error: 'rows required' });
+
+  if (!fs.existsSync(template_path))
+    return res.status(404).json({ error: '템플릿 파일 없음: ' + template_path });
+
+  const dataFile  = path.join(TMP, 'yjlee_data_' + Date.now() + '.json');
+  const startRow  = parseInt(data_row_start) || 4;
+  const macroCode = run_macro
+    ? `$excel.Application.Run("${macro_name}"); Write-Output "MACRO_RUN"`
+    : '# macro skipped';
+
+  try {
+    fs.writeFileSync(dataFile, JSON.stringify(rows), 'utf8');
+  } catch (e) {
+    return res.status(500).json({ error: '임시파일 쓰기 실패: ' + e.message });
+  }
+
+  const outDir = path.dirname(output_path);
+  const script = `
+$ErrorActionPreference = 'Stop'
+try {
+  $dataJson = [System.IO.File]::ReadAllText('${dataFile.replace(/\\/g, '\\\\')}')
+  $data = $dataJson | ConvertFrom-Json
+
+  $outDir = '${outDir.replace(/\\/g, '\\\\')}'
+  if (-not (Test-Path $outDir)) { New-Item -ItemType Directory -Path $outDir -Force | Out-Null }
+
+  $excel = New-Object -ComObject Excel.Application
+  $excel.Visible = $false
+  $excel.DisplayAlerts = $false
+  $excel.AskToUpdateLinks = $false
+
+  $wb = $excel.Workbooks.Open('${template_path.replace(/\\/g, '\\\\').replace(/'/g, "''")}', 0, $false)
+
+  $ws = $null
+  foreach ($s in $wb.Sheets) { if ($s.Name -eq 'YJLEE') { $ws = $s; break } }
+  if (-not $ws) { throw 'YJLEE 시트를 찾을 수 없습니다.' }
+
+  # 기존 데이터 행 지우기
+  $lastRow = $ws.UsedRange.Row + $ws.UsedRange.Rows.Count - 1
+  if ($lastRow -ge ${startRow}) {
+    $ws.Range($ws.Cells(${startRow}, 1), $ws.Cells($lastRow, 35)).ClearContents()
+  }
+
+  # 데이터 쓰기
+  $r = ${startRow}
+  foreach ($row in $data) {
+    $ws.Cells($r,  1).Value2 = "$($row.no)"
+    $ws.Cells($r,  2).Value2 = "$($row.customer)"
+    $ws.Cells($r,  3).Value2 = "$($row.fab)"
+    $ws.Cells($r,  4).Value2 = "$($row.tool)"
+    $ws.Cells($r,  5).Value2 = "$($row.pn)"
+    $ws.Cells($r,  6).Value2 = "$($row.sn)"
+    $ws.Cells($r,  7).Value2 = "$($row.po)"
+    $ws.Cells($r,  8).Value2 = "$($row.tkm_no)"
+    if ($null -ne $row.usd -and "$($row.usd)" -ne '') { $ws.Cells($r,  9).Value2 = [double]$row.usd }
+    if ($null -ne $row.krw -and "$($row.krw)" -ne '') { $ws.Cells($r, 30).Value2 = [double]$row.krw }
+    $r++
+  }
+
+  # 저장 (xlOpenXMLWorkbookMacroEnabled = 52)
+  $wb.SaveAs('${output_path.replace(/\\/g, '\\\\').replace(/'/g, "''")}', 52)
+  Write-Output "SAVED"
+
+  # 매크로 실행
+  ${macroCode}
+
+  $wb.Close($false)
+  $excel.Quit()
+  [System.Runtime.Interopservices.Marshal]::ReleaseComObject($excel) | Out-Null
+
+  Write-Output "OK:$($data.Count)"
+} catch {
+  try { $wb.Close($false) } catch {}
+  try { $excel.Quit() }     catch {}
+  Write-Error "실패: $_"; exit 1
+}`;
+
+  killExcel();
+  const r = runPs(script, '_fill_statement.ps1');
+  try { fs.unlinkSync(dataFile); } catch {}
+
+  if (r.status !== 0) {
+    console.error('[fill-statement] 오류:', r.stderr || r.stdout);
+    return res.status(500).json({ error: r.stderr || r.stdout || 'Excel 처리 실패' });
+  }
+  console.log('[fill-statement] 완료:', r.stdout?.trim());
+  res.json({ ok: true, output_path, rows_written: rows.length, log: r.stdout?.trim() });
+});
+
 app.listen(PORT, '0.0.0.0', () => {
   const nets = os.networkInterfaces();
   const ips  = [];

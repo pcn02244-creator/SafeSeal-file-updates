@@ -9,6 +9,7 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="style.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
   <script src="js/core.js?v=20260707A"></script>
   <script src="js/auth.js"></script>
@@ -43,9 +44,7 @@
       <div class="vr opacity-50"></div>
       <button class="btn btn-sm btn-light" onclick="openDateModal()">📅 출하일 일괄 변경</button>
       <button class="btn btn-sm btn-light" onclick="openPtnModal()">📎 PTN 업로드</button>
-      <button class="btn btn-sm btn-warning" onclick="generateStatements()">🖨️ 거래명세서 생성
-        <span class="badge bg-dark ms-1" style="font-size:.65rem">준비중</span>
-      </button>
+      <button class="btn btn-sm btn-warning" onclick="generateStatements()">🖨️ 거래명세서 생성</button>
       <button class="btn btn-sm btn-outline-light ms-auto" onclick="clearSelection()">✕ 해제</button>
     </div>
 
@@ -165,6 +164,118 @@
         <div class="modal-footer">
           <button class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
           <button class="btn btn-primary d-none" id="ptn-save-btn" onclick="savePtn()">💾 저장</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ 거래명세서 생성 모달 ══ -->
+  <div class="modal fade" id="statementModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+      <div class="modal-content">
+        <div class="modal-header text-white" style="background:#2c3e50">
+          <h5 class="modal-title">🖨️ 거래명세서 일괄 생성</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+
+          <!-- 선택 PO 요약 -->
+          <div class="alert alert-light border py-2 mb-3">
+            <div class="small text-muted mb-1">선택된 PO</div>
+            <div id="stmt-po-tags" class="d-flex flex-wrap gap-1"></div>
+          </div>
+
+          <!-- Step 1: 견적 Excel 업로드 -->
+          <div class="card border-0 shadow-sm mb-3">
+            <div class="card-body">
+              <div class="d-flex align-items-center gap-3 flex-wrap">
+                <div class="fw-semibold">① 견적 Excel 업로드</div>
+                <input type="file" class="form-control form-control-sm" id="stmt-quot-input"
+                  accept=".xlsx,.xls" onchange="onQuotUpload(this)" style="max-width:300px">
+                <span class="text-muted small">USD/KRW 금액 자동 매핑</span>
+                <span id="stmt-quot-status" class="small"></span>
+              </div>
+              <div class="form-text mt-1">견적 생성 페이지에서 다운로드한 Excel 파일을 업로드하세요. 업로드 없이도 데이터만 진행 가능합니다.</div>
+            </div>
+          </div>
+
+          <!-- Step 2: 데이터 미리보기 -->
+          <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
+              <span class="fw-semibold">② YJLEE 데이터 미리보기</span>
+              <button class="btn btn-sm btn-outline-primary" onclick="buildPreview()">🔄 미리보기 새로고침</button>
+            </div>
+            <div class="card-body p-0">
+              <div id="stmt-preview-wrap" style="overflow-x:auto;max-height:300px">
+                <div class="text-center text-muted py-4 small" id="stmt-no-preview">
+                  견적 Excel 업로드 후 "미리보기 새로고침"을 클릭하세요.
+                </div>
+                <table class="table table-sm table-bordered mb-0 d-none" id="stmt-preview-table" style="font-size:.75rem;white-space:nowrap">
+                  <thead class="table-dark">
+                    <tr>
+                      <th>No.</th><th>Customer</th><th>Fab</th><th>Tool</th>
+                      <th>SS P/N</th><th>SS S/N</th><th>PO</th><th>0247#</th>
+                      <th>Amount(USD)</th><th>AD(KRW)</th>
+                    </tr>
+                  </thead>
+                  <tbody id="stmt-preview-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 3: 생성 방법 선택 -->
+          <div class="card border-0 shadow-sm">
+            <div class="card-body">
+              <div class="fw-semibold mb-3">③ 생성 방법 선택</div>
+
+              <!-- drm-bridge 방식 -->
+              <div class="border rounded p-3 mb-3" id="stmt-drm-section" style="background:#f8f9fa">
+                <div class="d-flex align-items-center gap-2 mb-2">
+                  <span class="badge bg-primary">추천</span>
+                  <span class="fw-semibold">drm-bridge 방식 (Excel + 매크로 자동 실행)</span>
+                  <span id="stmt-bridge-badge" class="badge bg-secondary ms-2">연결 확인 중...</span>
+                </div>
+                <div class="row g-2">
+                  <div class="col-12">
+                    <label class="form-label small mb-1">템플릿 파일 경로 (이 PC 기준)</label>
+                    <input type="text" class="form-control form-control-sm font-monospace" id="stmt-tpl-path"
+                      placeholder="예: C:\Users\USER\Downloads\Safeseal_거래명세서-260707.xlsm">
+                  </div>
+                  <div class="col-12">
+                    <label class="form-label small mb-1">출력 폴더</label>
+                    <input type="text" class="form-control form-control-sm font-monospace" id="stmt-out-dir"
+                      placeholder="예: C:\Users\USER\Desktop\거래명세서_output">
+                  </div>
+                  <div class="col-12 d-flex align-items-center gap-3">
+                    <div class="form-check">
+                      <input type="checkbox" class="form-check-input" id="stmt-run-macro" checked>
+                      <label class="form-check-label small" for="stmt-run-macro">YJLEE 매크로 자동 실행 (개별 거래명세서 생성)</label>
+                    </div>
+                    <input type="number" class="form-control form-control-sm" id="stmt-data-row" value="4" style="width:90px" title="YJLEE 시트 데이터 시작 행">
+                    <span class="small text-muted">데이터 시작행</span>
+                  </div>
+                </div>
+                <button class="btn btn-primary mt-3" id="stmt-drm-btn" onclick="generateViaDrmBridge()" disabled>
+                  🖨️ drm-bridge로 생성
+                </button>
+                <div id="stmt-drm-log" class="mt-2 small font-monospace text-muted"></div>
+              </div>
+
+              <!-- 데이터 다운로드 방식 -->
+              <div class="border rounded p-3" style="background:#fffdf0">
+                <div class="d-flex align-items-center gap-2 mb-2">
+                  <span class="badge bg-secondary">대안</span>
+                  <span class="fw-semibold">데이터 Excel 다운로드 (수동 붙여넣기)</span>
+                </div>
+                <div class="text-muted small mb-2">
+                  YJLEE 시트에 붙여넣을 수 있는 Excel 파일을 다운로드합니다. 템플릿을 열고 직접 붙여넣은 후 YJLEE 매크로 버튼을 클릭하세요.
+                </div>
+                <button class="btn btn-warning" onclick="downloadStmtDataExcel()">⬇️ 데이터 Excel 다운로드</button>
+              </div>
+            </div>
+          </div>
+
         </div>
       </div>
     </div>
@@ -537,10 +648,237 @@
       await loadData();
     }
 
-    /* ════ 거래명세서 생성 (준비 중) ════ */
+    /* ════ 거래명세서 생성 ════ */
+    let stmtModal;
+    let quotAmounts   = {};   // sn → { usd, krw }
+    let yjleeRows     = [];   // 현재 빌드된 YJLEE rows
+    let drmAvailable  = false;
+
     function generateStatements() {
-      const pos = [...selectedPos];
-      alert(`[준비 중] 거래명세서 일괄 생성\n\n선택 PO: ${pos.join(', ')}\n\n거래명세서 양식(바코드 형식 포함)이 확정되면 자동 생성이 가능합니다.\n담당자에게 양식을 공유받아 주세요.`);
+      if (!selectedPos.size) return;
+
+      // 모달 초기화
+      document.getElementById('stmt-po-tags').innerHTML =
+        [...selectedPos].map(po => `<span class="badge bg-primary font-monospace">${po}</span>`).join(' ');
+      document.getElementById('stmt-quot-status').textContent = '';
+      document.getElementById('stmt-quot-input').value = '';
+      document.getElementById('stmt-no-preview').classList.remove('d-none');
+      document.getElementById('stmt-preview-table').classList.add('d-none');
+      document.getElementById('stmt-drm-log').textContent = '';
+      quotAmounts = {};
+      yjleeRows   = [];
+
+      // drm-bridge 연결 확인
+      checkDrmBridge();
+
+      if (!stmtModal) stmtModal = new bootstrap.Modal(document.getElementById('statementModal'));
+      stmtModal.show();
+    }
+
+    async function checkDrmBridge() {
+      const badge  = document.getElementById('stmt-bridge-badge');
+      const btn    = document.getElementById('stmt-drm-btn');
+      badge.textContent   = '연결 확인 중...';
+      badge.className     = 'badge bg-secondary ms-2';
+      btn.disabled = true;
+
+      const bridgeUrl = (typeof DRM_BRIDGE_URL !== 'undefined' ? DRM_BRIDGE_URL : null)
+        || localStorage.getItem('drm_bridge_url') || 'http://localhost:3001';
+
+      try {
+        const r = await fetch(bridgeUrl + '/ping', { signal: AbortSignal.timeout(2000) });
+        const j = await r.json();
+        if (j.ok) {
+          drmAvailable = true;
+          badge.textContent = '✅ 연결됨';
+          badge.className   = 'badge bg-success ms-2';
+          btn.disabled = false;
+          return;
+        }
+      } catch {}
+      drmAvailable = false;
+      badge.textContent = '⚠️ drm-bridge 미연결 (localhost:3001)';
+      badge.className   = 'badge bg-warning text-dark ms-2';
+    }
+
+    async function onQuotUpload(input) {
+      const file = input.files[0];
+      if (!file) return;
+      const status = document.getElementById('stmt-quot-status');
+      status.textContent = '분석 중...';
+      status.className   = 'small text-muted';
+
+      try {
+        const ab   = await file.arrayBuffer();
+        const wb   = XLSX.read(ab, { type: 'array' });
+        const ws   = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+        // 헤더 행 찾기 (SS P/N 포함 행)
+        let hdrIdx = rows.findIndex(r =>
+          r.some(c => typeof c === 'string' && c.includes('S/N'))
+        );
+        if (hdrIdx < 0) hdrIdx = 1;
+        const hdr = rows[hdrIdx];
+
+        const snIdx  = hdr.findIndex(h => typeof h === 'string' && h.includes('S/N'));
+        const usdIdx = hdr.findIndex(h => typeof h === 'string' && h.includes('Total') && h.includes('USD'));
+        const krwIdx = hdr.findIndex(h => typeof h === 'string' && h.includes('Total') && h.includes('KRW'));
+
+        if (snIdx < 0) throw new Error('SS S/N 열을 찾을 수 없습니다.');
+
+        quotAmounts = {};
+        let matched = 0;
+        for (let i = hdrIdx + 1; i < rows.length; i++) {
+          const r  = rows[i];
+          const sn = String(r[snIdx] || '').trim();
+          if (!sn) continue;
+          quotAmounts[sn] = {
+            usd: usdIdx >= 0 ? (r[usdIdx] || '') : '',
+            krw: krwIdx >= 0 ? (r[krwIdx] || '') : '',
+          };
+          matched++;
+        }
+
+        status.textContent = `✅ ${matched}건 금액 로드`;
+        status.className   = 'small text-success fw-semibold';
+        buildPreview();
+      } catch (e) {
+        status.textContent = `❌ ${e.message}`;
+        status.className   = 'small text-danger';
+      }
+    }
+
+    function buildPreview() {
+      // master_rows_cache에서 선택 PO 행 추출
+      const masterCache = (() => {
+        try { return JSON.parse(localStorage.getItem('master_rows_cache') || '[]'); } catch { return []; }
+      })();
+
+      // 헤더 행 찾기 (SS P/N + SS S/N이 있는 행)
+      let hdrIdx = masterCache.findIndex(r =>
+        String(r[6] || '').toLowerCase().includes('p/n') &&
+        String(r[7] || '').toLowerCase().includes('s/n')
+      );
+      if (hdrIdx < 0) hdrIdx = 2; // 기본값
+
+      // 컬럼 인덱스 (스크린샷 기준: A=0, D=3, E=4, F=5, G=6, H=7, I=8, J=9)
+      const CI = { no:0, cust:3, fab:4, tool:5, pn:6, sn:7, po:8, tkm:9 };
+
+      yjleeRows = [];
+      for (let i = hdrIdx + 1; i < masterCache.length; i++) {
+        const r  = masterCache[i];
+        const po = String(r[CI.po] || '').trim();
+        if (!selectedPos.has(po)) continue;
+        const sn = String(r[CI.sn] || '').trim();
+        const a  = quotAmounts[sn] || { usd: '', krw: '' };
+        yjleeRows.push({
+          no:       r[CI.no]   || '',
+          customer: r[CI.cust] || '',
+          fab:      r[CI.fab]  || '',
+          tool:     r[CI.tool] || '',
+          pn:       r[CI.pn]   || '',
+          sn,
+          po,
+          tkm_no:   r[CI.tkm]  || '',
+          usd:      a.usd,
+          krw:      a.krw,
+        });
+      }
+
+      // master_rows_cache에 없으면 Supabase master_jobs로 fallback
+      if (!yjleeRows.length) {
+        const allJobs = (poGroups || []).flatMap(g =>
+          g.orders.filter(o => selectedPos.has(o.po || ''))
+            .map(o => ({
+              no: o.order_no || '', customer: '', fab: '', tool: '',
+              pn: o.pn || '', sn: o.sn || '', po: o.po || '', tkm_no: o.tkm_no || '',
+              usd: quotAmounts[o.sn]?.usd || '', krw: quotAmounts[o.sn]?.krw || '',
+            }))
+        );
+        yjleeRows = allJobs;
+      }
+
+      // 테이블 렌더
+      const tbody = document.getElementById('stmt-preview-tbody');
+      if (!yjleeRows.length) {
+        document.getElementById('stmt-no-preview').textContent = '해당 PO 데이터가 마스터 캐시에 없습니다. 먼저 견적 생성을 실행해 캐시를 만들어 주세요.';
+        document.getElementById('stmt-no-preview').classList.remove('d-none');
+        document.getElementById('stmt-preview-table').classList.add('d-none');
+        return;
+      }
+
+      tbody.innerHTML = yjleeRows.map(r => `<tr>
+        <td>${r.no}</td><td>${r.customer}</td><td>${r.fab}</td><td>${r.tool}</td>
+        <td>${r.pn}</td><td>${r.sn}</td>
+        <td class="font-monospace">${r.po}</td>
+        <td class="font-monospace" style="color:#c0392b">${r.tkm_no}</td>
+        <td class="${r.usd ? 'text-success fw-semibold' : 'text-muted'}">${r.usd || '-'}</td>
+        <td class="${r.krw ? 'text-success fw-semibold' : 'text-muted'}">${r.krw || '-'}</td>
+      </tr>`).join('');
+      document.getElementById('stmt-no-preview').classList.add('d-none');
+      document.getElementById('stmt-preview-table').classList.remove('d-none');
+    }
+
+    async function generateViaDrmBridge() {
+      if (!yjleeRows.length) { buildPreview(); if (!yjleeRows.length) return alert('YJLEE 데이터가 없습니다.'); }
+
+      const tplPath  = document.getElementById('stmt-tpl-path').value.trim();
+      const outDir   = document.getElementById('stmt-out-dir').value.trim();
+      const runMacro = document.getElementById('stmt-run-macro').checked;
+      const startRow = parseInt(document.getElementById('stmt-data-row').value) || 4;
+
+      if (!tplPath) return alert('템플릿 파일 경로를 입력해 주세요.');
+      if (!outDir)  return alert('출력 폴더를 입력해 주세요.');
+
+      const today    = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      const poLabel  = [...selectedPos].join('_').slice(0, 40);
+      const outFile  = `${outDir}\\거래명세서_${poLabel}_${today}.xlsm`;
+      const bridgeUrl = localStorage.getItem('drm_bridge_url') || 'http://localhost:3001';
+
+      const logEl = document.getElementById('stmt-drm-log');
+      const btn   = document.getElementById('stmt-drm-btn');
+      btn.disabled = true;
+      logEl.textContent = '⏳ drm-bridge 처리 중 (Excel 열기 + 데이터 입력)...';
+
+      try {
+        const resp = await fetch(bridgeUrl + '/fill-statement', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            template_path: tplPath, output_path: outFile,
+            rows: yjleeRows, run_macro: runMacro,
+            macro_name: 'YJLEE', data_row_start: startRow,
+          }),
+        });
+        const result = await resp.json();
+        if (!resp.ok) throw new Error(result.error || '알 수 없는 오류');
+        logEl.innerHTML = `✅ 생성 완료! <code>${result.output_path}</code><br>행 수: ${result.rows_written}`;
+        logEl.className = 'mt-2 small text-success';
+      } catch (e) {
+        logEl.textContent = '❌ 오류: ' + e.message;
+        logEl.className   = 'mt-2 small text-danger';
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function downloadStmtDataExcel() {
+      if (!yjleeRows.length) { buildPreview(); if (!yjleeRows.length) return alert('YJLEE 데이터가 없습니다.'); }
+
+      const headers = ['No.','Customer','Fab','Tool','SS P/N','SS S/N','PO','0247#','Amount(USD)','','','','','','','','','','','','','','','','','','','','','AD(KRW)'];
+      const dataRows = yjleeRows.map(r => [
+        r.no, r.customer, r.fab, r.tool, r.pn, r.sn, r.po, r.tkm_no,
+        r.usd || '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', r.krw || '',
+      ]);
+
+      const ws   = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
+      const wb   = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'YJLEE');
+
+      const today   = new Date().toISOString().slice(0, 10);
+      const poLabel = [...selectedPos].join('_').slice(0, 30);
+      XLSX.writeFile(wb, `YJLEE_데이터_${poLabel}_${today}.xlsx`);
     }
   </script>
 </body>
