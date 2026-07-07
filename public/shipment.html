@@ -45,19 +45,10 @@
 
     <!-- ══ 왼쪽 사이드바 ══ -->
     <div class="bg-white border-end p-3 d-flex flex-column flex-shrink-0" style="width:186px">
-      <div class="text-uppercase text-muted fw-semibold mb-2 px-1" style="font-size:.68rem;letter-spacing:.6px">메뉴</div>
-      <a href="parts-mgmt.html"  class="sidebar-link text-decoration-none text-dark rounded px-2 py-2 mb-1 small">⚙️ 파트 단가 관리</a>
-      <a href="quotation.html"   class="sidebar-link text-decoration-none text-dark rounded px-2 py-2 mb-1 small">📄 견적 생성</a>
-      <a href="shipment.html"    class="sidebar-link sidebar-active text-decoration-none rounded px-2 py-2 mb-1 small fw-semibold">📦 출하관리</a>
-      <a href="master-fill.html" class="sidebar-link text-decoration-none text-dark rounded px-2 py-2 mb-1 small">🔄 마스터 업데이트</a>
-
-      <hr class="my-3">
-
-      <div class="text-uppercase text-muted fw-semibold mb-2 px-1" style="font-size:.68rem;letter-spacing:.6px">빠른 실행</div>
-      <div class="small text-muted mb-2 px-1" style="font-size:.72rem;line-height:1.4">목록에서 PO를 선택한 후 아래 버튼을 사용하세요.</div>
+      <div class="fw-semibold mb-3 text-dark" style="font-size:.88rem">📦 출하관리</div>
 
       <button class="quick-btn" style="background:#eff3fb;color:#1a73e8"
-              onclick="requireSelectionThen(openPtnModal)">
+              onclick="openPtnModal()">
         📎 PTN 업로드
       </button>
       <button class="quick-btn" style="background:#eff3fb;color:#1a73e8"
@@ -68,6 +59,10 @@
               onclick="requireSelectionThen(generateStatements)">
         🖨️ 거래명세서 생성
       </button>
+
+      <div class="text-muted mt-3 px-1" style="font-size:.7rem;line-height:1.5">
+        출하일 변경·거래명세서는 목록에서 PO를 먼저 선택 후 사용
+      </div>
     </div>
 
     <!-- ══ 메인 콘텐츠 ══ -->
@@ -560,10 +555,10 @@
 
     /* ════ PTN 업로드 ════ */
     function openPtnModal() {
-      if (!selectedPos.size) return;
       resetPtnModal();
-      document.getElementById('ptn-po-list').innerHTML =
-        [...selectedPos].map(po => `<span class="badge bg-primary font-monospace me-1">${po}</span>`).join('');
+      document.getElementById('ptn-po-list').innerHTML = selectedPos.size
+        ? [...selectedPos].map(po => `<span class="badge bg-primary font-monospace me-1">${po}</span>`).join('')
+        : '<span class="text-muted small">연결할 PO가 없습니다. 목록에서 PO를 선택하면 자동 연결됩니다.</span>';
       ptnModal.show();
     }
 
@@ -663,6 +658,7 @@
     async function savePtn() {
       const ptnNo = document.getElementById('ptn-no-input').value.trim();
       if (!ptnNo) { alert('PTN 번호를 입력해 주세요.'); return; }
+      if (!selectedPos.size) { alert('연결할 PO를 목록에서 선택한 후 저장하세요.'); return; }
       const sb = getSB();
       if (!sb) { alert('Supabase 연결이 필요합니다.'); return; }
 
