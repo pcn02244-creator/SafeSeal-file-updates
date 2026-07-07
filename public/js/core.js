@@ -515,10 +515,10 @@ async function buildMasterFillResult(mesFile, masterFile) {
     const r       = masterRows[i];
     const orderNo = String(r[10] || '').trim();
     if (!orderNo) continue;
-    const rowInfo = { excelRow: i+1, orderNo, pn: String(r[6]||'').trim(), sn: String(r[7]||'').trim(), po: String(r[8]||'').trim(), tkmNo: String(r[9]||'').trim(), clnDate };
     const clnDate  = String(r[19] || '').trim();
     const delivery = String(r[20] || '').trim();
     if (!clnDate || delivery) continue;
+    const rowInfo = { excelRow: i+1, orderNo, pn: String(r[6]||'').trim(), sn: String(r[7]||'').trim(), po: String(r[8]||'').trim(), tkmNo: String(r[9]||'').trim(), clnDate };
 
     const mesData = mesByOrder[orderNo];
     if (!mesData) { noMesMatch.push(rowInfo); continue; }
