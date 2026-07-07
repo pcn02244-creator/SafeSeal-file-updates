@@ -61,24 +61,27 @@ async function initData() {
   }
 
   // Supabase에서 최신 데이터 로드
-  const [p, u, l, c] = await Promise.all([
-    sb.from('parts').select('*').order('id'),
-    sb.from('usage').select('*').order('id'),
-    sb.from('lots').select('*').order('id'),
-    sb.from('process_costs').select('*'),
-  ]);
-
-  if (p.data) DB._s('parts', p.data);
-  if (u.data) DB._s('usage', u.data);
-  if (l.data) DB._s('lots', l.data);
-  if (c.data) {
-    const obj = {};
-    c.data.forEach(r => { obj[r.key] = { name: r.name, usd: r.usd, krw: r.krw }; });
-    DB._s('process_costs', obj);
-  }
-
-  // Supabase가 비어있으면 백업 JSON으로 초기 데이터 업로드
-  if (!p.data?.length) await _uploadBackupData(sb);
+  try {
+    const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000));
+    const [p, u, l, c] = await Promise.race([
+      Promise.all([
+        sb.from('parts').select('*').order('id'),
+        sb.from('usage').select('*').order('id'),
+        sb.from('lots').select('*').order('id'),
+        sb.from('process_costs').select('*'),
+      ]),
+      timeout,
+    ]);
+    if (p.data) DB._s('parts', p.data);
+    if (u.data) DB._s('usage', u.data);
+    if (l.data) DB._s('lots', l.data);
+    if (c.data) {
+      const obj = {};
+      c.data.forEach(r => { obj[r.key] = { name: r.name, usd: r.usd, krw: r.krw }; });
+      DB._s('process_costs', obj);
+    }
+    if (!p.data?.length) await _uploadBackupData(sb);
+  } catch(e) { console.warn('initData Supabase 로드 실패:', e.message); }
 }
 
 async function _uploadBackupData(sb) {
