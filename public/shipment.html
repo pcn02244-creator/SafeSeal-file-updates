@@ -247,24 +247,25 @@
 
       const sb = getSB();
       let jobs = [], ships = [];
-      if (sb) {
-        const [j, s] = await Promise.all([
-          sb.from('master_jobs').select('*'),
-          sb.from('shipments').select('*'),
-        ]);
-        ships = s.data  || [];
-        // synced_at 기준 최신 배치만 표시
-        const rawJobs = j.data || [];
-        if (rawJobs.length > 0) {
-          const latestTs = rawJobs.reduce((m, r) => r.synced_at > m ? r.synced_at : m, '');
-          jobs = latestTs ? rawJobs.filter(r => r.synced_at === latestTs) : rawJobs;
+      try {
+        if (sb) {
+          const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000));
+          const [j, s] = await Promise.race([
+            Promise.all([sb.from('master_jobs').select('*'), sb.from('shipments').select('*')]),
+            timeout,
+          ]);
+          ships = s.data || [];
+          const rawJobs = j.data || [];
+          if (rawJobs.length > 0) {
+            const latestTs = rawJobs.reduce((m, r) => r.synced_at > m ? r.synced_at : m, '');
+            jobs = latestTs ? rawJobs.filter(r => r.synced_at === latestTs) : rawJobs;
+          }
+          try {
+            const mesNos = JSON.parse(localStorage.getItem('mes_order_nos_cache') || '[]');
+            if (mesNos.length > 0) { const ms = new Set(mesNos); jobs = jobs.filter(j => ms.has(j.order_no)); }
+          } catch {}
         }
-        // mes_order_nos_cache로 현재 MES 배치만 표시
-        try {
-          const mesNos = JSON.parse(localStorage.getItem('mes_order_nos_cache') || '[]');
-          if (mesNos.length > 0) { const s = new Set(mesNos); jobs = jobs.filter(j => s.has(j.order_no)); }
-        } catch {}
-      }
+      } catch (e) { console.warn('Supabase 로드 실패:', e.message); }
 
       // Supabase에 데이터 없으면 마스터 캐시에서 PO 목록 로드
       if (!jobs.length) {
@@ -281,31 +282,34 @@
         } catch {}
       }
 
-      // shipments → po 기준 Map
-      const shipMap = {};
-      ships.forEach(s => { shipMap[s.po] = s; });
+      try {
+        // shipments → po 기준 Map
+        const shipMap = {};
+        ships.forEach(s => { shipMap[s.po] = s; });
 
-      // master_jobs → po 기준 그룹
-      const grpMap = {};
-      jobs.forEach(j => {
-        const po = j.po || '(PO없음)';
-        if (!grpMap[po]) grpMap[po] = { po, tkmNos: new Set(), pns: new Set(), orders: [] };
-        grpMap[po].orders.push(j);
-        if (j.tkm_no) grpMap[po].tkmNos.add(j.tkm_no);
-        if (j.pn)     grpMap[po].pns.add(j.pn);
-      });
+        // master_jobs → po 기준 그룹
+        const grpMap = {};
+        jobs.forEach(j => {
+          const po = j.po || '(PO없음)';
+          if (!grpMap[po]) grpMap[po] = { po, tkmNos: new Set(), pns: new Set(), orders: [] };
+          grpMap[po].orders.push(j);
+          if (j.tkm_no) grpMap[po].tkmNos.add(j.tkm_no);
+          if (j.pn)     grpMap[po].pns.add(j.pn);
+        });
 
-      poGroups = Object.values(grpMap).map(g => ({
-        po:       g.po,
-        tkmNos:   [...g.tkmNos],
-        pns:      [...g.pns],
-        orders:   g.orders,
-        shipment: shipMap[g.po] || null,
-      })).sort((a, b) => a.po.localeCompare(b.po));
-
-      document.getElementById('loading').classList.add('d-none');
-      document.getElementById('po-container').classList.remove('d-none');
-      renderList();
+        poGroups = Object.values(grpMap).map(g => ({
+          po:       g.po,
+          tkmNos:   [...g.tkmNos],
+          pns:      [...g.pns],
+          orders:   g.orders,
+          shipment: shipMap[g.po] || null,
+        })).sort((a, b) => a.po.localeCompare(b.po));
+      } catch (e) { poGroups = []; }
+      finally {
+        document.getElementById('loading').classList.add('d-none');
+        document.getElementById('po-container').classList.remove('d-none');
+        renderList();
+      }
     }
 
     /* ════ 리스트 렌더 ════ */
