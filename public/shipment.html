@@ -233,10 +233,12 @@
     let ptnFileName  = '';
 
     document.addEventListener('DOMContentLoaded', async () => {
-      dateModal = new bootstrap.Modal(document.getElementById('dateModal'));
-      ptnModal  = new bootstrap.Modal(document.getElementById('ptnModal'));
-      setupPtnDropzone();
-      await initData();
+      try {
+        dateModal = new bootstrap.Modal(document.getElementById('dateModal'));
+        ptnModal  = new bootstrap.Modal(document.getElementById('ptnModal'));
+        setupPtnDropzone();
+      } catch(e) { console.warn('초기화 오류:', e); }
+      try { await initData(); } catch(e) { console.warn('initData 오류:', e); }
       await loadData();
     });
 

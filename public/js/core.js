@@ -80,7 +80,7 @@ async function initData() {
       c.data.forEach(r => { obj[r.key] = { name: r.name, usd: r.usd, krw: r.krw }; });
       DB._s('process_costs', obj);
     }
-    if (!p.data?.length) await _uploadBackupData(sb);
+    if (!p.data?.length) try { await _uploadBackupData(sb); } catch(e) { console.warn('backup upload 실패:', e.message); }
   } catch(e) { console.warn('initData Supabase 로드 실패:', e.message); }
 }
 
