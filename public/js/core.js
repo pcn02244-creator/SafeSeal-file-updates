@@ -3,7 +3,7 @@
    데이터 저장: Supabase (localStorage는 세션 캐시)
 ══════════════════════════════════════════════════════ */
 
-const APP_VERSION    = 'v20260707D';
+const APP_VERSION    = 'v20260707E';
 const EXCHANGE_RATE  = 1511.26;
 const SB_URL         = 'https://ydekxlonxjwfhdhhbpdc.supabase.co';
 const SB_KEY         = 'sb_publishable_aCdcvXkU_hz35DpyrmSCkw_F8TYKZUJ';
@@ -525,6 +525,32 @@ async function buildMasterFillResult(mesFile, masterFile) {
     }
     updates.push({ ...rowInfo, toWrite });
   }
+
+  // Supabase master_jobs 동기화 (출하관리 PO 목록 자동 반영)
+  (async () => {
+    const sb = getSB();
+    if (!sb) return;
+    const now      = new Date().toISOString();
+    const syncRows = [];
+    for (let i = 2; i < masterRows.length; i++) {
+      const r       = masterRows[i];
+      const orderNo = String(r[10] || '').trim();
+      const po      = String(r[8]  || '').trim();
+      const clnDate = String(r[19] || '').trim();
+      const delivery= String(r[20] || '').trim();
+      if (!orderNo || !po || !clnDate || delivery) continue;
+      syncRows.push({
+        order_no: orderNo, pn: String(r[6]||'').trim(), sn: String(r[7]||'').trim(),
+        po, tkm_no: String(r[9]||'').trim(), cln_date: clnDate, synced_at: now,
+      });
+    }
+    if (!syncRows.length) return;
+    try {
+      await sb.from('master_jobs').delete().neq('order_no', '');
+      await sb.from('master_jobs').upsert(syncRows, { onConflict: 'order_no' });
+      console.log(`✅ master_jobs 동기화 완료 (마스터 업데이트): ${syncRows.length}건`);
+    } catch(e) { console.warn('master_jobs 동기화 오류:', e.message); }
+  })();
 
   return {
     stats: {
