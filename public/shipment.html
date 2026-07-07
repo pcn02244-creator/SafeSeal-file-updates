@@ -344,8 +344,13 @@
           sb.from('master_jobs').select('*'),
           sb.from('shipments').select('*'),
         ]);
-        jobs  = j.data  || [];
         ships = s.data  || [];
+        // synced_at 기준 최신 배치만 표시
+        const rawJobs = j.data || [];
+        if (rawJobs.length > 0) {
+          const latestTs = rawJobs.reduce((m, r) => r.synced_at > m ? r.synced_at : m, '');
+          jobs = latestTs ? rawJobs.filter(r => r.synced_at === latestTs) : rawJobs;
+        }
       }
 
       // Supabase에 데이터 없으면 마스터 캐시에서 PO 목록 로드
