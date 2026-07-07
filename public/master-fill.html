@@ -10,7 +10,8 @@
   <link href="style.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script src="js/core.js?v=20260707C"></script>
+  <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+  <script src="js/core.js?v=20260707D"></script>
   <script src="js/auth.js"></script>
   <style>
     body { background:#f0f2f5; }
@@ -291,22 +292,83 @@
       }
     }
 
-    function downloadExcel() {
+    async function downloadExcel() {
       if (!previewData || !previewData.updates.length) { alert('업데이트 대상이 없습니다.'); return; }
-      const rows = [['Excel행','수주번호','PN','SN','공정(AT)','교체여부(AU)','교체PN(AV)',
-        'Wafer Seal(AW)','Contact Pin PN(AX)','Contact Pin Q\'ty(AY)',
-        '기본Screw qty(AZ)','Screw Q\'ty(BA)','Screw Other PN(BB)','Screw Other Q\'ty(BC)',
-        'Retainer(BD)','Lead In PN(BE)','Lead In Q\'ty(BF)']];
-      for (const u of previewData.updates) {
-        const w = u.toWrite;
-        rows.push([u.excelRow, u.orderNo, u.pn||'', u.sn||'',
-          w.AT||'', w.AU||'', w.AV||'', w.AW||'', w.AX||'', w.AY||'',
-          w.AZ||'', w.BA||'', w.BB||'', w.BC||'', w.BD||'', w.BE||'', w.BF||'']);
-      }
-      const ws = XLSX.utils.aoa_to_sheet(rows);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, '마스터업데이트');
-      XLSX.writeFile(wb, `마스터업데이트_${new Date().toISOString().slice(0,10)}.xlsx`);
+      try {
+        const HDR_BG   = 'FFD9E1F2';
+        const BRD_BLUE = 'FF8DB4E2';
+        const BRD_GRAY = 'FFD9D9D9';
+        const DATA_CLR = 'FF1A6E2E';
+        const headers  = [
+          'Excel행','수주번호','PN','SN','공정(AT)','교체여부(AU)','교체PN(AV)',
+          'Wafer Seal(AW)',"Contact Pin PN(AX)","Contact Pin Q'ty(AY)",
+          '기본Screw qty(AZ)',"Screw Q'ty(BA)",'Screw Other PN(BB)',"Screw Other Q'ty(BC)",
+          'Retainer(BD)','Lead In PN(BE)',"Lead In Q'ty(BF)"
+        ];
+        const colWidths = [8,16,12,12,12,10,20,16,16,14,14,12,14,14,10,14,14];
+
+        if (typeof ExcelJS !== 'undefined') {
+          const wb = new ExcelJS.Workbook();
+          const ws = wb.addWorksheet('마스터업데이트');
+          ws.columns = colWidths.map(w => ({ width: w }));
+
+          const hdrRow = ws.addRow(headers);
+          hdrRow.height = 36;
+          hdrRow.eachCell(cell => {
+            cell.font      = { name: 'Calibri', size: 10, bold: true };
+            cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: HDR_BG } };
+            cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+            cell.border    = {
+              top:    { style: 'thin', color: { argb: BRD_BLUE } },
+              bottom: { style: 'thin', color: { argb: BRD_BLUE } },
+              left:   { style: 'thin', color: { argb: BRD_BLUE } },
+              right:  { style: 'thin', color: { argb: BRD_BLUE } },
+            };
+          });
+
+          for (const u of previewData.updates) {
+            const w   = u.toWrite;
+            const row = ws.addRow([
+              u.excelRow, u.orderNo, u.pn||'', u.sn||'',
+              w.AT||'', w.AU||'', w.AV||'', w.AW||'', w.AX||'', w.AY||'',
+              w.AZ||'', w.BA||'', w.BB||'', w.BC||'', w.BD||'', w.BE||'', w.BF||''
+            ]);
+            row.height = 18;
+            row.eachCell(cell => {
+              cell.font      = { name: 'Calibri', size: 10, color: { argb: DATA_CLR } };
+              cell.alignment = { vertical: 'bottom' };
+              cell.border    = {
+                top:    { style: 'thin', color: { argb: BRD_BLUE } },
+                bottom: { style: 'thin', color: { argb: BRD_GRAY } },
+                left:   { style: 'thin', color: { argb: BRD_GRAY } },
+                right:  { style: 'thin', color: { argb: BRD_GRAY } },
+              };
+            });
+          }
+
+          const buffer = await wb.xlsx.writeBuffer();
+          const blob   = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+          const url    = URL.createObjectURL(blob);
+          const a      = document.createElement('a');
+          a.href = url; a.download = `마스터업데이트_${new Date().toISOString().slice(0,10)}.xlsx`;
+          document.body.appendChild(a); a.click();
+          document.body.removeChild(a); URL.revokeObjectURL(url);
+          return;
+        }
+
+        // ExcelJS 미로드 시 SheetJS 폴백
+        const rows = [headers];
+        for (const u of previewData.updates) {
+          const w = u.toWrite;
+          rows.push([u.excelRow, u.orderNo, u.pn||'', u.sn||'',
+            w.AT||'', w.AU||'', w.AV||'', w.AW||'', w.AX||'', w.AY||'',
+            w.AZ||'', w.BA||'', w.BB||'', w.BC||'', w.BD||'', w.BE||'', w.BF||'']);
+        }
+        const ws2 = XLSX.utils.aoa_to_sheet(rows);
+        const wb2 = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb2, ws2, '마스터업데이트');
+        XLSX.writeFile(wb2, `마스터업데이트_${new Date().toISOString().slice(0,10)}.xlsx`);
+      } catch(e) { alert('❌ 엑셀 생성 오류: ' + e.message); }
     }
 
     function showError(msg) {

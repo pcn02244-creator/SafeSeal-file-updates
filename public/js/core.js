@@ -3,7 +3,7 @@
    데이터 저장: Supabase (localStorage는 세션 캐시)
 ══════════════════════════════════════════════════════ */
 
-const APP_VERSION    = 'v20260707C';
+const APP_VERSION    = 'v20260707D';
 const EXCHANGE_RATE  = 1511.26;
 const SB_URL         = 'https://ydekxlonxjwfhdhhbpdc.supabase.co';
 const SB_KEY         = 'sb_publishable_aCdcvXkU_hz35DpyrmSCkw_F8TYKZUJ';
@@ -537,7 +537,7 @@ async function buildMasterFillResult(mesFile, masterFile) {
 }
 
 // ── 클라이언트 Excel 다운로드 (견적) ─────────────────
-function downloadQuotationExcel(quotation) {
+async function downloadQuotationExcel(quotation) {
   const PART_ORDER = [
     { type: 'Wafer Seal',  label: 'Wafer Seal'   },
     { type: 'Contact Pin', label: 'Contact Pin'   },
@@ -545,38 +545,108 @@ function downloadQuotationExcel(quotation) {
     { type: 'Screw',       label: 'Screw'         },
     { type: 'Lead In',     label: 'Lead In'       },
   ];
-
-  // 전체 견적 중 실제 금액이 있는 파트 타입만 컬럼으로 포함
   const usedTypes = new Set(
     quotation.flatMap(q => q.replParts)
       .filter(p => p.totalUSD > 0)
       .map(p => p.partType)
   );
   const activeParts = PART_ORDER.filter(p => usedTypes.has(p.type));
-
   const headers = [
     'SS P/N', 'SS S/N', 'PO', '0247#', 'Process',
     'Cleaning price\n(USD)', 'Cleaning price\n(KRW)',
     ...activeParts.flatMap(p => [`${p.label}\n(USD)`, `${p.label}\n(KRW)`]),
     'Total\n(USD)', 'Total\n(KRW)', 'Remark',
   ];
-  const rows = [
-    new Array(headers.length).fill(''), // 빈 제목행
-    headers,
-  ];
-  for (const q of quotation) {
-    const partCols = activeParts.flatMap(fp => {
-      const p = q.replParts.find(r => r.partType === fp.type);
-      return p ? [p.totalUSD, p.totalKRW] : [0, 0];
+
+  if (typeof ExcelJS !== 'undefined') {
+    // ── ExcelJS 서식 적용 ─────────────────────────────
+    const HDR_BG   = 'FFD9E1F2'; // 헤더 배경 (연파랑)
+    const HDR_FONT = 'FF1F3864'; // 헤더 글자 (진남색)
+    const BRD_BLUE = 'FF8DB4E2'; // 파랑 테두리
+    const BRD_GRAY = 'FFD9D9D9'; // 회색 테두리
+    const colWidths = [12, 14, 13, 12, 13, 13, 15,
+      ...activeParts.flatMap(() => [12, 15]),
+      12, 15, 26];
+
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('견적');
+    ws.columns = colWidths.map(w => ({ width: w }));
+
+    // Row 1: 빈 구분행 — 하단 테두리만
+    const row1 = ws.addRow(new Array(headers.length).fill(null));
+    row1.height = 8;
+    for (let c = 1; c <= headers.length; c++) {
+      row1.getCell(c).border = { bottom: { style: 'thin', color: { argb: BRD_BLUE } } };
+    }
+
+    // Row 2: 헤더행
+    const row2 = ws.addRow(headers);
+    row2.height = 36;
+    row2.eachCell(cell => {
+      cell.font      = { name: 'Calibri', size: 10, bold: true, color: { argb: HDR_FONT } };
+      cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: HDR_BG } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+      cell.border    = {
+        top:    { style: 'thin', color: { argb: BRD_BLUE } },
+        bottom: { style: 'thin', color: { argb: BRD_BLUE } },
+        left:   { style: 'thin', color: { argb: BRD_BLUE } },
+        right:  { style: 'thin', color: { argb: BRD_BLUE } },
+      };
     });
-    const remark = q.replParts.map(p => `${p.pn} ×${p.qty}`).join('\n');
-    rows.push([q.pn, q.sn, q.po, q.tkmNo, q.processName||q.process,
-      q.processUSD, q.processKRW, ...partCols,
-      q.totalUSD, q.totalKRW, remark]);
+
+    // 데이터 행
+    const NUM_START  = 6; // Cleaning USD (1-based)
+    const REMARK_COL = headers.length;
+    for (const q of quotation) {
+      const partCols = activeParts.flatMap(fp => {
+        const p = q.replParts.find(r => r.partType === fp.type);
+        return p ? [p.totalUSD, p.totalKRW] : [0, 0];
+      });
+      const remark = q.replParts.map(p => `${p.pn} ×${p.qty}`).join('\n');
+      const row = ws.addRow([
+        q.pn, q.sn, q.po, q.tkmNo, q.processName || q.process,
+        q.processUSD, q.processKRW, ...partCols, q.totalUSD, q.totalKRW, remark,
+      ]);
+      row.height = 18;
+      row.eachCell((cell, c) => {
+        cell.font   = { name: 'Calibri', size: 10 };
+        cell.border = {
+          top:    { style: 'thin', color: { argb: BRD_BLUE } },
+          bottom: { style: 'thin', color: { argb: BRD_GRAY } },
+          left:   { style: 'thin', color: { argb: BRD_GRAY } },
+          right:  { style: 'thin', color: { argb: BRD_GRAY } },
+        };
+        if (c === REMARK_COL) {
+          cell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+        } else if (c >= NUM_START && c < REMARK_COL) {
+          cell.numFmt    = (c - NUM_START) % 2 === 0 ? '"$"#,##0.00' : '[$₩-412]#,##0';
+          cell.alignment = { horizontal: 'right', vertical: 'middle' };
+        } else {
+          cell.alignment = { vertical: 'middle' };
+        }
+      });
+    }
+
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob   = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url    = URL.createObjectURL(blob);
+    const a      = document.createElement('a');
+    a.href = url; a.download = `견적_${new Date().toISOString().slice(0,10)}.xlsx`;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+    return;
+  }
+
+  // ExcelJS 미로드 시 SheetJS 폴백
+  const rows = [new Array(headers.length).fill(''), headers];
+  for (const q of quotation) {
+    const pc = activeParts.flatMap(fp => { const p = q.replParts.find(r=>r.partType===fp.type); return p?[p.totalUSD,p.totalKRW]:[0,0]; });
+    const rm = q.replParts.map(p=>`${p.pn} ×${p.qty}`).join('\n');
+    rows.push([q.pn,q.sn,q.po,q.tkmNo,q.processName||q.process,q.processUSD,q.processKRW,...pc,q.totalUSD,q.totalKRW,rm]);
   }
   const ws = XLSX.utils.aoa_to_sheet(rows);
   ws['!rows'] = [{ hpt: 15 }, { hpt: 32 }];
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, '견적');
-  XLSX.writeFile(wb, `견적_${new Date().toISOString().slice(0,10)}.xlsx`);
+  const wbk = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wbk, ws, '견적');
+  XLSX.writeFile(wbk, `견적_${new Date().toISOString().slice(0,10)}.xlsx`);
 }

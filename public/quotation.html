@@ -10,7 +10,8 @@
   <link href="style.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script src="js/core.js?v=20260707C"></script>
+  <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+  <script src="js/core.js?v=20260707D"></script>
   <script src="js/auth.js"></script>
 
   <style>
@@ -663,7 +664,7 @@
     function exportExcel() {
       const src = filteredData.length ? filteredData : quotationData;
       if (!src.length) { alert('내보낼 데이터가 없습니다.'); return; }
-      try { downloadQuotationExcel(src); } catch(e) { alert('❌ 오류: ' + e.message); }
+      downloadQuotationExcel(src).catch(e => alert('❌ 오류: ' + e.message));
     }
 
     /* ── CSV ── */
