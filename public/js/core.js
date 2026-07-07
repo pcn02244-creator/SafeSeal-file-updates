@@ -127,7 +127,7 @@ async function _drmBridgeParse(file, type) {
   const form = new FormData();
   form.append('file', file);
   form.append('type', type || 'mes');
-  const res = await fetch('http://localhost:3001/drm-convert', { method: 'POST', body: form, signal: AbortSignal.timeout(10000) });
+  const res = await fetch('http://localhost:3001/drm-convert', { method: 'POST', body: form, signal: AbortSignal.timeout(60000) });
   if (!res.ok) throw new Error('DRM 브리지 오류 ' + res.status);
   const csv = await res.text();
   return XLSX.read(csv, { type: 'string' });
@@ -163,7 +163,7 @@ async function generateQuotation(mesFile, masterFile) {
     mesWb = await _drmBridgeParse(mesFile, 'mes');
   } catch(e) {
     mesWb = await parseExcel(mesFile);
-    if (_isDrmWorkbook(mesWb)) throw new Error('MES 파일이 DRM 보호되어 있습니다. drm-bridge를 실행한 후 다시 시도하세요.');
+    if (_isDrmWorkbook(mesWb)) throw new Error('DRM 변환 실패 (' + e.message + '). drm-bridge가 실행 중인지 확인하세요.');
   }
   const mesAllRows  = XLSX.utils.sheet_to_json(mesWb.Sheets[mesWb.SheetNames[0]], { header: 1, defval: '' });
 
