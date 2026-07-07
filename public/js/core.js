@@ -206,6 +206,7 @@ async function generateQuotation(mesFile, masterFile) {
   }
   // MES 캐시 저장
   try { localStorage.setItem('mes_rows_cache', JSON.stringify(mesAllRows)); } catch {}
+  try { localStorage.setItem('mes_order_nos_cache', JSON.stringify(Object.keys(mesGroups))); } catch {}
 
   let masterTargets = [];
   let msRows = [];
@@ -500,6 +501,7 @@ async function buildMasterFillResult(mesFile, masterFile) {
     if (!mesByOrder[orderNo]) mesByOrder[orderNo] = { processType: normalizeProcessKey(process), materials: [] };
     if (matPN) mesByOrder[orderNo].materials.push({ pn: matPN, qty: matQty });
   }
+  try { localStorage.setItem('mes_order_nos_cache', JSON.stringify(Object.keys(mesByOrder))); } catch {}
 
   const parts = DB.parts.get();
   const partsMap = {};
