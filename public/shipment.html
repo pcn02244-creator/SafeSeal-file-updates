@@ -23,6 +23,11 @@
     .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
     .ptn-candidate { cursor: pointer; padding: 2px 6px; border-radius: 4px; background: #e8f0fe; color: #1a73e8; font-family: monospace; font-size: .82rem; }
     .ptn-candidate:hover { background: #1a73e8; color: #fff; }
+    .sidebar-link { transition: background .12s; display: block; }
+    .sidebar-link:hover { background: #f0f4ff; }
+    .sidebar-active { background: #e8f0fe !important; color: #1a73e8 !important; }
+    .quick-btn { border: none; text-align: left; padding: 7px 10px; border-radius: 6px; width: 100%; cursor: pointer; font-size: .82rem; margin-bottom: 6px; transition: filter .12s; }
+    .quick-btn:hover { filter: brightness(.93); }
   </style>
 </head>
 <body>
@@ -36,9 +41,39 @@
     </div>
   </nav>
 
-  <div class="container-fluid p-4">
+  <div class="d-flex" style="min-height:calc(100vh - 58px)">
 
-    <!-- 선택 액션 바 -->
+    <!-- ══ 왼쪽 사이드바 ══ -->
+    <div class="bg-white border-end p-3 d-flex flex-column flex-shrink-0" style="width:186px">
+      <div class="text-uppercase text-muted fw-semibold mb-2 px-1" style="font-size:.68rem;letter-spacing:.6px">메뉴</div>
+      <a href="parts-mgmt.html"  class="sidebar-link text-decoration-none text-dark rounded px-2 py-2 mb-1 small">⚙️ 파트 단가 관리</a>
+      <a href="quotation.html"   class="sidebar-link text-decoration-none text-dark rounded px-2 py-2 mb-1 small">📄 견적 생성</a>
+      <a href="shipment.html"    class="sidebar-link sidebar-active text-decoration-none rounded px-2 py-2 mb-1 small fw-semibold">📦 출하관리</a>
+      <a href="master-fill.html" class="sidebar-link text-decoration-none text-dark rounded px-2 py-2 mb-1 small">🔄 마스터 업데이트</a>
+
+      <hr class="my-3">
+
+      <div class="text-uppercase text-muted fw-semibold mb-2 px-1" style="font-size:.68rem;letter-spacing:.6px">빠른 실행</div>
+      <div class="small text-muted mb-2 px-1" style="font-size:.72rem;line-height:1.4">목록에서 PO를 선택한 후 아래 버튼을 사용하세요.</div>
+
+      <button class="quick-btn" style="background:#eff3fb;color:#1a73e8"
+              onclick="requireSelectionThen(openPtnModal)">
+        📎 PTN 업로드
+      </button>
+      <button class="quick-btn" style="background:#eff3fb;color:#1a73e8"
+              onclick="requireSelectionThen(openDateModal)">
+        📅 출하일 변경
+      </button>
+      <button class="quick-btn" style="background:#fff8e0;color:#b76e00"
+              onclick="requireSelectionThen(generateStatements)">
+        🖨️ 거래명세서 생성
+      </button>
+    </div>
+
+    <!-- ══ 메인 콘텐츠 ══ -->
+    <div class="flex-grow-1 p-4 overflow-auto">
+
+    <!-- 선택 액션 바 (다중 선택 시 표시) -->
     <div id="action-bar" class="action-bar d-none mb-3 d-flex align-items-center gap-3 flex-wrap">
       <span class="fw-semibold" id="selected-count">0건 선택</span>
       <div class="vr opacity-50"></div>
@@ -87,7 +122,8 @@
       </div>
       <div class="d-flex justify-content-center gap-1 mt-3" id="pagination"></div>
     </div>
-  </div>
+    </div> <!-- /메인 콘텐츠 -->
+  </div> <!-- /d-flex wrapper -->
 
   <!-- ══ 출하일 일괄 변경 모달 ══ -->
   <div class="modal fade" id="dateModal" tabindex="-1">
@@ -470,6 +506,14 @@
     }
 
     function clearSelection() { selectedPos.clear(); renderList(); }
+
+    function requireSelectionThen(fn) {
+      if (!selectedPos.size) {
+        alert('먼저 목록에서 PO 항목을 체크박스로 선택하세요.');
+        return;
+      }
+      fn();
+    }
 
     function updateActionBar() {
       const bar = document.getElementById('action-bar');
