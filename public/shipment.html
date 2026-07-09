@@ -1064,38 +1064,55 @@
       const tax    = Math.round(amount * 0.1);
       const total  = supply + tax;
 
-      xml = xml.replace(/<c r="B5" s="164"><v>[^<]*<\/v><\/c>/,
-        `<c r="B5" s="164"><v>${date}</v></c>`);
-      xml = xml.replace(/(<c r="N5"[^>]*><f>B5<\/f>)<v>[^<]*<\/v>(<\/c>)/,
-        `$1<v>${date}</v>$2`);
-      xml = xml.replace(/<c r="C11"[^>]*>(?:<v>[^<]*<\/v>|<is>.*?<\/is>)<\/c>/,
-        `<c r="C11" s="165" t="inlineStr"><is><t>${escXml(tkm)}</t></is></c>`);
-      xml = xml.replace(/(<c r="O11"[^>]*>(?:<f>[^<]*<\/f>))<v>[^<]*<\/v>(<\/c>)/,
-        `$1<v>${escXml(tkm)}</v>$2`);
-      xml = xml.replace(/(<c r="E11" s="34">)<v>[^<]*<\/v>(<\/c>)/, '$1<v>1</v>$2');
-      xml = xml.replace(/(<c r="F11" s="167">)<v>[^<]*<\/v>(<\/c>)/,
-        `$1<v>${supply}</v>$2`);
-      xml = xml.replace(/(<c r="G11"[^>]*><f>[^<]*<\/f>)<v>[^<]*<\/v>(<\/c>)/,
-        `$1<v>${supply}</v>$2`);
-      xml = xml.replace(/(<c r="I11"[^>]*><f>[^<]*<\/f>)<v>[^<]*<\/v>(<\/c>)/,
-        `$1<v>${tax}</v>$2`);
-      xml = xml.replace(/(<c r="Q11"[^>]*>)<v>[^<]*<\/v>(<\/c>)/, '$1<v>1</v>$2');
-      xml = xml.replace(/(<c r="R11"[^>]*><f>[^<]*<\/f>)<v>[^<]*<\/v>(<\/c>)/,
-        `$1<v>${supply}</v>$2`);
-      xml = xml.replace(/(<c r="S11"[^>]*><f>[^<]*<\/f>)<v>[^<]*<\/v>(<\/c>)/,
-        `$1<v>${supply}</v>$2`);
-      xml = xml.replace(/(<c r="C22" s="170">)<v>[^<]*<\/v>(<\/c>)/,
-        `$1<v>${po}</v>$2`);
-      xml = xml.replace(/(<c r="O22"[^>]*><f>[^<]*<\/f>)<v>[^<]*<\/v>(<\/c>)/,
-        `$1<v>${po}</v>$2`);
-      xml = xml.replace(/(<c r="G22" s="171">)<v>[^<]*<\/v>(<\/c>)/,
-        `$1<v>${sn}</v>$2`);
-      xml = xml.replace(/(<c r="S22"[^>]*><f>[^<]*<\/f>)<v>[^<]*<\/v>(<\/c>)/,
-        `$1<v>${sn}</v>$2`);
-      xml = xml.replace(/(<c r="G9"[^>]*><f>[^<]*<\/f>)<v>[^<]*<\/v>(<\/c>)/,
-        `$1<v>${total}</v>$2`);
-      xml = xml.replace(/(<c r="S9"[^>]*><f>[^<]*<\/f>)<v>[^<]*<\/v>(<\/c>)/,
-        `$1<v>${total}</v>$2`);
+      // 숫자 셀: <v> 값만 교체, s 속성 캡처로 보존 (하드코딩 금지)
+      const numCell = (ref, val) => xml = xml.replace(
+        new RegExp(`(<c r="${ref}" s="\\d+"[^>]*>)<v>[^<]*<\\/v>(<\\/c>)`),
+        `$1<v>${val}</v>$2`
+      );
+      // 수식 셀: <f> 보존하고 <v>만 교체
+      const fmlaCell = (ref, val) => xml = xml.replace(
+        new RegExp(`(<c r="${ref}"[^>]*><f>[^<]*<\\/f>)<v>[^<]*<\\/v>(<\\/c>)`),
+        `$1<v>${val}</v>$2`
+      );
+      // 문자열 셀: t="s"(sharedStr) or 빈 셀 → inlineStr로 우회, s 속성 캡처
+      const strCell = (ref, val) => xml = xml.replace(
+        new RegExp(`<c r="${ref}" s="(\\d+)"[^>]*>[^<]*(?:<[^/][^>]*>[^<]*<\\/[^>]+>)*<\\/c>`),
+        `<c r="${ref}" s="$1" t="inlineStr"><is><t>${escXml(val)}</t></is></c>`
+      );
+
+      // 날짜: B5 숫자 시리얼, N5 수식
+      numCell('B5', date);
+      fmlaCell('N5', date);
+
+      // 규격(TKM): C11 문자열→inlineStr, O11 수식
+      strCell('C11', tkm);
+      fmlaCell('O11', escXml(tkm));
+
+      // 수량: E11, Q11
+      numCell('E11', 1);
+      numCell('Q11', 1);
+
+      // 단가·공급가·세액 (left)
+      numCell('F11', supply);
+      fmlaCell('G11', supply);
+      fmlaCell('I11', tax);
+
+      // 단가·공급가 (right)
+      fmlaCell('R11', supply);
+      fmlaCell('S11', supply);
+
+      // PO 번호: C22 숫자, O22 수식
+      numCell('C22', po);
+      fmlaCell('O22', po);
+
+      // SN: G22 숫자, S22 수식
+      numCell('G22', sn);
+      fmlaCell('S22', sn);
+
+      // 합계: G9, S9
+      fmlaCell('G9', total);
+      fmlaCell('S9', total);
+
       return xml;
     }
 
