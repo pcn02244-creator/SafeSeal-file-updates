@@ -11,7 +11,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
-  <script src="js/core.js?v=20260709A"></script>
+  <script src="js/core.js?v=20260709B"></script>
   <script src="js/auth.js"></script>
   <style>
     body { background: #f0f2f5; }
@@ -1064,62 +1064,159 @@
       const tax    = Math.round(amount * 0.1);
       const total  = supply + tax;
 
-      // B5: 날짜 serial (숫자형 셀)
       xml = xml.replace(/<c r="B5" s="164"><v>[^<]*<\/v><\/c>/,
         `<c r="B5" s="164"><v>${date}</v></c>`);
-      // N5: 날짜 캐시값
       xml = xml.replace(/(<c r="N5"[^>]*><f>B5<\/f>)<v>[^<]*<\/v>(<\/c>)/,
         `$1<v>${date}</v>$2`);
-
-      // C11: 규격 (0247#) → inlineStr
       xml = xml.replace(/<c r="C11"[^>]*>(?:<v>[^<]*<\/v>|<is>.*?<\/is>)<\/c>/,
         `<c r="C11" s="165" t="inlineStr"><is><t>${escXml(tkm)}</t></is></c>`);
-      // O11: 규격 캐시값 (formula =C11)
       xml = xml.replace(/(<c r="O11"[^>]*>(?:<f>[^<]*<\/f>))<v>[^<]*<\/v>(<\/c>)/,
         `$1<v>${escXml(tkm)}</v>$2`);
-
-      // E11: 수량=1
-      xml = xml.replace(/(<c r="E11" s="34">)<v>[^<]*<\/v>(<\/c>)/,
-        '$1<v>1</v>$2');
-      // F11: 단가
+      xml = xml.replace(/(<c r="E11" s="34">)<v>[^<]*<\/v>(<\/c>)/, '$1<v>1</v>$2');
       xml = xml.replace(/(<c r="F11" s="167">)<v>[^<]*<\/v>(<\/c>)/,
         `$1<v>${supply}</v>$2`);
-      // G11: 공급가액 캐시값
       xml = xml.replace(/(<c r="G11"[^>]*><f>[^<]*<\/f>)<v>[^<]*<\/v>(<\/c>)/,
         `$1<v>${supply}</v>$2`);
-      // I11: 세액 캐시값
       xml = xml.replace(/(<c r="I11"[^>]*><f>[^<]*<\/f>)<v>[^<]*<\/v>(<\/c>)/,
         `$1<v>${tax}</v>$2`);
-      // Q11: 수량=1
-      xml = xml.replace(/(<c r="Q11"[^>]*>)<v>[^<]*<\/v>(<\/c>)/,
-        '$1<v>1</v>$2');
-      // R11: 단가 캐시값
+      xml = xml.replace(/(<c r="Q11"[^>]*>)<v>[^<]*<\/v>(<\/c>)/, '$1<v>1</v>$2');
       xml = xml.replace(/(<c r="R11"[^>]*><f>[^<]*<\/f>)<v>[^<]*<\/v>(<\/c>)/,
         `$1<v>${supply}</v>$2`);
-      // S11: 공급가액 캐시값
       xml = xml.replace(/(<c r="S11"[^>]*><f>[^<]*<\/f>)<v>[^<]*<\/v>(<\/c>)/,
         `$1<v>${supply}</v>$2`);
-
-      // C22: PO 번호
       xml = xml.replace(/(<c r="C22" s="170">)<v>[^<]*<\/v>(<\/c>)/,
         `$1<v>${po}</v>$2`);
-      // O22: PO 캐시값
       xml = xml.replace(/(<c r="O22"[^>]*><f>[^<]*<\/f>)<v>[^<]*<\/v>(<\/c>)/,
         `$1<v>${po}</v>$2`);
-      // G22: SN
       xml = xml.replace(/(<c r="G22" s="171">)<v>[^<]*<\/v>(<\/c>)/,
         `$1<v>${sn}</v>$2`);
-      // S22: SN 캐시값
       xml = xml.replace(/(<c r="S22"[^>]*><f>[^<]*<\/f>)<v>[^<]*<\/v>(<\/c>)/,
         `$1<v>${sn}</v>$2`);
-
-      // G9/S9: 총합계 캐시값
       xml = xml.replace(/(<c r="G9"[^>]*><f>[^<]*<\/f>)<v>[^<]*<\/v>(<\/c>)/,
         `$1<v>${total}</v>$2`);
       xml = xml.replace(/(<c r="S9"[^>]*><f>[^<]*<\/f>)<v>[^<]*<\/v>(<\/c>)/,
         `$1<v>${total}</v>$2`);
-
       return xml;
+    }
+
+    // CODE128 바코드를 PNG Uint8Array로 생성
+    function generateBarcodePng(value) {
+      return new Promise((resolve, reject) => {
+        const canvas = document.createElement('canvas');
+        canvas.width  = 360;
+        canvas.height = 80;
+        try {
+          JsBarcode(canvas, String(value), {
+            format: 'CODE128', width: 2, height: 54,
+            displayValue: true, fontSize: 13, margin: 6,
+            background: '#ffffff', lineColor: '#000000',
+          });
+        } catch(e) { reject(e); return; }
+        canvas.toBlob(blob => {
+          if (!blob) { reject(new Error('barcode PNG 생성 실패')); return; }
+          blob.arrayBuffer().then(ab => resolve(new Uint8Array(ab))).catch(reject);
+        }, 'image/png');
+      });
+    }
+
+    // 바코드 이미지가 포함된 drawing XML (sheet의 왼쪽/오른쪽 각 1개씩)
+    function makeDrawingXml(po) {
+      const name = escXml(String(po));
+      // 왼쪽(공급자용): col 1(B)~8(I), row 12~15 / 오른쪽(공급받는자용): col 13(N)~20(U), row 12~15
+      const anchor = (colFrom, rowFrom, colTo, rowTo, rId, id) =>
+        `<xdr:twoCellAnchor editAs="oneCell">` +
+        `<xdr:from><xdr:col>${colFrom}</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${rowFrom}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>` +
+        `<xdr:to><xdr:col>${colTo}</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${rowTo}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>` +
+        `<xdr:pic><xdr:nvPicPr>` +
+        `<xdr:cNvPr id="${id}" name="BC_${name}_${id}"/>` +
+        `<xdr:cNvPicPr><a:picLocks noChangeAspect="1"/></xdr:cNvPicPr>` +
+        `</xdr:nvPicPr><xdr:blipFill>` +
+        `<a:blip r:embed="${rId}"/><a:stretch><a:fillRect/></a:stretch>` +
+        `</xdr:blipFill><xdr:spPr>` +
+        `<a:xfrm><a:off x="0" y="0"/><a:ext cx="1" cy="1"/></a:xfrm>` +
+        `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>` +
+        `</xdr:spPr></xdr:pic><xdr:clientData/></xdr:twoCellAnchor>`;
+
+      return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+        `<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"` +
+        ` xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"` +
+        ` xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">` +
+        anchor(1, 12, 8, 15, 'rId1', 2) +
+        anchor(13, 12, 20, 15, 'rId1', 3) +
+        `</xdr:wsDr>`;
+    }
+
+    // drawing → media 관계 XML (바코드 PNG 1개를 두 앵커에서 공유)
+    function makeDrawingRels(mediaIdx) {
+      return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+        `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+        `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"` +
+        ` Target="../media/bc${mediaIdx}.png"/>` +
+        `</Relationships>`;
+    }
+
+    // sheet → drawing 관계 XML
+    function makeSheetRels(sheetIdx) {
+      return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+        `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+        `<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing"` +
+        ` Target="../drawings/drawing${sheetIdx}.xml"/>` +
+        `</Relationships>`;
+    }
+
+    // workbook.xml의 <sheets> 블록만 교체
+    function rebuildWorkbookXml(origXml, pos) {
+      const sheetEls = pos.map((po, i) =>
+        `<sheet name="${escXml(po)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`
+      ).join('');
+      return origXml.replace(/<sheets>[\s\S]*?<\/sheets>/, `<sheets>${sheetEls}</sheets>`);
+    }
+
+    // workbook.xml.rels: N개 worksheet + theme + vbaProject만
+    function rebuildWorkbookRels(origRels, n) {
+      const themeType  = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme';
+      const vbaType    = 'http://schemas.microsoft.com/office/2006/relationships/vbaProject';
+      const themeM = origRels.match(new RegExp(`<Relationship[^>]*Type="${themeType.replace(/\//g,'\\/')}"[^>]*\\/>`));
+      const vbaM   = origRels.match(new RegExp(`<Relationship[^>]*Type="${vbaType.replace(/\//g,'\\/')}"[^>]*\\/>`));
+
+      let rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+        `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`;
+      for (let i = 1; i <= n; i++) {
+        rels += `<Relationship Id="rId${i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i}.xml"/>`;
+      }
+      rels += `<Relationship Id="rId${n+1}" Type="${themeType}" Target="theme/theme1.xml"/>`;
+      rels += `<Relationship Id="rId${n+2}" Type="${vbaType}" Target="vbaProject.bin"/>`;
+      rels += `</Relationships>`;
+      return rels;
+    }
+
+    // [Content_Types].xml: 필요한 것만 재구성
+    function rebuildContentTypes(origCt, n) {
+      // <Default> 태그 모두 보존 + png 추가
+      const defs = (origCt.match(/<Default[^\/]*\/>/g) || []);
+      if (!defs.some(d => d.includes('.png'))) {
+        defs.push('<Default Extension="png" ContentType="image/png"/>');
+      }
+
+      // workbook, styles, sharedStrings, theme, vbaProject, calcChain Override 보존
+      const keepParts = ['/xl/workbook.xml', '/xl/styles.xml', '/xl/sharedStrings.xml',
+                         '/xl/theme/', '/xl/vbaProject'];
+      const existOverrides = (origCt.match(/<Override[^\/]*\/>/g) || [])
+        .filter(o => keepParts.some(p => o.includes(p)));
+
+      // 시트 Overrides (선택 PO 수만큼)
+      const sheetOvr = Array.from({length: n}, (_, i) =>
+        `<Override PartName="/xl/worksheets/sheet${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`
+      );
+      // Drawing Overrides
+      const drawOvr = Array.from({length: n}, (_, i) =>
+        `<Override PartName="/xl/drawings/drawing${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>`
+      );
+
+      return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+        `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` +
+        defs.join('') + existOverrides.join('') + sheetOvr.join('') + drawOvr.join('') +
+        `</Types>`;
     }
 
     async function downloadStmtXlsm() {
@@ -1137,61 +1234,84 @@
         statusEl.textContent = '⏳ 템플릿 로드 중...';
         btn.disabled = true;
 
-        if (typeof JSZip === 'undefined') throw new Error('JSZip 라이브러리가 로드되지 않았습니다.');
+        if (typeof JSZip === 'undefined') throw new Error('JSZip 라이브러리 미로드');
+        if (typeof JsBarcode === 'undefined') throw new Error('JsBarcode 라이브러리 미로드');
 
         const resp = await fetch('./data/stmt_template.xlsm');
-        if (!resp.ok) throw new Error('템플릿 파일을 찾을 수 없습니다 (data/stmt_template.xlsm)');
-        const buf  = await resp.arrayBuffer();
-        const zip  = await JSZip.loadAsync(buf);
+        if (!resp.ok) throw new Error('템플릿 파일 없음 (data/stmt_template.xlsm)');
+        const buf = await resp.arrayBuffer();
+        const zip = await JSZip.loadAsync(buf);
 
-        // sheet3.xml을 거래명세서 양식으로 사용
-        const tplXml = await zip.file('xl/worksheets/sheet3.xml').async('string');
-        const wbXml  = await zip.file('xl/workbook.xml').async('string');
+        const tplXml  = await zip.file('xl/worksheets/sheet3.xml').async('string');
+        const origWb  = await zip.file('xl/workbook.xml').async('string');
+        const origRel = await zip.file('xl/_rels/workbook.xml.rels').async('string');
+        const origCt  = await zip.file('[Content_Types].xml').async('string');
+
+        // 기존 시트/drawing/rels 파일 모두 제거 (clean slate)
+        for (let i = 1; i <= 41; i++) {
+          zip.remove(`xl/worksheets/sheet${i}.xml`);
+          zip.remove(`xl/worksheets/_rels/sheet${i}.xml.rels`);
+          zip.remove(`xl/drawings/drawing${i}.xml`);
+        }
+        // drawing rels 폴더 정리
+        Object.keys(zip.files)
+          .filter(p => p.startsWith('xl/drawings/_rels/') && p.endsWith('.rels'))
+          .forEach(p => zip.remove(p));
+        // 기존 미디어 bc*.png 정리
+        Object.keys(zip.files)
+          .filter(p => p.startsWith('xl/media/bc'))
+          .forEach(p => zip.remove(p));
+        // calcChain 제거 (수식 재계산 강제)
+        zip.remove('xl/calcChain.xml');
 
         const pos = [...selectedPos];
         statusEl.textContent = `⏳ ${pos.length}개 거래명세서 생성 중...`;
 
         for (let i = 0; i < pos.length; i++) {
           const po = pos[i];
-          // 이 PO의 거래명세서 데이터
-          const rowData = yjleeRows.filter(r => r.po === po);
+          const rowData  = yjleeRows.filter(r => r.po === po);
           const firstRow = rowData[0] || {};
           const tkm    = firstRow.tkm_no || '';
           const krwRaw = firstRow.krw || 0;
           const amount = typeof krwRaw === 'number' ? krwRaw
             : Number(String(krwRaw).replace(/[^0-9.-]/g, '')) || 0;
-          // SN: 9자리 숫자
-          const snRaw  = firstRow.sn || '';
-          const sn     = String(snRaw).replace(/\D/g, '').slice(0, 9);
+          const sn = String(firstRow.sn || '').replace(/\D/g, '').slice(0, 9);
+          const idx = i + 1; // 1-based sheet index
 
+          // 바코드 PNG 생성
+          statusEl.textContent = `⏳ 바코드 생성 중... (${i+1}/${pos.length})`;
+          const bcPng = await generateBarcodePng(po);
+          zip.file(`xl/media/bc${idx}.png`, bcPng);
+
+          // 시트 XML
           const sheetXml = fillStmtSheet(tplXml, { date: excelDate, tkm, amount, po, sn });
-          zip.file(`xl/worksheets/sheet${3 + i}.xml`, sheetXml);
+          zip.file(`xl/worksheets/sheet${idx}.xml`, sheetXml);
+
+          // Drawing + rels
+          zip.file(`xl/drawings/drawing${idx}.xml`, makeDrawingXml(po));
+          zip.file(`xl/drawings/_rels/drawing${idx}.xml.rels`, makeDrawingRels(idx));
+          zip.file(`xl/worksheets/_rels/sheet${idx}.xml.rels`, makeSheetRels(idx));
         }
 
-        // workbook.xml의 시트 이름 업데이트
-        let newWbXml = wbXml;
-        for (let i = 0; i < pos.length; i++) {
-          const sheetId = 3 + i;
-          newWbXml = newWbXml.replace(
-            new RegExp(`(<sheet [^>]*sheetId="${sheetId}"[^>]*)name="[^"]*"`),
-            `$1name="${escXml(pos[i])}"`
-          );
-        }
-        zip.file('xl/workbook.xml', newWbXml);
+        // 메타 XML 재구성
+        zip.file('xl/workbook.xml',       rebuildWorkbookXml(origWb, pos));
+        zip.file('xl/_rels/workbook.xml.rels', rebuildWorkbookRels(origRel, pos.length));
+        zip.file('[Content_Types].xml',   rebuildContentTypes(origCt, pos.length));
 
+        statusEl.textContent = '⏳ 파일 압축 중...';
         const outBuf = await zip.generateAsync({ type: 'arraybuffer', compression: 'DEFLATE' });
         const blob   = new Blob([outBuf], { type: 'application/vnd.ms-excel.sheet.macroEnabled.12' });
         const url    = URL.createObjectURL(blob);
         const a      = document.createElement('a');
-        a.href       = url;
-        const today  = new Date().toISOString().slice(0,10).replace(/-/g,'');
-        const label  = pos.slice(0,3).join('_');
-        a.download   = `거래명세서_${label}_${today}.xlsm`;
+        a.href = url;
+        const today = new Date().toISOString().slice(0,10).replace(/-/g,'');
+        const label = pos.slice(0,3).join('_');
+        a.download = `거래명세서_${label}_${today}.xlsm`;
         a.click();
         URL.revokeObjectURL(url);
 
         statusEl.className   = 'small mb-2 text-success fw-semibold';
-        statusEl.textContent = `✅ 거래명세서 생성 완료 (${pos.length}개 PO)`;
+        statusEl.textContent = `✅ 거래명세서 ${pos.length}건 생성 완료`;
       } catch(e) {
         statusEl.className   = 'small mb-2 text-danger fw-semibold';
         statusEl.textContent = '❌ 오류: ' + e.message;
