@@ -5,8 +5,10 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>출하관리</title>
+  <title>출하관리 | 파트 단가 관리 시스템</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
   <link href="style.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -14,75 +16,358 @@
   <script src="js/core.js?v=20260709C"></script>
   <script src="js/auth.js"></script>
   <style>
-    body { background: #f0f2f5; }
-    .po-row { transition: background .12s; }
-    .po-row:hover { background: #f8f9ff; }
-    .po-row.selected { background: #e8f0fe; }
-    .po-detail { background: #f8f9fa; border-left: 3px solid #1a73e8; }
-    .action-bar { background: #1a73e8; color: #fff; border-radius: 8px; padding: 10px 18px; }
-    .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
-    .ptn-candidate { cursor: pointer; padding: 2px 6px; border-radius: 4px; background: #e8f0fe; color: #1a73e8; font-family: monospace; font-size: .82rem; }
-    .ptn-candidate:hover { background: #1a73e8; color: #fff; }
-    .sidebar-link { transition: background .12s; display: block; }
-    .sidebar-link:hover { background: #f0f4ff; }
-    .sidebar-active { background: #e8f0fe !important; color: #1a73e8 !important; }
-    .quick-btn { border: none; text-align: left; padding: 7px 10px; border-radius: 6px; width: 100%; cursor: pointer; font-size: .82rem; margin-bottom: 6px; transition: filter .12s; }
-    .quick-btn:hover { filter: brightness(.93); }
-    .ptn-dropzone { border: 2px dashed #8db4e2; border-radius: 10px; padding: 36px 20px; text-align: center; cursor: pointer; transition: background .15s, border-color .15s; background: #f8fbff; user-select: none; }
-    .ptn-dropzone:hover, .ptn-dropzone.drag-over { background: #e8f0fe; border-color: #1a73e8; }
-    .ptn-dropzone.has-file { border-style: solid; border-color: #34a853; background: #f0fbf4; }
-    #barcode-video { width:100%; max-height:60vh; display:block; background:#000; }
-    .barcode-overlay { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); border:2px solid #00ff00; width:70%; height:100px; border-radius:4px; pointer-events:none; }
+    :root {
+      --p:   #004E89;
+      --p-bg:#deeaf5;
+      --s:   #38AECC;
+      --s-bg:#e0f2f7;
+      --g:   #51CB20;
+      --g-bg:#edfbe3;
+      --sur: #ffffff;
+      --bg:  #F8FAFC;
+      --bdr: #e2e8f0;
+      --txt: #0f172a;
+      --mut: #475569;
+      --amb: #b76e00;
+      --amb-bg:#fff8e0;
+      --fn:  'Hanken Grotesk', -apple-system, sans-serif;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      font-family: var(--fn);
+      background: var(--bg);
+      color: var(--txt);
+      margin: 0;
+    }
+    .dot-grid {
+      background-color: var(--bg);
+      background-image: radial-gradient(#cbd5e1 1px, transparent 1px);
+      background-size: 16px 16px;
+    }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--p); }
+
+    /* ── TOP HEADER ── */
+    #top-header {
+      position: fixed; top: 0; left: 0; right: 0;
+      height: 48px; z-index: 1050;
+      background: var(--sur);
+      border-bottom: 1px solid var(--bdr);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 24px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.05);
+    }
+    .brand-mark {
+      display: flex; align-items: center; gap: 9px;
+      font-size: 16px; font-weight: 700; color: var(--p);
+      letter-spacing: -.02em;
+    }
+    .brand-box {
+      width: 28px; height: 28px;
+      background: var(--p); border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .brand-box .mi { font-size: 17px; color: #fff; font-variation-settings:'FILL' 1; }
+    .hdr-tag {
+      font-size: 11px; font-weight: 700; letter-spacing: .07em;
+      text-transform: uppercase; color: var(--mut);
+      background: var(--bg); border: 1px solid var(--bdr);
+      padding: 3px 10px; border-radius: 4px;
+    }
+    .hdr-tag.live {
+      color: var(--s); border-color: var(--s); background: var(--s-bg);
+    }
+
+    /* ── SIDEBAR ── */
+    #sidebar {
+      position: fixed; left: 0; top: 48px; bottom: 0;
+      width: 210px; z-index: 900;
+      background: var(--sur);
+      border-right: 1px solid var(--bdr);
+      display: flex; flex-direction: column;
+      overflow-y: auto;
+    }
+    .sb-lbl {
+      font-size: 10px; font-weight: 700; letter-spacing: .1em;
+      text-transform: uppercase; color: var(--mut);
+      padding: 14px 16px 5px;
+    }
+    .sb-link {
+      display: flex; align-items: center; gap: 9px;
+      padding: 9px 16px;
+      font-size: 12px; font-weight: 600; letter-spacing: .04em;
+      text-transform: uppercase;
+      color: var(--mut); text-decoration: none;
+      border-right: 3px solid transparent;
+      transition: all .15s;
+    }
+    .sb-link:hover { background: #f0f4ff; color: var(--p); text-decoration: none; }
+    .sb-link.active {
+      background: var(--p-bg); color: var(--p);
+      border-right-color: var(--p);
+    }
+    .sb-link .mi { font-size: 17px; }
+    .sb-sep { margin: 8px 14px; border: none; border-top: 1px solid var(--bdr); }
+    .sb-btn {
+      display: flex; align-items: center; gap: 8px;
+      width: calc(100% - 20px); margin: 2px 10px;
+      padding: 7px 10px; border: none; border-radius: 6px;
+      font-size: 12px; font-weight: 600; letter-spacing: .02em;
+      cursor: pointer; text-align: left;
+      transition: filter .12s; font-family: var(--fn);
+    }
+    .sb-btn:hover { filter: brightness(.91); }
+    .sb-btn .mi { font-size: 15px; }
+    .sb-hint {
+      font-size: 10.5px; color: var(--mut);
+      padding: 4px 14px 12px; line-height: 1.5;
+    }
+
+    /* ── MAIN ── */
+    #main-content {
+      margin-left: 210px; margin-top: 48px;
+      min-height: calc(100vh - 48px);
+      padding: 24px 28px;
+    }
+    .pg-hdr {
+      margin-bottom: 18px;
+      display: flex; justify-content: space-between; align-items: flex-end;
+    }
+    .pg-hdr h1 {
+      font-size: 24px; font-weight: 700; color: var(--p);
+      letter-spacing: -.015em; margin: 0 0 2px;
+    }
+    .pg-hdr p { font-size: 13px; color: var(--mut); margin: 0; }
+    .btn-reload {
+      display: flex; align-items: center; gap: 5px;
+      background: var(--p); color: #fff; border: none;
+      border-radius: 6px; padding: 6px 14px;
+      font-size: 12px; font-weight: 700; letter-spacing: .05em;
+      text-transform: uppercase; cursor: pointer; font-family: var(--fn);
+      transition: opacity .15s;
+    }
+    .btn-reload:hover { opacity: .85; }
+    .btn-reload .mi { font-size: 15px; }
+
+    /* ── ACTION BAR ── */
+    #action-bar {
+      background: var(--p); border-radius: 8px;
+      padding: 10px 16px; margin-bottom: 14px;
+      box-shadow: 0 2px 8px rgba(0,78,137,.22);
+    }
+    #action-bar .btn-light {
+      background: rgba(255,255,255,.15); color: #fff !important;
+      border: 1px solid rgba(255,255,255,.3) !important;
+      font-size: 12px; padding: 4px 10px; font-family: var(--fn);
+    }
+    #action-bar .btn-light:hover { background: rgba(255,255,255,.28) !important; }
+    #action-bar .btn-warning {
+      background: #f59e0b !important; color: #fff !important;
+      border: none !important; font-size: 12px; padding: 4px 10px; font-family: var(--fn);
+    }
+    #action-bar .btn-outline-light {
+      border-color: rgba(255,255,255,.4) !important; color: #fff !important;
+      font-size: 12px; padding: 4px 10px; font-family: var(--fn);
+    }
+    #action-bar .vr { border-color: rgba(255,255,255,.3); }
+    #selected-count { font-size: 13px; font-weight: 700; }
+
+    /* ── FILTER CARD ── */
+    .filter-card {
+      background: var(--sur); border: 1px solid var(--bdr);
+      border-radius: 8px; padding: 11px 16px; margin-bottom: 14px;
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+      box-shadow: 0 1px 3px rgba(0,0,0,.04);
+    }
+    .filter-title {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 13px; font-weight: 700; color: var(--p);
+      text-transform: uppercase; letter-spacing: .04em;
+      white-space: nowrap;
+    }
+    .filter-title .mi { font-size: 17px; }
+
+    /* ── PO LIST CARD ── */
+    .po-list-card {
+      background: var(--sur); border: 1px solid var(--bdr);
+      border-radius: 8px; overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,.04);
+    }
+    .po-list-hdr {
+      background: #f8fafc; padding: 9px 14px;
+      border-bottom: 1px solid var(--bdr);
+      display: flex; align-items: center; gap: 10px;
+    }
+    .po-list-hdr label { font-size: 12px; color: var(--mut); margin: 0; cursor: pointer; }
+    .legend {
+      margin-left: auto; display: flex; align-items: center; gap: 8px;
+      font-size: 11.5px; color: var(--mut); font-weight: 500;
+    }
+
+    /* ── PO ROW (dynamically rendered) ── */
+    .po-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 14px;
+      border-bottom: 1px solid #f1f5f9;
+      cursor: pointer; transition: background .1s;
+    }
+    .po-row:hover { background: #f8fafc; box-shadow: inset 3px 0 0 var(--p); }
+    .po-row.selected { background: var(--p-bg); }
+    .status-dot {
+      width: 9px; height: 9px; border-radius: 50%;
+      display: inline-block; flex-shrink: 0;
+    }
+    .po-detail {
+      background: #f8f9fb;
+      border-left: 3px solid var(--s);
+      padding: 12px 20px;
+    }
+
+    /* ── BOOTSTRAP OVERRIDES ── */
+    .btn-primary, .btn-primary:focus {
+      background-color: var(--p) !important; border-color: var(--p) !important;
+    }
+    .btn-primary:hover { background-color: #003d6b !important; border-color: #003d6b !important; }
+    .btn-outline-primary { color: var(--p) !important; border-color: var(--p) !important; }
+    .btn-outline-primary:hover { background-color: var(--p) !important; color: #fff !important; }
+    .badge.bg-success { background-color: var(--g) !important; }
+    .badge.bg-info { background-color: var(--s) !important; color: #fff !important; }
+    .badge.bg-primary { background-color: var(--p) !important; }
+    .form-control:focus, .form-select:focus {
+      border-color: var(--p); box-shadow: 0 0 0 2px rgba(0,78,137,.15);
+    }
+    .modal-content { border-radius: 10px; border: 1px solid var(--bdr); }
+    .modal-header.bg-primary { background: var(--p) !important; }
+    .table-dark th, .table-dark td { background-color: var(--p) !important; }
+    .alert-info { background: var(--s-bg); border-color: var(--s); color: var(--p); }
+    .alert-success { background: var(--g-bg); border-color: var(--g); color: #1a5c06; }
+    .spinner-border.text-primary { color: var(--p) !important; border-top-color: var(--p) !important; }
+    .form-control, .form-select { font-family: var(--fn); font-size: 13px; }
+    .form-label { font-size: 13px; font-weight: 600; }
+    .table { font-size: 12.5px; }
+    .table thead th {
+      font-size: 11px; font-weight: 700;
+      letter-spacing: .05em; text-transform: uppercase; color: var(--mut);
+    }
+    #pagination { display: flex; justify-content: center; gap: 4px; margin-top: 14px; }
+    #pagination .btn-primary { background: var(--p) !important; border-color: var(--p) !important; }
+
+    /* PTN dropzone */
+    .ptn-dropzone {
+      border: 2px dashed #8db4e2; border-radius: 10px;
+      padding: 32px 20px; text-align: center; cursor: pointer;
+      transition: background .15s, border-color .15s;
+      background: #f8fbff; user-select: none;
+    }
+    .ptn-dropzone:hover, .ptn-dropzone.drag-over {
+      background: var(--p-bg); border-color: var(--p);
+    }
+    .ptn-dropzone.has-file {
+      border-style: solid; border-color: var(--g); background: var(--g-bg);
+    }
+    .ptn-candidate {
+      cursor: pointer; padding: 2px 8px; border-radius: 4px;
+      background: var(--p-bg); color: var(--p);
+      font-family: monospace; font-size: .82rem; display: inline-block;
+    }
+    .ptn-candidate:hover { background: var(--p); color: #fff; }
+
+    /* Camera */
+    #barcode-video { width: 100%; max-height: 60vh; display: block; background: #000; }
+    .barcode-overlay {
+      position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%,-50%);
+      border: 2px solid #00ff00; width: 70%; height: 100px;
+      border-radius: 4px; pointer-events: none;
+    }
+
+    /* Material Symbols helper */
+    .mi {
+      font-family: 'Material Symbols Outlined';
+      font-weight: normal; font-style: normal;
+      line-height: 1; letter-spacing: normal; text-transform: none;
+      white-space: nowrap; word-wrap: normal; direction: ltr;
+      -webkit-font-feature-settings: 'liga';
+      -webkit-font-smoothing: antialiased;
+      display: inline-flex; align-items: center; vertical-align: middle;
+    }
   </style>
 </head>
 <body>
-  <nav class="navbar navbar-dark bg-primary px-4">
-    <span class="navbar-brand fw-bold">⚙️ 파트 단가 관리 시스템</span>
-    <div class="d-flex gap-3">
-      <a href="parts-mgmt.html"  class="nav-link text-white">파트 단가 관리</a>
-      <a href="quotation.html"   class="nav-link text-white">견적 생성</a>
-      <a href="master-fill.html" class="nav-link text-white">마스터 업데이트</a>
-      <a href="shipment.html"    class="nav-link text-white active">출하관리</a>
+
+  <!-- ══ TOP HEADER ══ -->
+  <header id="top-header">
+    <div class="brand-mark">
+      <div class="brand-box"><span class="mi">factory</span></div>
+      파트 단가 관리 시스템
     </div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <span class="hdr-tag">출하 관리</span>
+      <span class="hdr-tag live">Online</span>
+    </div>
+  </header>
+
+  <!-- ══ SIDEBAR ══ -->
+  <nav id="sidebar">
+    <div class="sb-lbl">메뉴</div>
+    <a href="parts-mgmt.html" class="sb-link">
+      <span class="mi">sell</span>파트 단가 관리
+    </a>
+    <a href="quotation.html" class="sb-link">
+      <span class="mi">request_quote</span>견적 생성
+    </a>
+    <a href="master-fill.html" class="sb-link">
+      <span class="mi">upload_file</span>마스터 업데이트
+    </a>
+    <a href="shipment.html" class="sb-link active">
+      <span class="mi" style="font-variation-settings:'FILL' 1">inventory</span>출하관리
+    </a>
+
+    <hr class="sb-sep">
+
+    <div class="sb-lbl">빠른 실행</div>
+    <button class="sb-btn" style="background:var(--p-bg);color:var(--p)"
+            onclick="openPtnModal()">
+      <span class="mi">attach_file</span>PTN 업로드
+    </button>
+    <button class="sb-btn" style="background:var(--p-bg);color:var(--p)"
+            onclick="requireSelectionThen(openDateModal)">
+      <span class="mi">calendar_today</span>출하일 변경
+    </button>
+    <button class="sb-btn" style="background:var(--amb-bg);color:var(--amb)"
+            onclick="requireSelectionThen(generateStatements)">
+      <span class="mi">print</span>거래명세서 생성
+    </button>
+    <button class="sb-btn" style="background:#e8eaf6;color:#1a237e"
+            onclick="openVerifyModal()">
+      <span class="mi">qr_code_scanner</span>바코드 검증
+    </button>
+    <button class="sb-btn d-md-none" style="background:var(--g-bg);color:#2e7d32"
+            onclick="openBarcodeScanner()">
+      <span class="mi">photo_camera</span>바코드 스캔
+    </button>
+
+    <p class="sb-hint">출하일 변경·거래명세서는<br>PO를 먼저 선택 후 사용</p>
   </nav>
 
-  <div class="d-flex" style="min-height:calc(100vh - 58px)">
+  <!-- ══ MAIN CONTENT ══ -->
+  <main id="main-content" class="dot-grid">
 
-    <!-- ══ 왼쪽 사이드바 ══ -->
-    <div class="bg-white border-end p-3 d-flex flex-column flex-shrink-0" style="width:186px">
-      <div class="fw-semibold mb-3 text-dark" style="font-size:.88rem">📦 출하관리</div>
-
-      <button class="quick-btn" style="background:#eff3fb;color:#1a73e8"
-              onclick="openPtnModal()">
-        📎 PTN 업로드
-      </button>
-      <button class="quick-btn" style="background:#eff3fb;color:#1a73e8"
-              onclick="requireSelectionThen(openDateModal)">
-        📅 출하일 변경
-      </button>
-      <button class="quick-btn" style="background:#fff8e0;color:#b76e00"
-              onclick="requireSelectionThen(generateStatements)">
-        🖨️ 거래명세서 생성
-      </button>
-      <button class="quick-btn" style="background:#e8eaf6;color:#1a237e"
-              onclick="openVerifyModal()">
-        🔍 바코드 검증
-      </button>
-      <button class="quick-btn d-md-none" style="background:#e8f5e9;color:#2e7d32"
-              onclick="openBarcodeScanner()">
-        📷 바코드 스캔
-      </button>
-
-      <div class="text-muted mt-3 px-1" style="font-size:.7rem;line-height:1.5">
-        출하일 변경·거래명세서는 목록에서 PO를 먼저 선택 후 사용
+    <!-- Page Header -->
+    <div class="pg-hdr">
+      <div>
+        <h1>출하 PO 관리</h1>
+        <p>PTN 업로드, 출하일 관리, 거래명세서 생성을 이 화면에서 수행합니다.</p>
       </div>
+      <button class="btn-reload" onclick="loadData()">
+        <span class="mi">refresh</span>새로고침
+      </button>
     </div>
 
-    <!-- ══ 메인 콘텐츠 ══ -->
-    <div class="flex-grow-1 p-4 overflow-auto">
-
-    <!-- 선택 액션 바 (다중 선택 시 표시) -->
-    <div id="action-bar" class="action-bar d-none mb-3 d-flex align-items-center gap-3 flex-wrap">
+    <!-- Action Bar -->
+    <div id="action-bar" class="d-none mb-3 d-flex align-items-center gap-3 flex-wrap">
       <span class="fw-semibold" id="selected-count">0건 선택</span>
       <div class="vr opacity-50"></div>
       <button class="btn btn-sm btn-light" onclick="openDateModal()">📅 출하일 일괄 변경</button>
@@ -91,47 +376,49 @@
       <button class="btn btn-sm btn-outline-light ms-auto" onclick="clearSelection()">✕ 해제</button>
     </div>
 
-    <!-- 검색/필터 헤더 -->
-    <div class="card border-0 shadow-sm mb-3">
-      <div class="card-body py-3">
-        <div class="d-flex align-items-center gap-2 flex-wrap">
-          <h5 class="mb-0 me-2">📦 출하 PO 목록</h5>
-          <input type="text" class="form-control form-control-sm" id="search-input"
-            placeholder="PO번호 / 0247# 검색" oninput="renderList()" style="width:220px">
-          <select class="form-select form-select-sm" id="ptn-filter" onchange="renderList()" style="width:150px">
-            <option value="">전체 상태</option>
-            <option value="uploaded">PTN 업로드됨</option>
-            <option value="missing">PTN 미업로드</option>
-          </select>
-          <span class="text-muted small ms-auto" id="po-count-label"></span>
-          <button class="btn btn-outline-primary btn-sm" onclick="loadData()">🔄 새로고침</button>
-        </div>
+    <!-- Filter -->
+    <div class="filter-card">
+      <div class="filter-title">
+        <span class="mi">inventory</span>출하 PO 목록
       </div>
+      <div style="position:relative;display:flex;align-items:center">
+        <span class="mi" style="position:absolute;left:8px;font-size:16px;color:var(--mut);pointer-events:none">search</span>
+        <input type="text" class="form-control form-control-sm" id="search-input"
+          placeholder="PO번호 / 0247# 검색" oninput="renderList()"
+          style="width:224px;padding-left:30px">
+      </div>
+      <select class="form-select form-select-sm" id="ptn-filter" onchange="renderList()" style="width:150px">
+        <option value="">전체 상태</option>
+        <option value="uploaded">PTN 업로드됨</option>
+        <option value="missing">PTN 미업로드</option>
+      </select>
+      <span id="po-count-label" class="ms-auto"
+        style="font-size:12px;font-weight:700;color:var(--mut);font-family:monospace"></span>
     </div>
 
-    <!-- 로딩 -->
+    <!-- Loading -->
     <div id="loading" class="text-center py-5">
       <div class="spinner-border text-primary"></div>
       <div class="mt-2 text-muted small">데이터 로드 중...</div>
     </div>
 
-    <!-- PO 리스트 -->
+    <!-- PO Container -->
     <div id="po-container" class="d-none">
-      <div class="card shadow-sm">
-        <div class="card-header bg-white py-2 d-flex align-items-center gap-2 border-bottom">
+      <div class="po-list-card">
+        <div class="po-list-hdr">
           <input type="checkbox" id="select-all-chk" class="form-check-input" onchange="toggleSelectAll(this)">
-          <label for="select-all-chk" class="mb-0 small text-muted" style="cursor:pointer">전체 선택</label>
-          <div class="ms-auto d-flex gap-2 align-items-center small text-muted">
-            <span class="status-dot bg-success"></span>PTN 완료
-            <span class="status-dot bg-secondary ms-2"></span>PTN 미등록
+          <label for="select-all-chk">전체 선택</label>
+          <div class="legend">
+            <span class="status-dot bg-success"></span><span>PTN 완료</span>
+            <span class="status-dot bg-secondary" style="margin-left:6px"></span><span>PTN 미등록</span>
           </div>
         </div>
         <div id="po-list"></div>
       </div>
       <div class="d-flex justify-content-center gap-1 mt-3" id="pagination"></div>
     </div>
-    </div> <!-- /메인 콘텐츠 -->
-  </div> <!-- /d-flex wrapper -->
+
+  </main>
 
   <!-- ══ 출하일 / 거래명세서 모달 ══ -->
   <div class="modal fade" id="dateModal" tabindex="-1">
@@ -143,7 +430,6 @@
         </div>
         <div class="modal-body">
 
-          <!-- ── 출하일 변경 섹션 ── -->
           <div id="date-section" class="d-none">
             <div class="mb-3">
               <div class="small text-muted mb-2">선택된 PO</div>
@@ -156,24 +442,20 @@
             <button class="btn btn-primary" onclick="applyDate()">✅ 출하일 적용</button>
           </div>
 
-          <!-- ── 거래명세서 생성 섹션 ── -->
           <div id="stmt-section" class="d-none">
 
-            <!-- 선택 PO + 바코드 -->
             <div class="alert alert-light border py-2 mb-3">
               <div class="small text-muted mb-1">선택된 PO</div>
               <div id="stmt-po-tags" class="d-flex flex-wrap gap-2 mb-2"></div>
               <div id="stmt-barcodes" class="d-flex flex-wrap gap-3"></div>
             </div>
 
-            <!-- 거래명세서 날짜 입력 -->
             <div class="mb-3">
               <label class="form-label small fw-semibold">거래명세서 날짜</label>
               <input type="date" class="form-control form-control-sm" id="stmt-date-input">
               <div class="text-muted" style="font-size:.75rem">비워두면 오늘 날짜로 자동 설정</div>
             </div>
 
-            <!-- 금액 상태 -->
             <div class="d-flex align-items-center gap-2 mb-3">
               <span id="stmt-quot-status" class="small"></span>
               <label class="text-muted small mb-0" style="cursor:pointer">
@@ -182,7 +464,6 @@
               </label>
             </div>
 
-            <!-- 데이터 미리보기 -->
             <div class="card border-0 shadow-sm mb-3">
               <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
                 <span class="fw-semibold">데이터 미리보기</span>
@@ -201,10 +482,8 @@
               </div>
             </div>
 
-            <!-- 상태 메시지 -->
             <div id="stmt-status" class="small mb-2" style="min-height:1.4em"></div>
 
-            <!-- 생성 버튼 -->
             <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
               <button class="btn btn-warning px-3" id="stmt-xlsm-btn" onclick="downloadStmtXlsm()">📄 거래명세서 생성 (xlsm)</button>
               <button class="btn btn-outline-success px-3" id="stmt-dl-btn" onclick="downloadStmtDataExcel()">⬇️ YJLEE Excel</button>
@@ -213,7 +492,6 @@
               </button>
             </div>
 
-            <!-- drm-bridge 접기/펼치기 -->
             <div class="collapse mt-2" id="stmt-drm-collapse">
               <div class="border rounded p-3" style="background:#f8f9fa">
                 <div class="d-flex align-items-center gap-2 mb-2">
@@ -265,7 +543,6 @@
         </div>
         <div class="modal-body">
 
-          <!-- 드롭존 -->
           <div class="ptn-dropzone mb-3" id="ptn-dropzone"
                onclick="document.getElementById('ptn-file-input').click()"
                ondragover="event.preventDefault();this.classList.add('drag-over')"
@@ -277,13 +554,11 @@
             <div class="text-muted small mt-1" id="ptn-drop-sub">PDF 파일 지원</div>
           </div>
 
-          <!-- 로딩 -->
           <div id="ptn-loading" class="text-center py-3 d-none">
             <div class="spinner-border spinner-border-sm text-primary me-2"></div>
             <span class="text-muted small">PDF 분석 중...</span>
           </div>
 
-          <!-- 결과 -->
           <div id="ptn-results" class="d-none">
             <div class="mb-3">
               <div class="small text-muted fw-semibold mb-1">📋 인식된 PO</div>
@@ -336,16 +611,14 @@
   <div class="modal fade" id="verifyModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
       <div class="modal-content">
-        <div class="modal-header" style="background:#1a237e;color:#fff">
+        <div class="modal-header text-white" style="background:var(--p)">
           <h5 class="modal-title">🔍 바코드 3중 검증</h5>
           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" onclick="stopVerifyCam()"></button>
         </div>
         <div class="modal-body">
 
-          <!-- 마스터 현황 -->
           <div id="verify-master-info" class="alert alert-info py-2 small mb-3"></div>
 
-          <!-- 입력 행 공통 템플릿 -->
           <div class="row g-2 mb-2 align-items-center">
             <div class="col-3 text-end fw-semibold small text-muted">① PO 번호<br><span style="font-size:.7rem">(거래명세서 바코드)</span></div>
             <div class="col">
@@ -394,7 +667,6 @@
             <div class="col-auto"><span id="v-pn-badge" class="badge fs-6" style="min-width:3rem"></span></div>
           </div>
 
-          <!-- 카메라 영역 (스캔 시 표시) -->
           <div id="verify-cam-wrap" class="d-none mb-3 position-relative" style="border-radius:8px;overflow:hidden;background:#000">
             <video id="verify-cam-video" playsinline autoplay muted style="width:100%;max-height:220px;object-fit:cover;display:block"></video>
             <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:70%;height:2px;background:rgba(255,100,100,.8);pointer-events:none"></div>
@@ -403,7 +675,6 @@
             </div>
           </div>
 
-          <!-- 검증 결과 -->
           <div id="verify-result" class="d-none"></div>
 
         </div>
@@ -682,7 +953,6 @@
       if (!sb) { alert('Supabase 연결이 필요합니다.'); return; }
 
       const targets = [...selectedPos];
-      // 기존 shipment가 있으면 update, 없으면 insert
       const { data: existing } = await sb.from('shipments').select('id,po').in('po', targets);
       const existingPos = new Set((existing||[]).map(r => r.po));
       const { data: maxRow } = await sb.from('shipments').select('id').order('id', { ascending: false }).limit(1);
@@ -770,16 +1040,13 @@
         }
         ptnPdfText = text;
 
-        // PDF에서 PO 자동 매칭
         const knownPOs  = new Set(poGroups.map(g => g.po));
         const knownTKMs = new Set(poGroups.flatMap(g => g.tkmNos));
         const foundPOs  = [...knownPOs].filter(po => po && text.includes(po));
 
-        // selectedPos 자동 업데이트
         selectedPos = new Set(foundPOs);
         updateActionBar();
 
-        // PTN 번호 후보 (알려진 PO/TKM 제외)
         const raw        = [...new Set(text.match(/[A-Z0-9][A-Z0-9\-]{5,24}/g) || [])];
         const candidates = raw.filter(v => !knownPOs.has(v) && !knownTKMs.has(v)).slice(0, 8);
 
@@ -856,18 +1123,16 @@
 
     /* ════ 거래명세서 생성 ════ */
     let stmtModal;
-    let quotAmounts   = {};   // sn → { usd, krw }
-    let yjleeRows     = [];   // 현재 빌드된 YJLEE rows
+    let quotAmounts   = {};
+    let yjleeRows     = [];
     let drmAvailable  = false;
 
     function generateStatements() {
       if (!selectedPos.size) return;
 
-      // 모달 초기화
       document.getElementById('stmt-po-tags').innerHTML =
         [...selectedPos].map(po => `<span class="badge bg-primary font-monospace">${po}</span>`).join(' ');
       document.getElementById('stmt-quot-input').value = '';
-      // 저장된 drm-bridge 경로 복원
       const tp = localStorage.getItem('stmt_tpl_path');
       const od = localStorage.getItem('stmt_out_dir');
       if (tp) document.getElementById('stmt-tpl-path').value = tp;
@@ -875,7 +1140,6 @@
       document.getElementById('stmt-drm-log').textContent = '';
       yjleeRows = [];
 
-      // 견적 금액 캐시 자동 로드
       try {
         const cached = JSON.parse(localStorage.getItem('quotation_amounts_cache') || '{}');
         quotAmounts = cached;
@@ -895,7 +1159,6 @@
       document.getElementById('stmt-section').classList.remove('d-none');
       document.querySelector('#dateModal .modal-title').textContent = '🖨️ 거래명세서 생성';
       document.getElementById('stmt-status').textContent = '';
-      // 날짜 기본값: 오늘
       const todayStr = new Date().toISOString().slice(0, 10);
       document.getElementById('stmt-date-input').value = todayStr;
 
@@ -943,7 +1206,6 @@
         const ws   = wb.Sheets[wb.SheetNames[0]];
         const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
-        // 헤더 행 찾기 (SS P/N 포함 행)
         let hdrIdx = rows.findIndex(r =>
           r.some(c => typeof c === 'string' && c.includes('S/N'))
         );
@@ -979,19 +1241,16 @@
     }
 
     function buildPreview() {
-      // master_rows_cache에서 선택 PO 행 추출
       const masterCache = (() => {
         try { return JSON.parse(localStorage.getItem('master_rows_cache') || '[]'); } catch { return []; }
       })();
 
-      // 헤더 행 찾기 (SS P/N + SS S/N이 있는 행)
       let hdrIdx = masterCache.findIndex(r =>
         String(r[6] || '').toLowerCase().includes('p/n') &&
         String(r[7] || '').toLowerCase().includes('s/n')
       );
-      if (hdrIdx < 0) hdrIdx = 2; // 기본값
+      if (hdrIdx < 0) hdrIdx = 2;
 
-      // 컬럼 인덱스 (스크린샷 기준: A=0, D=3, E=4, F=5, G=6, H=7, I=8, J=9)
       const CI = { no:0, cust:3, fab:4, tool:5, pn:6, sn:7, po:8, tkm:9 };
 
       yjleeRows = [];
@@ -1015,7 +1274,6 @@
         });
       }
 
-      // master_rows_cache에 없으면 Supabase master_jobs로 fallback
       if (!yjleeRows.length) {
         const allJobs = (poGroups || []).flatMap(g =>
           g.orders.filter(o => selectedPos.has(o.po || ''))
@@ -1029,7 +1287,6 @@
         yjleeRows = allJobs;
       }
 
-      // 테이블 렌더
       const tbody = document.getElementById('stmt-preview-tbody');
       if (!yjleeRows.length) {
         document.getElementById('stmt-no-preview').textContent = '해당 PO 데이터가 마스터 캐시에 없습니다. 먼저 견적 생성을 실행해 캐시를 만들어 주세요.';
@@ -1155,59 +1412,40 @@
       const tax    = Math.round(amount * 0.1);
       const total  = supply + tax;
 
-      // 숫자 셀: <v> 값만 교체, s 속성 캡처로 보존 (하드코딩 금지)
       const numCell = (ref, val) => xml = xml.replace(
         new RegExp(`(<c r="${ref}" s="\\d+"[^>]*>)<v>[^<]*<\\/v>(<\\/c>)`),
         `$1<v>${val}</v>$2`
       );
-      // 수식 셀: <f> 보존하고 <v>만 교체
       const fmlaCell = (ref, val) => xml = xml.replace(
         new RegExp(`(<c r="${ref}"[^>]*><f>[^<]*<\\/f>)<v>[^<]*<\\/v>(<\\/c>)`),
         `$1<v>${val}</v>$2`
       );
-      // 문자열 셀: t="s"(sharedStr) or 빈 셀 → inlineStr로 우회, s 속성 캡처
       const strCell = (ref, val) => xml = xml.replace(
         new RegExp(`<c r="${ref}" s="(\\d+)"[^>]*>[^<]*(?:<[^/][^>]*>[^<]*<\\/[^>]+>)*<\\/c>`),
         `<c r="${ref}" s="$1" t="inlineStr"><is><t>${escXml(val)}</t></is></c>`
       );
 
-      // 날짜: B5 숫자 시리얼, N5 수식
       numCell('B5', date);
       fmlaCell('N5', date);
-
-      // 규격(TKM): C11 문자열→inlineStr, O11 수식
       strCell('C11', tkm);
       fmlaCell('O11', escXml(tkm));
-
-      // 수량: E11, Q11
       numCell('E11', 1);
       numCell('Q11', 1);
-
-      // 단가·공급가·세액 (left)
       numCell('F11', supply);
       fmlaCell('G11', supply);
       fmlaCell('I11', tax);
-
-      // 단가·공급가 (right)
       fmlaCell('R11', supply);
       fmlaCell('S11', supply);
-
-      // PO 번호: C22 숫자, O22 수식
       numCell('C22', po);
       fmlaCell('O22', po);
-
-      // SN: G22 숫자, S22 수식
       numCell('G22', sn);
       fmlaCell('S22', sn);
-
-      // 합계: G9, S9
       fmlaCell('G9', total);
       fmlaCell('S9', total);
 
       return xml;
     }
 
-    // CODE128 바코드를 PNG Uint8Array로 생성
     function generateBarcodePng(value) {
       return new Promise((resolve, reject) => {
         const canvas = document.createElement('canvas');
@@ -1227,12 +1465,9 @@
       });
     }
 
-    // 원본 drawing XML에 바코드 앵커를 추가 (원본 서식 보존)
-    // origDrawingXml: 템플릿의 drawing3.xml 내용 (회사 서식 도형 포함)
     function makeDrawingXml(origDrawingXml, po, bcRid) {
       const name = escXml(String(po));
 
-      // 원본에 r: 네임스페이스 없으면 추가 (blip r:embed 사용 위해 필요)
       let xml = origDrawingXml;
       if (!xml.includes('xmlns:r=')) {
         xml = xml.replace(
@@ -1241,7 +1476,6 @@
         );
       }
 
-      // 바코드 앵커: 왼쪽 상단 빈 공간(B1~D3), id=999로 기존 도형과 충돌 방지
       const barcodeAnchor =
         `<xdr:twoCellAnchor editAs="oneCell">` +
         `<xdr:from><xdr:col>1</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>0</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>` +
@@ -1256,11 +1490,9 @@
         `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>` +
         `</xdr:spPr></xdr:pic><xdr:clientData/></xdr:twoCellAnchor>`;
 
-      // 닫는 태그 바로 앞에 삽입
       return xml.replace('</xdr:wsDr>', barcodeAnchor + '</xdr:wsDr>');
     }
 
-    // drawing → media 관계 XML (바코드 PNG 1개를 두 앵커에서 공유)
     function makeDrawingRels(mediaIdx) {
       return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
         `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
@@ -1269,8 +1501,6 @@
         `</Relationships>`;
     }
 
-    // sheet → printerSettings + drawing 관계 XML
-    // sheet3.xml에 <pageSetup r:id="rId1"/> 있으므로 rId1 반드시 포함
     function makeSheetRels(sheetIdx) {
       return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
         `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
@@ -1281,26 +1511,20 @@
         `</Relationships>`;
     }
 
-    // workbook.xml의 <sheets> 블록만 교체
     function rebuildWorkbookXml(origXml, pos) {
-      // rId는 rebuildWorkbookRels의 rIdS1..rIdSn 과 일치해야 함
       const sheetEls = pos.map((po, i) =>
         `<sheet name="${escXml(po)}" sheetId="${i + 1}" r:id="rIdS${i + 1}"/>`
       ).join('');
       return origXml.replace(/<sheets>[\s\S]*?<\/sheets>/, `<sheets>${sheetEls}</sheets>`);
     }
 
-    // workbook.xml.rels: N개 worksheet + theme + vbaProject만
-    // workbook.xml.rels: worksheet 교체 + 나머지(styles/sharedStrings/theme/vba/person 등) 원본 유지
     function rebuildWorkbookRels(origRels, n) {
       const wsType = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet';
       const calcType = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/calcChain';
 
-      // 원본에서 worksheet·calcChain 제외한 모든 관계 추출
       const others = (origRels.match(/<Relationship[^>]*\/>/g) || [])
         .filter(r => !r.includes(`Type="${wsType}"`) && !r.includes(calcType));
 
-      // 기존 rId 번호와 충돌하지 않도록 새 시트는 rIdS1..rIdSn 사용
       let rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
         `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`;
       for (let i = 1; i <= n; i++) {
@@ -1311,15 +1535,12 @@
       return rels;
     }
 
-    // [Content_Types].xml: 블랙리스트 방식 — worksheet·drawing·calcChain만 교체, 나머지 원본 유지
     function rebuildContentTypes(origCt, n) {
-      // Default 태그 전체 보존 + png 없으면 추가
       const defs = (origCt.match(/<Default[^>]*\/>/g) || []);
       if (!defs.some(d => d.includes('png'))) {
         defs.push('<Default Extension="png" ContentType="image/png"/>');
       }
 
-      // Override 중 worksheet·drawing·calcChain만 제거하고 나머지 모두 보존
       const existOverrides = (origCt.match(/<Override[^>]*\/>/g) || [])
         .filter(o =>
           !o.includes('/xl/worksheets/') &&
@@ -1327,11 +1548,9 @@
           !o.includes('/xl/calcChain.xml')
         );
 
-      // 새 시트 Overrides
       const sheetOvr = Array.from({length: n}, (_, i) =>
         `<Override PartName="/xl/worksheets/sheet${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`
       );
-      // 새 Drawing Overrides
       const drawOvr = Array.from({length: n}, (_, i) =>
         `<Override PartName="/xl/drawings/drawing${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>`
       );
@@ -1371,21 +1590,17 @@
         const origRel = await zip.file('xl/_rels/workbook.xml.rels').async('string');
         const origCt  = await zip.file('[Content_Types].xml').async('string');
 
-        // 기존 시트/drawing/rels 파일 모두 제거 (clean slate)
         for (let i = 1; i <= 41; i++) {
           zip.remove(`xl/worksheets/sheet${i}.xml`);
           zip.remove(`xl/worksheets/_rels/sheet${i}.xml.rels`);
           zip.remove(`xl/drawings/drawing${i}.xml`);
         }
-        // drawing rels 폴더 정리
         Object.keys(zip.files)
           .filter(p => p.startsWith('xl/drawings/_rels/') && p.endsWith('.rels'))
           .forEach(p => zip.remove(p));
-        // 기존 미디어 bc*.png 정리
         Object.keys(zip.files)
           .filter(p => p.startsWith('xl/media/bc'))
           .forEach(p => zip.remove(p));
-        // calcChain 제거 (수식 재계산 강제)
         zip.remove('xl/calcChain.xml');
 
         const pos = [...selectedPos];
@@ -1400,24 +1615,20 @@
           const amount = typeof krwRaw === 'number' ? krwRaw
             : Number(String(krwRaw).replace(/[^0-9.-]/g, '')) || 0;
           const sn = String(firstRow.sn || '').replace(/\D/g, '').slice(0, 9);
-          const idx = i + 1; // 1-based sheet index
+          const idx = i + 1;
 
-          // 바코드 PNG 생성
           statusEl.textContent = `⏳ 바코드 생성 중... (${i+1}/${pos.length})`;
           const bcPng = await generateBarcodePng(po);
           zip.file(`xl/media/bc${idx}.png`, bcPng);
 
-          // 시트 XML
           const sheetXml = fillStmtSheet(tplXml, { date: excelDate, tkm, amount, po, sn });
           zip.file(`xl/worksheets/sheet${idx}.xml`, sheetXml);
 
-          // Drawing: 원본 서식 도형 유지 + 바코드 앵커 추가 / rels: bcRid=rId1
           zip.file(`xl/drawings/drawing${idx}.xml`, makeDrawingXml(origDrawing, po, 'rId1'));
           zip.file(`xl/drawings/_rels/drawing${idx}.xml.rels`, makeDrawingRels(idx));
           zip.file(`xl/worksheets/_rels/sheet${idx}.xml.rels`, makeSheetRels(idx));
         }
 
-        // 메타 XML 재구성
         zip.file('xl/workbook.xml',       rebuildWorkbookXml(origWb, pos));
         zip.file('xl/_rels/workbook.xml.rels', rebuildWorkbookRels(origRel, pos.length));
         zip.file('[Content_Types].xml',   rebuildContentTypes(origCt, pos.length));
@@ -1513,7 +1724,6 @@
        바코드 3중 검증 (마스터 룩업)
     ════════════════════════════════════════════ */
 
-    // yjleeRows → 정규화 마스터 배열
     function buildVerifyMaster() {
       return yjleeRows.map(r => ({
         po:  String(r.po     || '').trim().toUpperCase(),
@@ -1536,7 +1746,6 @@
       if (verifyModal) verifyModal.show();
     }
 
-    // 필드 배지 갱신
     function updateVBadge(field) {
       const val = document.getElementById('v-' + field)?.value?.trim();
       const badge = document.getElementById('v-' + field + '-badge');
@@ -1557,7 +1766,6 @@
       stopVerifyCam();
     }
 
-    // 검증 실행
     function runVerification() {
       const po  = document.getElementById('v-po').value.trim().toUpperCase();
       const tkm = document.getElementById('v-tkm').value.trim().toUpperCase();
@@ -1569,13 +1777,11 @@
       const master = buildVerifyMaster();
       stopVerifyCam();
 
-      // 각 필드별 단독 존재 여부
       const poHit  = po  ? master.some(r => r.po  === po)  : null;
       const tkmHit = tkm ? master.some(r => r.tkm === tkm) : null;
       const snHit  = sn  ? master.some(r => r.sn  === sn)  : null;
       const pnHit  = pn  ? master.some(r => r.pn  === pn)  : null;
 
-      // 입력한 모든 필드를 동시에 만족하는 행
       const combo = master.filter(r =>
         (!po  || r.po  === po)  &&
         (!tkm || r.tkm === tkm) &&
@@ -1585,7 +1791,6 @@
 
       const ok = combo.length > 0;
 
-      // 배지 업데이트
       const setBadge = (field, hit) => {
         const b = document.getElementById('v-' + field + '-badge');
         if (!b) return;
