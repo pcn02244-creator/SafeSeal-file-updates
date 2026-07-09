@@ -1169,49 +1169,55 @@
 
     // workbook.xml의 <sheets> 블록만 교체
     function rebuildWorkbookXml(origXml, pos) {
+      // rId는 rebuildWorkbookRels의 rIdS1..rIdSn 과 일치해야 함
       const sheetEls = pos.map((po, i) =>
-        `<sheet name="${escXml(po)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`
+        `<sheet name="${escXml(po)}" sheetId="${i + 1}" r:id="rIdS${i + 1}"/>`
       ).join('');
       return origXml.replace(/<sheets>[\s\S]*?<\/sheets>/, `<sheets>${sheetEls}</sheets>`);
     }
 
     // workbook.xml.rels: N개 worksheet + theme + vbaProject만
+    // workbook.xml.rels: worksheet 교체 + 나머지(styles/sharedStrings/theme/vba/person 등) 원본 유지
     function rebuildWorkbookRels(origRels, n) {
-      const themeType  = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme';
-      const vbaType    = 'http://schemas.microsoft.com/office/2006/relationships/vbaProject';
-      const themeM = origRels.match(new RegExp(`<Relationship[^>]*Type="${themeType.replace(/\//g,'\\/')}"[^>]*\\/>`));
-      const vbaM   = origRels.match(new RegExp(`<Relationship[^>]*Type="${vbaType.replace(/\//g,'\\/')}"[^>]*\\/>`));
+      const wsType = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet';
+      const calcType = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/calcChain';
 
+      // 원본에서 worksheet·calcChain 제외한 모든 관계 추출
+      const others = (origRels.match(/<Relationship[^>]*\/>/g) || [])
+        .filter(r => !r.includes(`Type="${wsType}"`) && !r.includes(calcType));
+
+      // 기존 rId 번호와 충돌하지 않도록 새 시트는 rIdS1..rIdSn 사용
       let rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
         `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`;
       for (let i = 1; i <= n; i++) {
-        rels += `<Relationship Id="rId${i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i}.xml"/>`;
+        rels += `<Relationship Id="rIdS${i}" Type="${wsType}" Target="worksheets/sheet${i}.xml"/>`;
       }
-      rels += `<Relationship Id="rId${n+1}" Type="${themeType}" Target="theme/theme1.xml"/>`;
-      rels += `<Relationship Id="rId${n+2}" Type="${vbaType}" Target="vbaProject.bin"/>`;
+      rels += others.join('');
       rels += `</Relationships>`;
       return rels;
     }
 
-    // [Content_Types].xml: 필요한 것만 재구성
+    // [Content_Types].xml: 블랙리스트 방식 — worksheet·drawing·calcChain만 교체, 나머지 원본 유지
     function rebuildContentTypes(origCt, n) {
-      // ★ [^>]* 사용 — /를 포함한 속성도 올바르게 매칭
+      // Default 태그 전체 보존 + png 없으면 추가
       const defs = (origCt.match(/<Default[^>]*\/>/g) || []);
       if (!defs.some(d => d.includes('png'))) {
         defs.push('<Default Extension="png" ContentType="image/png"/>');
       }
 
-      // workbook, styles, sharedStrings, theme, vbaProject Override 보존
-      const keepParts = ['/xl/workbook.xml', '/xl/styles.xml', '/xl/sharedStrings.xml',
-                         '/xl/theme/', '/xl/vbaProject'];
+      // Override 중 worksheet·drawing·calcChain만 제거하고 나머지 모두 보존
       const existOverrides = (origCt.match(/<Override[^>]*\/>/g) || [])
-        .filter(o => keepParts.some(p => o.includes(p)));
+        .filter(o =>
+          !o.includes('/xl/worksheets/') &&
+          !o.includes('/xl/drawings/') &&
+          !o.includes('/xl/calcChain.xml')
+        );
 
-      // 시트 Overrides (선택 PO 수만큼)
+      // 새 시트 Overrides
       const sheetOvr = Array.from({length: n}, (_, i) =>
         `<Override PartName="/xl/worksheets/sheet${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`
       );
-      // Drawing Overrides
+      // 새 Drawing Overrides
       const drawOvr = Array.from({length: n}, (_, i) =>
         `<Override PartName="/xl/drawings/drawing${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>`
       );
