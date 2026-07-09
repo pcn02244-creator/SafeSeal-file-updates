@@ -168,9 +168,12 @@
             </div>
           </div>
 
+          <!-- 상태 메시지 -->
+          <div id="stmt-status" class="small mb-2" style="min-height:1.4em"></div>
+
           <!-- 생성 버튼 -->
           <div class="d-flex align-items-center gap-3 flex-wrap">
-            <button class="btn btn-success px-4" onclick="downloadStmtDataExcel()">⬇️ Excel 다운로드</button>
+            <button class="btn btn-success px-4" id="stmt-dl-btn" onclick="downloadStmtDataExcel()">⬇️ Excel 다운로드</button>
             <button class="btn btn-link btn-sm text-muted p-0" type="button" data-bs-toggle="collapse" data-bs-target="#stmt-drm-collapse">
               ⚙️ drm-bridge 고급 설정 ▼
             </button>
@@ -683,13 +686,15 @@
         }
       } catch { quotAmounts = {}; }
 
+      document.querySelector('#dateModal .modal-title').textContent = '🖨️ 거래명세서 생성';
+      document.getElementById('stmt-status').textContent = '';
+
       buildPreview();
 
       // drm-bridge 연결 확인
       checkDrmBridge();
 
-      if (!stmtModal) stmtModal = new bootstrap.Modal(document.getElementById('statementModal'));
-      stmtModal.show();
+      dateModal.show();
     }
 
     async function checkDrmBridge() {
@@ -882,21 +887,52 @@
     }
 
     function downloadStmtDataExcel() {
-      if (!yjleeRows.length) { buildPreview(); if (!yjleeRows.length) return alert('YJLEE 데이터가 없습니다.'); }
+      const statusEl = document.getElementById('stmt-status');
+      const btn      = document.getElementById('stmt-dl-btn');
+      try {
+        statusEl.className = 'small mb-2 text-muted';
+        statusEl.textContent = '⏳ 생성 중...';
+        btn.disabled = true;
 
-      const headers = ['No.','Customer','Fab','Tool','SS P/N','SS S/N','PO','0247#','Amount(USD)','','','','','','','','','','','','','','','','','','','','','AD(KRW)'];
-      const dataRows = yjleeRows.map(r => [
-        r.no, r.customer, r.fab, r.tool, r.pn, r.sn, r.po, r.tkm_no,
-        r.usd || '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', r.krw || '',
-      ]);
+        if (!yjleeRows.length) {
+          statusEl.textContent = '⏳ 데이터 준비 중...';
+          buildPreview();
+        }
+        if (!yjleeRows.length) {
+          statusEl.className = 'small mb-2 text-danger fw-semibold';
+          statusEl.textContent = '❌ 오류: YJLEE 데이터가 없습니다. 마스터 업데이트 후 다시 시도하세요.';
+          btn.disabled = false;
+          return;
+        }
 
-      const ws   = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
-      const wb   = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'YJLEE');
+        statusEl.textContent = `⏳ Excel 파일 생성 중... (${yjleeRows.length}행)`;
 
-      const today   = new Date().toISOString().slice(0, 10);
-      const poLabel = [...selectedPos].join('_').slice(0, 30);
-      XLSX.writeFile(wb, `YJLEE_데이터_${poLabel}_${today}.xlsx`);
+        const headers = ['No.','Customer','Fab','Tool','SS P/N','SS S/N','PO','0247#','Amount(USD)','','','','','','','','','','','','','','','','','','','','','AD(KRW)'];
+        const dataRows = yjleeRows.map(r => [
+          r.no, r.customer, r.fab, r.tool, r.pn, r.sn, r.po, r.tkm_no,
+          r.usd || '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', r.krw || '',
+        ]);
+
+        const ws   = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
+        const wb   = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'YJLEE');
+
+        const today   = new Date().toISOString().slice(0, 10);
+        const poLabel = [...selectedPos].join('_').slice(0, 30);
+        const fname   = `YJLEE_데이터_${poLabel}_${today}.xlsx`;
+
+        statusEl.textContent = `⏳ 다운로드 시작 중...`;
+        XLSX.writeFile(wb, fname);
+
+        statusEl.className = 'small mb-2 text-success fw-semibold';
+        statusEl.textContent = `✅ 완료: ${fname} (${yjleeRows.length}행)`;
+      } catch(e) {
+        statusEl.className = 'small mb-2 text-danger fw-semibold';
+        statusEl.textContent = `❌ 오류: ${e.message}`;
+        console.error('downloadStmtDataExcel 오류:', e);
+      } finally {
+        btn.disabled = false;
+      }
     }
   </script>
 </body>
