@@ -1103,12 +1103,12 @@
     function generateBarcodePng(value) {
       return new Promise((resolve, reject) => {
         const canvas = document.createElement('canvas');
-        canvas.width  = 360;
-        canvas.height = 80;
+        canvas.width  = 280;
+        canvas.height = 60;
         try {
           JsBarcode(canvas, String(value), {
-            format: 'CODE128', width: 2, height: 54,
-            displayValue: true, fontSize: 13, margin: 6,
+            format: 'CODE128', width: 1.5, height: 38,
+            displayValue: true, fontSize: 10, margin: 4,
             background: '#ffffff', lineColor: '#000000',
           });
         } catch(e) { reject(e); return; }
@@ -1122,7 +1122,8 @@
     // 바코드 이미지가 포함된 drawing XML (sheet의 왼쪽/오른쪽 각 1개씩)
     function makeDrawingXml(po) {
       const name = escXml(String(po));
-      // 왼쪽(공급자용): col 1(B)~8(I), row 12~15 / 오른쪽(공급받는자용): col 13(N)~20(U), row 12~15
+      // 맨 왼쪽 상단 빈 공간(B1~D3)에 바코드 하나만 작게 배치
+      // col 0-indexed: 0=A(border) 1=B 2=C 3=D / row 0-indexed: 0=row1
       const anchor = (colFrom, rowFrom, colTo, rowTo, rId, id) =>
         `<xdr:twoCellAnchor editAs="oneCell">` +
         `<xdr:from><xdr:col>${colFrom}</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${rowFrom}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>` +
@@ -1141,8 +1142,7 @@
         `<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"` +
         ` xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"` +
         ` xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">` +
-        anchor(1, 12, 8, 15, 'rId1', 2) +
-        anchor(13, 12, 20, 15, 'rId1', 3) +
+        anchor(1, 0, 4, 2, 'rId1', 2) +
         `</xdr:wsDr>`;
     }
 
