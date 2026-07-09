@@ -11,7 +11,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
-  <script src="js/core.js?v=20260709B"></script>
+  <script src="js/core.js?v=20260709C"></script>
   <script src="js/auth.js"></script>
   <style>
     body { background: #f0f2f5; }
@@ -1155,10 +1155,13 @@
         `</Relationships>`;
     }
 
-    // sheet → drawing 관계 XML
+    // sheet → printerSettings + drawing 관계 XML
+    // sheet3.xml에 <pageSetup r:id="rId1"/> 있으므로 rId1 반드시 포함
     function makeSheetRels(sheetIdx) {
       return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
         `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+        `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/printerSettings"` +
+        ` Target="../printerSettings/printerSettings3.bin"/>` +
         `<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing"` +
         ` Target="../drawings/drawing${sheetIdx}.xml"/>` +
         `</Relationships>`;
@@ -1192,16 +1195,16 @@
 
     // [Content_Types].xml: 필요한 것만 재구성
     function rebuildContentTypes(origCt, n) {
-      // <Default> 태그 모두 보존 + png 추가
-      const defs = (origCt.match(/<Default[^\/]*\/>/g) || []);
-      if (!defs.some(d => d.includes('.png'))) {
+      // ★ [^>]* 사용 — /를 포함한 속성도 올바르게 매칭
+      const defs = (origCt.match(/<Default[^>]*\/>/g) || []);
+      if (!defs.some(d => d.includes('png'))) {
         defs.push('<Default Extension="png" ContentType="image/png"/>');
       }
 
-      // workbook, styles, sharedStrings, theme, vbaProject, calcChain Override 보존
+      // workbook, styles, sharedStrings, theme, vbaProject Override 보존
       const keepParts = ['/xl/workbook.xml', '/xl/styles.xml', '/xl/sharedStrings.xml',
                          '/xl/theme/', '/xl/vbaProject'];
-      const existOverrides = (origCt.match(/<Override[^\/]*\/>/g) || [])
+      const existOverrides = (origCt.match(/<Override[^>]*\/>/g) || [])
         .filter(o => keepParts.some(p => o.includes(p)));
 
       // 시트 Overrides (선택 PO 수만큼)
