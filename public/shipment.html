@@ -64,6 +64,10 @@
               onclick="requireSelectionThen(generateStatements)">
         🖨️ 거래명세서 생성
       </button>
+      <button class="quick-btn" style="background:#e8eaf6;color:#1a237e"
+              onclick="openVerifyModal()">
+        🔍 바코드 검증
+      </button>
       <button class="quick-btn d-md-none" style="background:#e8f5e9;color:#2e7d32"
               onclick="openBarcodeScanner()">
         📷 바코드 스캔
@@ -328,6 +332,90 @@
     </div>
   </div>
 
+  <!-- ══ 바코드 3중 검증 모달 ══ -->
+  <div class="modal fade" id="verifyModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header" style="background:#1a237e;color:#fff">
+          <h5 class="modal-title">🔍 바코드 3중 검증</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" onclick="stopVerifyCam()"></button>
+        </div>
+        <div class="modal-body">
+
+          <!-- 마스터 현황 -->
+          <div id="verify-master-info" class="alert alert-info py-2 small mb-3"></div>
+
+          <!-- 입력 행 공통 템플릿 -->
+          <div class="row g-2 mb-2 align-items-center">
+            <div class="col-3 text-end fw-semibold small text-muted">① PO 번호<br><span style="font-size:.7rem">(거래명세서 바코드)</span></div>
+            <div class="col">
+              <div class="input-group input-group-sm">
+                <input type="text" id="v-po" class="form-control font-monospace" placeholder="PO 번호 스캔 또는 입력">
+                <button class="btn btn-outline-secondary" onclick="startVerifyCam('po')" title="카메라 스캔">📷</button>
+                <button class="btn btn-outline-danger" onclick="clearVField('po')">✕</button>
+              </div>
+            </div>
+            <div class="col-auto"><span id="v-po-badge" class="badge fs-6" style="min-width:3rem"></span></div>
+          </div>
+
+          <div class="row g-2 mb-2 align-items-center">
+            <div class="col-3 text-end fw-semibold small text-muted">② 규격 번호<br><span style="font-size:.7rem">(PTN 라벨 0247#)</span></div>
+            <div class="col">
+              <div class="input-group input-group-sm">
+                <input type="text" id="v-tkm" class="form-control font-monospace" placeholder="0247-XXXXX 스캔 또는 입력">
+                <button class="btn btn-outline-secondary" onclick="startVerifyCam('tkm')" title="카메라 스캔">📷</button>
+                <button class="btn btn-outline-danger" onclick="clearVField('tkm')">✕</button>
+              </div>
+            </div>
+            <div class="col-auto"><span id="v-tkm-badge" class="badge fs-6" style="min-width:3rem"></span></div>
+          </div>
+
+          <div class="row g-2 mb-2 align-items-center">
+            <div class="col-3 text-end fw-semibold small text-muted">③ 시리얼 번호<br><span style="font-size:.7rem">(제품 바코드 SN)</span></div>
+            <div class="col">
+              <div class="input-group input-group-sm">
+                <input type="text" id="v-sn" class="form-control font-monospace" placeholder="SN 스캔 또는 입력">
+                <button class="btn btn-outline-secondary" onclick="startVerifyCam('sn')" title="카메라 스캔">📷</button>
+                <button class="btn btn-outline-danger" onclick="clearVField('sn')">✕</button>
+              </div>
+            </div>
+            <div class="col-auto"><span id="v-sn-badge" class="badge fs-6" style="min-width:3rem"></span></div>
+          </div>
+
+          <div class="row g-2 mb-3 align-items-center">
+            <div class="col-3 text-end fw-semibold small text-muted">PN (선택)<br><span style="font-size:.7rem">(제품 바코드 파트번호)</span></div>
+            <div class="col">
+              <div class="input-group input-group-sm">
+                <input type="text" id="v-pn" class="form-control font-monospace" placeholder="PN 스캔 또는 입력 (선택)">
+                <button class="btn btn-outline-secondary" onclick="startVerifyCam('pn')" title="카메라 스캔">📷</button>
+                <button class="btn btn-outline-danger" onclick="clearVField('pn')">✕</button>
+              </div>
+            </div>
+            <div class="col-auto"><span id="v-pn-badge" class="badge fs-6" style="min-width:3rem"></span></div>
+          </div>
+
+          <!-- 카메라 영역 (스캔 시 표시) -->
+          <div id="verify-cam-wrap" class="d-none mb-3 position-relative" style="border-radius:8px;overflow:hidden;background:#000">
+            <video id="verify-cam-video" playsinline autoplay muted style="width:100%;max-height:220px;object-fit:cover;display:block"></video>
+            <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:70%;height:2px;background:rgba(255,100,100,.8);pointer-events:none"></div>
+            <div id="verify-cam-status" class="text-center text-white py-1 small" style="position:absolute;bottom:0;width:100%;background:rgba(0,0,0,.6)">
+              스캔 대기 중...
+            </div>
+          </div>
+
+          <!-- 검증 결과 -->
+          <div id="verify-result" class="d-none"></div>
+
+        </div>
+        <div class="modal-footer gap-2">
+          <button class="btn btn-success" onclick="runVerification()">🔍 검증</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="clearAllVFields()">초기화</button>
+          <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal" onclick="stopVerifyCam()">닫기</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
@@ -335,7 +423,9 @@
     pdfjsLib.GlobalWorkerOptions.workerSrc =
       'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
 
-    let dateModal, ptnModal, barcodeModal;
+    let dateModal, ptnModal, barcodeModal, verifyModal;
+    let verifyCamStream = null;
+    let verifyTargetField = null;
     let barcodeStream = null;
     let poGroups     = [];   // { po, tkmNos[], pns[], orders[], shipment }
     let filteredGrps = [];
@@ -350,6 +440,7 @@
         dateModal    = new bootstrap.Modal(document.getElementById('dateModal'));
         ptnModal     = new bootstrap.Modal(document.getElementById('ptnModal'));
         barcodeModal = new bootstrap.Modal(document.getElementById('barcodeModal'));
+        verifyModal  = new bootstrap.Modal(document.getElementById('verifyModal'));
         setupPtnDropzone();
       } catch(e) { console.warn('초기화 오류:', e); }
       try { await initData(); } catch(e) { console.warn('initData 오류:', e); }
@@ -1418,6 +1509,194 @@
       if (video) video.srcObject = null;
     }
 
+    /* ════════════════════════════════════════════
+       바코드 3중 검증 (마스터 룩업)
+    ════════════════════════════════════════════ */
+
+    // yjleeRows → 정규화 마스터 배열
+    function buildVerifyMaster() {
+      return yjleeRows.map(r => ({
+        po:  String(r.po     || '').trim().toUpperCase(),
+        tkm: String(r.tkm_no|| '').trim().toUpperCase(),
+        pn:  String(r.pn    || '').trim().toUpperCase(),
+        sn:  String(r.sn    || '').trim().replace(/\s/g,'').toUpperCase(),
+        _raw: r
+      })).filter(r => r.po || r.sn);
+    }
+
+    function openVerifyModal() {
+      if (!yjleeRows.length) {
+        buildPreview();
+        if (!yjleeRows.length) return alert('먼저 데이터를 로드하세요 (견적 생성 또는 PTN 업로드).');
+      }
+      const master = buildVerifyMaster();
+      const info = document.getElementById('verify-master-info');
+      info.textContent = `마스터 레코드 ${master.length}건 로드됨 (PO ${new Set(master.map(r=>r.po)).size}개 / SN ${new Set(master.map(r=>r.sn).filter(Boolean)).size}개)`;
+      document.getElementById('verify-result').classList.add('d-none');
+      if (verifyModal) verifyModal.show();
+    }
+
+    // 필드 배지 갱신
+    function updateVBadge(field) {
+      const val = document.getElementById('v-' + field)?.value?.trim();
+      const badge = document.getElementById('v-' + field + '-badge');
+      if (!badge) return;
+      badge.textContent = val ? '입력됨' : '';
+      badge.className = 'badge fs-6 ' + (val ? 'bg-primary' : '');
+    }
+
+    function clearVField(field) {
+      const el = document.getElementById('v-' + field);
+      if (el) el.value = '';
+      updateVBadge(field);
+      document.getElementById('verify-result').classList.add('d-none');
+    }
+
+    function clearAllVFields() {
+      ['po','tkm','sn','pn'].forEach(f => clearVField(f));
+      stopVerifyCam();
+    }
+
+    // 검증 실행
+    function runVerification() {
+      const po  = document.getElementById('v-po').value.trim().toUpperCase();
+      const tkm = document.getElementById('v-tkm').value.trim().toUpperCase();
+      const sn  = document.getElementById('v-sn').value.trim().replace(/\s/g,'').toUpperCase();
+      const pn  = document.getElementById('v-pn').value.trim().toUpperCase();
+
+      if (!po && !tkm && !sn) return alert('PO, 규격(0247#), SN 중 하나 이상 입력하세요.');
+
+      const master = buildVerifyMaster();
+      stopVerifyCam();
+
+      // 각 필드별 단독 존재 여부
+      const poHit  = po  ? master.some(r => r.po  === po)  : null;
+      const tkmHit = tkm ? master.some(r => r.tkm === tkm) : null;
+      const snHit  = sn  ? master.some(r => r.sn  === sn)  : null;
+      const pnHit  = pn  ? master.some(r => r.pn  === pn)  : null;
+
+      // 입력한 모든 필드를 동시에 만족하는 행
+      const combo = master.filter(r =>
+        (!po  || r.po  === po)  &&
+        (!tkm || r.tkm === tkm) &&
+        (!sn  || r.sn  === sn)  &&
+        (!pn  || !r.pn || r.pn === pn)
+      );
+
+      const ok = combo.length > 0;
+
+      // 배지 업데이트
+      const setBadge = (field, hit) => {
+        const b = document.getElementById('v-' + field + '-badge');
+        if (!b) return;
+        if (hit === null) { b.textContent = ''; b.className = 'badge fs-6'; return; }
+        b.textContent = hit ? '✓ 존재' : '✗ 없음';
+        b.className = 'badge fs-6 ' + (ok ? 'bg-success' : hit ? 'bg-warning text-dark' : 'bg-danger');
+      };
+      setBadge('po',  poHit);
+      setBadge('tkm', tkmHit);
+      setBadge('sn',  snHit);
+      setBadge('pn',  pnHit);
+
+      const resultEl = document.getElementById('verify-result');
+      resultEl.classList.remove('d-none');
+
+      if (ok) {
+        const rows = combo.map(r =>
+          `<tr class="table-success">
+            <td class="font-monospace">${r.po}</td>
+            <td class="font-monospace">${r.tkm}</td>
+            <td class="font-monospace">${r.pn||'-'}</td>
+            <td class="font-monospace">${r.sn}</td>
+          </tr>`
+        ).join('');
+        resultEl.innerHTML = `
+          <div class="alert alert-success py-2 mb-2 fw-semibold">
+            ✅ 검증 성공 — ${combo.length}건 일치
+          </div>
+          <table class="table table-sm table-bordered mb-0">
+            <thead class="table-dark"><tr><th>PO</th><th>0247#</th><th>PN</th><th>SN</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>`;
+      } else {
+        const missing = [];
+        if (po  && !poHit)  missing.push(`PO "${po}" 마스터에 없음`);
+        if (tkm && !tkmHit) missing.push(`0247# "${tkm}" 마스터에 없음`);
+        if (sn  && !snHit)  missing.push(`SN "${sn}" 마스터에 없음`);
+        if (pn  && !pnHit)  missing.push(`PN "${pn}" 마스터에 없음`);
+        const comboIssue = !missing.length
+          ? `PO/0247#/SN 각각은 존재하지만 <strong>같은 행에 없음</strong> (잘못된 조합)`
+          : '';
+        resultEl.innerHTML = `
+          <div class="alert alert-danger py-2 mb-2">
+            ❌ 검증 실패
+            <ul class="mb-0 mt-1 small">
+              ${missing.map(m => `<li>${m}</li>`).join('')}
+              ${comboIssue ? `<li>${comboIssue}</li>` : ''}
+            </ul>
+          </div>`;
+      }
+    }
+
+    /* ── 카메라 스캔 (검증용) ── */
+    async function startVerifyCam(field) {
+      verifyTargetField = field;
+      const wrap   = document.getElementById('verify-cam-wrap');
+      const video  = document.getElementById('verify-cam-video');
+      const status = document.getElementById('verify-cam-status');
+
+      wrap.classList.remove('d-none');
+      status.textContent = '카메라 시작 중...';
+
+      stopVerifyCam();
+      try {
+        verifyCamStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } }
+        });
+        video.srcObject = verifyCamStream;
+        await video.play();
+      } catch(e) {
+        status.textContent = '카메라 오류: ' + e.message;
+        return;
+      }
+
+      if (!('BarcodeDetector' in window)) {
+        status.textContent = '이 브라우저는 자동 스캔 미지원 — 직접 입력하세요';
+        return;
+      }
+
+      const detector = new BarcodeDetector({ formats: ['code_128','code_39','qr_code','data_matrix','ean_13','ean_8','upc_a'] });
+      status.textContent = `[${field.toUpperCase()} 스캔] 바코드를 비춰주세요`;
+
+      const scan = async () => {
+        if (!verifyCamStream) return;
+        try {
+          const codes = await detector.detect(video);
+          if (codes.length > 0) {
+            const val = codes[0].rawValue.trim();
+            const input = document.getElementById('v-' + verifyTargetField);
+            if (input) { input.value = val; updateVBadge(verifyTargetField); }
+            status.textContent = `✅ 스캔됨: ${val}`;
+            stopVerifyCam();
+            setTimeout(() => wrap.classList.add('d-none'), 1200);
+            return;
+          }
+        } catch(e) {}
+        if (verifyCamStream) requestAnimationFrame(scan);
+      };
+      requestAnimationFrame(scan);
+    }
+
+    function stopVerifyCam() {
+      if (verifyCamStream) {
+        verifyCamStream.getTracks().forEach(t => t.stop());
+        verifyCamStream = null;
+      }
+      const video = document.getElementById('verify-cam-video');
+      if (video) video.srcObject = null;
+    }
+
+    /* ════ 기존 바코드 스캐너 (PO 검색용) ════ */
     function applyManualBarcode() {
       const val = document.getElementById('barcode-manual-input')?.value?.trim();
       if (!val) return;
