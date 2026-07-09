@@ -11,7 +11,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
-  <script src="js/core.js?v=20260707H"></script>
+  <script src="js/core.js?v=20260709A"></script>
   <script src="js/auth.js"></script>
   <style>
     body { background: #f0f2f5; }
@@ -31,6 +31,8 @@
     .ptn-dropzone { border: 2px dashed #8db4e2; border-radius: 10px; padding: 36px 20px; text-align: center; cursor: pointer; transition: background .15s, border-color .15s; background: #f8fbff; user-select: none; }
     .ptn-dropzone:hover, .ptn-dropzone.drag-over { background: #e8f0fe; border-color: #1a73e8; }
     .ptn-dropzone.has-file { border-style: solid; border-color: #34a853; background: #f0fbf4; }
+    #barcode-video { width:100%; max-height:60vh; display:block; background:#000; }
+    .barcode-overlay { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); border:2px solid #00ff00; width:70%; height:100px; border-radius:4px; pointer-events:none; }
   </style>
 </head>
 <body>
@@ -61,6 +63,10 @@
       <button class="quick-btn" style="background:#fff8e0;color:#b76e00"
               onclick="requireSelectionThen(generateStatements)">
         🖨️ 거래명세서 생성
+      </button>
+      <button class="quick-btn d-md-none" style="background:#e8f5e9;color:#2e7d32"
+              onclick="openBarcodeScanner()">
+        📷 바코드 스캔
       </button>
 
       <div class="text-muted mt-3 px-1" style="font-size:.7rem;line-height:1.5">
@@ -123,9 +129,9 @@
     </div> <!-- /메인 콘텐츠 -->
   </div> <!-- /d-flex wrapper -->
 
-  <!-- ══ 출하일 일괄 변경 모달 ══ -->
+  <!-- ══ 출하일 / 거래명세서 모달 ══ -->
   <div class="modal fade" id="dateModal" tabindex="-1">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-lg">
       <div class="modal-content">
         <div class="modal-header bg-primary text-white">
           <h5 class="modal-title">📅 출하일 일괄 변경</h5>
@@ -133,100 +139,204 @@
         </div>
         <div class="modal-body">
 
-          <!-- 선택 PO + 바코드 -->
-          <div class="alert alert-light border py-2 mb-3">
-            <div class="small text-muted mb-1">선택된 PO</div>
-            <div id="stmt-po-tags" class="d-flex flex-wrap gap-2 mb-2"></div>
-            <div id="stmt-barcodes" class="d-flex flex-wrap gap-3"></div>
-          </div>
-
-          <!-- 금액 상태 -->
-          <div class="d-flex align-items-center gap-2 mb-3">
-            <span id="stmt-quot-status" class="small"></span>
-            <label class="text-muted small mb-0" style="cursor:pointer">
-              (다른 견적 파일 사용 시 수동 업로드)
-              <input type="file" class="d-none" id="stmt-quot-input" accept=".xlsx,.xls" onchange="onQuotUpload(this)">
-            </label>
-          </div>
-
-          <!-- 데이터 미리보기 -->
-          <div class="card border-0 shadow-sm mb-3">
-            <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
-              <span class="fw-semibold">데이터 미리보기</span>
-              <button class="btn btn-sm btn-outline-secondary" onclick="buildPreview()">🔄 새로고침</button>
+          <!-- ── 출하일 변경 섹션 ── -->
+          <div id="date-section" class="d-none">
+            <div class="mb-3">
+              <div class="small text-muted mb-2">선택된 PO</div>
+              <div id="date-modal-targets" class="d-flex flex-wrap gap-2 mb-2"></div>
             </div>
-            <div class="card-body p-0">
-              <div id="stmt-preview-wrap" style="overflow-x:auto;max-height:260px">
-                <div class="text-center text-muted py-4 small" id="stmt-no-preview">PO를 선택하면 자동으로 미리보기가 표시됩니다.</div>
-                <table class="table table-sm table-bordered mb-0 d-none" id="stmt-preview-table" style="font-size:.75rem;white-space:nowrap">
-                  <thead class="table-dark">
-                    <tr><th>No.</th><th>Customer</th><th>Fab</th><th>Tool</th><th>SS P/N</th><th>SS S/N</th><th>PO</th><th>0247#</th><th>Amount(USD)</th><th>AD(KRW)</th></tr>
-                  </thead>
-                  <tbody id="stmt-preview-tbody"></tbody>
-                </table>
+            <div class="mb-3">
+              <label class="form-label fw-semibold">출하일</label>
+              <input type="date" class="form-control" id="new-ship-date">
+            </div>
+            <button class="btn btn-primary" onclick="applyDate()">✅ 출하일 적용</button>
+          </div>
+
+          <!-- ── 거래명세서 생성 섹션 ── -->
+          <div id="stmt-section" class="d-none">
+
+            <!-- 선택 PO + 바코드 -->
+            <div class="alert alert-light border py-2 mb-3">
+              <div class="small text-muted mb-1">선택된 PO</div>
+              <div id="stmt-po-tags" class="d-flex flex-wrap gap-2 mb-2"></div>
+              <div id="stmt-barcodes" class="d-flex flex-wrap gap-3"></div>
+            </div>
+
+            <!-- 거래명세서 날짜 입력 -->
+            <div class="mb-3">
+              <label class="form-label small fw-semibold">거래명세서 날짜</label>
+              <input type="date" class="form-control form-control-sm" id="stmt-date-input">
+              <div class="text-muted" style="font-size:.75rem">비워두면 오늘 날짜로 자동 설정</div>
+            </div>
+
+            <!-- 금액 상태 -->
+            <div class="d-flex align-items-center gap-2 mb-3">
+              <span id="stmt-quot-status" class="small"></span>
+              <label class="text-muted small mb-0" style="cursor:pointer">
+                (다른 견적 파일 사용 시 수동 업로드)
+                <input type="file" class="d-none" id="stmt-quot-input" accept=".xlsx,.xls" onchange="onQuotUpload(this)">
+              </label>
+            </div>
+
+            <!-- 데이터 미리보기 -->
+            <div class="card border-0 shadow-sm mb-3">
+              <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
+                <span class="fw-semibold">데이터 미리보기</span>
+                <button class="btn btn-sm btn-outline-secondary" onclick="buildPreview()">🔄 새로고침</button>
+              </div>
+              <div class="card-body p-0">
+                <div id="stmt-preview-wrap" style="overflow-x:auto;max-height:220px">
+                  <div class="text-center text-muted py-4 small" id="stmt-no-preview">PO를 선택하면 자동으로 미리보기가 표시됩니다.</div>
+                  <table class="table table-sm table-bordered mb-0 d-none" id="stmt-preview-table" style="font-size:.75rem;white-space:nowrap">
+                    <thead class="table-dark">
+                      <tr><th>No.</th><th>Customer</th><th>Fab</th><th>Tool</th><th>SS P/N</th><th>SS S/N</th><th>PO</th><th>0247#</th><th>Amount(USD)</th><th>AD(KRW)</th></tr>
+                    </thead>
+                    <tbody id="stmt-preview-tbody"></tbody>
+                  </table>
+                </div>
               </div>
             </div>
-          </div>
 
-          <!-- 상태 메시지 -->
-          <div id="stmt-status" class="small mb-2" style="min-height:1.4em"></div>
+            <!-- 상태 메시지 -->
+            <div id="stmt-status" class="small mb-2" style="min-height:1.4em"></div>
 
-          <!-- 생성 버튼 -->
-          <div class="d-flex align-items-center gap-3 flex-wrap">
-            <button class="btn btn-success px-4" id="stmt-dl-btn" onclick="downloadStmtDataExcel()">⬇️ Excel 다운로드</button>
-            <button class="btn btn-link btn-sm text-muted p-0" type="button" data-bs-toggle="collapse" data-bs-target="#stmt-drm-collapse">
-              ⚙️ drm-bridge 고급 설정 ▼
-            </button>
-          </div>
+            <!-- 생성 버튼 -->
+            <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
+              <button class="btn btn-warning px-3" id="stmt-xlsm-btn" onclick="downloadStmtXlsm()">📄 거래명세서 생성 (xlsm)</button>
+              <button class="btn btn-outline-success px-3" id="stmt-dl-btn" onclick="downloadStmtDataExcel()">⬇️ YJLEE Excel</button>
+              <button class="btn btn-link btn-sm text-muted p-0" type="button" data-bs-toggle="collapse" data-bs-target="#stmt-drm-collapse">
+                ⚙️ drm-bridge ▼
+              </button>
+            </div>
 
-          <!-- drm-bridge 접기/펼치기 -->
-          <div class="collapse mt-3" id="stmt-drm-collapse">
-            <div class="border rounded p-3" style="background:#f8f9fa">
-              <div class="d-flex align-items-center gap-2 mb-2">
-                <small class="text-muted">localhost:3001 drm-bridge 서버가 실행 중일 때만 동작합니다.</small>
-                <span id="stmt-bridge-badge" class="badge bg-secondary ms-auto">연결 확인 중...</span>
-              </div>
-              <div class="row g-2">
-                <div class="col-12">
-                  <label class="form-label small mb-1">템플릿 파일 경로</label>
-                  <input type="text" class="form-control form-control-sm font-monospace" id="stmt-tpl-path"
-                    placeholder="예: C:UsersUSERDownloadsSafeseal_거래명세서.xlsm"
-                    oninput="localStorage.setItem('stmt_tpl_path', this.value)">
+            <!-- drm-bridge 접기/펼치기 -->
+            <div class="collapse mt-2" id="stmt-drm-collapse">
+              <div class="border rounded p-3" style="background:#f8f9fa">
+                <div class="d-flex align-items-center gap-2 mb-2">
+                  <small class="text-muted">localhost:3001 drm-bridge 서버가 실행 중일 때만 동작합니다.</small>
+                  <span id="stmt-bridge-badge" class="badge bg-secondary ms-auto">연결 확인 중...</span>
                 </div>
-                <div class="col-12">
-                  <label class="form-label small mb-1">출력 폴더</label>
-                  <input type="text" class="form-control form-control-sm font-monospace" id="stmt-out-dir"
-                    placeholder="예: C:UsersUSERDesktop거래명세서"
-                    oninput="localStorage.setItem('stmt_out_dir', this.value)">
-                </div>
-                <div class="col-auto d-flex align-items-center gap-2">
-                  <input type="number" class="form-control form-control-sm" id="stmt-data-row" value="4" style="width:80px">
-                  <span class="small text-muted">YJLEE 데이터 시작행</span>
-                  <div class="form-check mb-0">
-                    <input type="checkbox" class="form-check-input" id="stmt-run-macro" checked>
-                    <label class="form-check-label small" for="stmt-run-macro">매크로 자동 실행</label>
+                <div class="row g-2">
+                  <div class="col-12">
+                    <label class="form-label small mb-1">템플릿 파일 경로</label>
+                    <input type="text" class="form-control form-control-sm font-monospace" id="stmt-tpl-path"
+                      placeholder="예: C:\Users\USER\Downloads\Safeseal_거래명세서.xlsm"
+                      oninput="localStorage.setItem('stmt_tpl_path', this.value)">
+                  </div>
+                  <div class="col-12">
+                    <label class="form-label small mb-1">출력 폴더</label>
+                    <input type="text" class="form-control form-control-sm font-monospace" id="stmt-out-dir"
+                      placeholder="예: C:\Users\USER\Desktop\거래명세서"
+                      oninput="localStorage.setItem('stmt_out_dir', this.value)">
+                  </div>
+                  <div class="col-auto d-flex align-items-center gap-2">
+                    <input type="number" class="form-control form-control-sm" id="stmt-data-row" value="4" style="width:80px">
+                    <span class="small text-muted">YJLEE 데이터 시작행</span>
+                    <div class="form-check mb-0">
+                      <input type="checkbox" class="form-check-input" id="stmt-run-macro" checked>
+                      <label class="form-check-label small" for="stmt-run-macro">매크로 자동 실행</label>
+                    </div>
                   </div>
                 </div>
+                <button class="btn btn-primary btn-sm mt-2" id="stmt-drm-btn" onclick="generateViaDrmBridge()" disabled>
+                  🖨️ drm-bridge로 생성
+                </button>
+                <div id="stmt-drm-log" class="mt-2 small font-monospace text-muted"></div>
               </div>
-              <button class="btn btn-primary btn-sm mt-2" id="stmt-drm-btn" onclick="generateViaDrmBridge()" disabled>
-                🖨️ drm-bridge로 생성
-              </button>
-              <div id="stmt-drm-log" class="mt-2 small font-monospace text-muted"></div>
+            </div>
+
+          </div><!-- /stmt-section -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ PTN 업로드 모달 ══ -->
+  <div class="modal fade" id="ptnModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title">📎 PTN 업로드</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+
+          <!-- 드롭존 -->
+          <div class="ptn-dropzone mb-3" id="ptn-dropzone"
+               onclick="document.getElementById('ptn-file-input').click()"
+               ondragover="event.preventDefault();this.classList.add('drag-over')"
+               ondragleave="this.classList.remove('drag-over')"
+               ondrop="event.preventDefault();this.classList.remove('drag-over');handlePtnFile(event.dataTransfer.files[0])">
+            <input type="file" id="ptn-file-input" accept=".pdf" class="d-none" onchange="handlePtnFile(this.files[0])">
+            <div style="font-size:2rem" id="ptn-drop-icon">📄</div>
+            <div class="fw-semibold" id="ptn-drop-text">PTN PDF를 여기에 드래그하거나 클릭</div>
+            <div class="text-muted small mt-1" id="ptn-drop-sub">PDF 파일 지원</div>
+          </div>
+
+          <!-- 로딩 -->
+          <div id="ptn-loading" class="text-center py-3 d-none">
+            <div class="spinner-border spinner-border-sm text-primary me-2"></div>
+            <span class="text-muted small">PDF 분석 중...</span>
+          </div>
+
+          <!-- 결과 -->
+          <div id="ptn-results" class="d-none">
+            <div class="mb-3">
+              <div class="small text-muted fw-semibold mb-1">📋 인식된 PO</div>
+              <div id="ptn-po-list"></div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label small fw-semibold">PTN 번호</label>
+              <input type="text" class="form-control font-monospace" id="ptn-no-input" placeholder="PTN 번호 입력">
+              <div class="mt-2 d-flex flex-wrap gap-1" id="ptn-candidates"></div>
             </div>
           </div>
 
-        </div>        </div>
+        </div>
+        <div class="modal-footer gap-2">
+          <button class="btn btn-secondary" data-bs-dismiss="modal">닫기</button>
+          <button class="btn btn-primary d-none" id="ptn-save-btn" onclick="savePtn()">💾 저장</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ 모바일 바코드 스캐너 모달 ══ -->
+  <div class="modal fade" id="barcodeModal" tabindex="-1">
+    <div class="modal-dialog modal-fullscreen-sm-down">
+      <div class="modal-content">
+        <div class="modal-header bg-dark text-white py-2">
+          <h5 class="modal-title">📷 바코드 스캔</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" onclick="stopBarcodeScanner()"></button>
+        </div>
+        <div class="modal-body p-0 position-relative bg-black">
+          <video id="barcode-video" playsinline autoplay muted></video>
+          <div class="barcode-overlay"></div>
+          <div id="barcode-status" class="text-center text-white py-2 small" style="background:rgba(0,0,0,.6);position:absolute;bottom:0;width:100%">
+            카메라로 바코드를 비춰주세요
+          </div>
+        </div>
+        <div class="modal-footer py-2 gap-2">
+          <div id="barcode-result" class="me-auto font-monospace text-success fw-semibold small"></div>
+          <div id="barcode-manual-wrap" class="d-none me-auto">
+            <input type="text" class="form-control form-control-sm font-monospace" id="barcode-manual-input" placeholder="바코드 직접 입력" style="width:200px">
+            <button class="btn btn-sm btn-primary ms-2" onclick="applyManualBarcode()">검색</button>
+          </div>
+          <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal" onclick="stopBarcodeScanner()">닫기</button>
+        </div>
       </div>
     </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc =
       'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
 
-    let dateModal, ptnModal;
+    let dateModal, ptnModal, barcodeModal;
+    let barcodeStream = null;
     let poGroups     = [];   // { po, tkmNos[], pns[], orders[], shipment }
     let filteredGrps = [];
     let selectedPos  = new Set();
@@ -237,8 +347,9 @@
 
     document.addEventListener('DOMContentLoaded', async () => {
       try {
-        dateModal = new bootstrap.Modal(document.getElementById('dateModal'));
-        ptnModal  = new bootstrap.Modal(document.getElementById('ptnModal'));
+        dateModal    = new bootstrap.Modal(document.getElementById('dateModal'));
+        ptnModal     = new bootstrap.Modal(document.getElementById('ptnModal'));
+        barcodeModal = new bootstrap.Modal(document.getElementById('barcodeModal'));
         setupPtnDropzone();
       } catch(e) { console.warn('초기화 오류:', e); }
       try { await initData(); } catch(e) { console.warn('initData 오류:', e); }
@@ -467,6 +578,9 @@
       document.getElementById('date-modal-targets').innerHTML =
         [...selectedPos].map(po => `<span class="badge bg-secondary font-monospace">${po}</span>`).join('');
       document.getElementById('new-ship-date').value = '';
+      document.getElementById('date-section').classList.remove('d-none');
+      document.getElementById('stmt-section').classList.add('d-none');
+      document.querySelector('#dateModal .modal-title').textContent = '📅 출하일 일괄 변경';
       dateModal.show();
     }
 
@@ -686,14 +800,16 @@
         }
       } catch { quotAmounts = {}; }
 
+      document.getElementById('date-section').classList.add('d-none');
+      document.getElementById('stmt-section').classList.remove('d-none');
       document.querySelector('#dateModal .modal-title').textContent = '🖨️ 거래명세서 생성';
       document.getElementById('stmt-status').textContent = '';
+      // 날짜 기본값: 오늘
+      const todayStr = new Date().toISOString().slice(0, 10);
+      document.getElementById('stmt-date-input').value = todayStr;
 
       buildPreview();
-
-      // drm-bridge 연결 확인
       checkDrmBridge();
-
       dateModal.show();
     }
 
@@ -793,7 +909,7 @@
         const po = String(r[CI.po] || '').trim();
         if (!selectedPos.has(po)) continue;
         const sn = String(r[CI.sn] || '').trim();
-        const a  = quotAmounts[sn] || { usd: '', krw: '' };
+        const a  = quotAmounts[po] || quotAmounts[sn] || { usd: '', krw: '' };
         yjleeRows.push({
           no:       r[CI.no]   || '',
           customer: r[CI.cust] || '',
@@ -815,7 +931,8 @@
             .map(o => ({
               no: o.order_no || '', customer: '', fab: '', tool: '',
               pn: o.pn || '', sn: o.sn || '', po: o.po || '', tkm_no: o.tkm_no || '',
-              usd: quotAmounts[o.sn]?.usd || '', krw: quotAmounts[o.sn]?.krw || '',
+              usd: quotAmounts[o.po]?.usd || quotAmounts[o.sn]?.usd || '',
+              krw: quotAmounts[o.po]?.krw || quotAmounts[o.sn]?.krw || '',
             }))
         );
         yjleeRows = allJobs;
@@ -933,6 +1050,228 @@
       } finally {
         btn.disabled = false;
       }
+    }
+
+    /* ════ JSZip 거래명세서 생성 ════ */
+    function escXml(str) {
+      return String(str || '')
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+    }
+
+    function fillStmtSheet(xml, { date, tkm, amount, po, sn }) {
+      const supply = Math.round(amount);
+      const tax    = Math.round(amount * 0.1);
+      const total  = supply + tax;
+
+      // B5: 날짜 serial (숫자형 셀)
+      xml = xml.replace(/<c r="B5" s="164"><v>[^<]*<\/v><\/c>/,
+        `<c r="B5" s="164"><v>${date}</v></c>`);
+      // N5: 날짜 캐시값
+      xml = xml.replace(/(<c r="N5"[^>]*><f>B5<\/f>)<v>[^<]*<\/v>(<\/c>)/,
+        `$1<v>${date}</v>$2`);
+
+      // C11: 규격 (0247#) → inlineStr
+      xml = xml.replace(/<c r="C11"[^>]*>(?:<v>[^<]*<\/v>|<is>.*?<\/is>)<\/c>/,
+        `<c r="C11" s="165" t="inlineStr"><is><t>${escXml(tkm)}</t></is></c>`);
+      // O11: 규격 캐시값 (formula =C11)
+      xml = xml.replace(/(<c r="O11"[^>]*>(?:<f>[^<]*<\/f>))<v>[^<]*<\/v>(<\/c>)/,
+        `$1<v>${escXml(tkm)}</v>$2`);
+
+      // E11: 수량=1
+      xml = xml.replace(/(<c r="E11" s="34">)<v>[^<]*<\/v>(<\/c>)/,
+        '$1<v>1</v>$2');
+      // F11: 단가
+      xml = xml.replace(/(<c r="F11" s="167">)<v>[^<]*<\/v>(<\/c>)/,
+        `$1<v>${supply}</v>$2`);
+      // G11: 공급가액 캐시값
+      xml = xml.replace(/(<c r="G11"[^>]*><f>[^<]*<\/f>)<v>[^<]*<\/v>(<\/c>)/,
+        `$1<v>${supply}</v>$2`);
+      // I11: 세액 캐시값
+      xml = xml.replace(/(<c r="I11"[^>]*><f>[^<]*<\/f>)<v>[^<]*<\/v>(<\/c>)/,
+        `$1<v>${tax}</v>$2`);
+      // Q11: 수량=1
+      xml = xml.replace(/(<c r="Q11"[^>]*>)<v>[^<]*<\/v>(<\/c>)/,
+        '$1<v>1</v>$2');
+      // R11: 단가 캐시값
+      xml = xml.replace(/(<c r="R11"[^>]*><f>[^<]*<\/f>)<v>[^<]*<\/v>(<\/c>)/,
+        `$1<v>${supply}</v>$2`);
+      // S11: 공급가액 캐시값
+      xml = xml.replace(/(<c r="S11"[^>]*><f>[^<]*<\/f>)<v>[^<]*<\/v>(<\/c>)/,
+        `$1<v>${supply}</v>$2`);
+
+      // C22: PO 번호
+      xml = xml.replace(/(<c r="C22" s="170">)<v>[^<]*<\/v>(<\/c>)/,
+        `$1<v>${po}</v>$2`);
+      // O22: PO 캐시값
+      xml = xml.replace(/(<c r="O22"[^>]*><f>[^<]*<\/f>)<v>[^<]*<\/v>(<\/c>)/,
+        `$1<v>${po}</v>$2`);
+      // G22: SN
+      xml = xml.replace(/(<c r="G22" s="171">)<v>[^<]*<\/v>(<\/c>)/,
+        `$1<v>${sn}</v>$2`);
+      // S22: SN 캐시값
+      xml = xml.replace(/(<c r="S22"[^>]*><f>[^<]*<\/f>)<v>[^<]*<\/v>(<\/c>)/,
+        `$1<v>${sn}</v>$2`);
+
+      // G9/S9: 총합계 캐시값
+      xml = xml.replace(/(<c r="G9"[^>]*><f>[^<]*<\/f>)<v>[^<]*<\/v>(<\/c>)/,
+        `$1<v>${total}</v>$2`);
+      xml = xml.replace(/(<c r="S9"[^>]*><f>[^<]*<\/f>)<v>[^<]*<\/v>(<\/c>)/,
+        `$1<v>${total}</v>$2`);
+
+      return xml;
+    }
+
+    async function downloadStmtXlsm() {
+      if (!selectedPos.size) return;
+      const statusEl = document.getElementById('stmt-status');
+      const btn      = document.getElementById('stmt-xlsm-btn');
+
+      if (!yjleeRows.length) { buildPreview(); }
+
+      const dateStr   = document.getElementById('stmt-date-input')?.value || new Date().toISOString().slice(0,10);
+      const excelDate = Math.round(new Date(dateStr + 'T00:00:00').getTime() / 86400000) + 25569;
+
+      try {
+        statusEl.className   = 'small mb-2 text-muted';
+        statusEl.textContent = '⏳ 템플릿 로드 중...';
+        btn.disabled = true;
+
+        if (typeof JSZip === 'undefined') throw new Error('JSZip 라이브러리가 로드되지 않았습니다.');
+
+        const resp = await fetch('./data/stmt_template.xlsm');
+        if (!resp.ok) throw new Error('템플릿 파일을 찾을 수 없습니다 (data/stmt_template.xlsm)');
+        const buf  = await resp.arrayBuffer();
+        const zip  = await JSZip.loadAsync(buf);
+
+        // sheet3.xml을 거래명세서 양식으로 사용
+        const tplXml = await zip.file('xl/worksheets/sheet3.xml').async('string');
+        const wbXml  = await zip.file('xl/workbook.xml').async('string');
+
+        const pos = [...selectedPos];
+        statusEl.textContent = `⏳ ${pos.length}개 거래명세서 생성 중...`;
+
+        for (let i = 0; i < pos.length; i++) {
+          const po = pos[i];
+          // 이 PO의 거래명세서 데이터
+          const rowData = yjleeRows.filter(r => r.po === po);
+          const firstRow = rowData[0] || {};
+          const tkm    = firstRow.tkm_no || '';
+          const krwRaw = firstRow.krw || 0;
+          const amount = typeof krwRaw === 'number' ? krwRaw
+            : Number(String(krwRaw).replace(/[^0-9.-]/g, '')) || 0;
+          // SN: 9자리 숫자
+          const snRaw  = firstRow.sn || '';
+          const sn     = String(snRaw).replace(/\D/g, '').slice(0, 9);
+
+          const sheetXml = fillStmtSheet(tplXml, { date: excelDate, tkm, amount, po, sn });
+          zip.file(`xl/worksheets/sheet${3 + i}.xml`, sheetXml);
+        }
+
+        // workbook.xml의 시트 이름 업데이트
+        let newWbXml = wbXml;
+        for (let i = 0; i < pos.length; i++) {
+          const sheetId = 3 + i;
+          newWbXml = newWbXml.replace(
+            new RegExp(`(<sheet [^>]*sheetId="${sheetId}"[^>]*)name="[^"]*"`),
+            `$1name="${escXml(pos[i])}"`
+          );
+        }
+        zip.file('xl/workbook.xml', newWbXml);
+
+        const outBuf = await zip.generateAsync({ type: 'arraybuffer', compression: 'DEFLATE' });
+        const blob   = new Blob([outBuf], { type: 'application/vnd.ms-excel.sheet.macroEnabled.12' });
+        const url    = URL.createObjectURL(blob);
+        const a      = document.createElement('a');
+        a.href       = url;
+        const today  = new Date().toISOString().slice(0,10).replace(/-/g,'');
+        const label  = pos.slice(0,3).join('_');
+        a.download   = `거래명세서_${label}_${today}.xlsm`;
+        a.click();
+        URL.revokeObjectURL(url);
+
+        statusEl.className   = 'small mb-2 text-success fw-semibold';
+        statusEl.textContent = `✅ 거래명세서 생성 완료 (${pos.length}개 PO)`;
+      } catch(e) {
+        statusEl.className   = 'small mb-2 text-danger fw-semibold';
+        statusEl.textContent = '❌ 오류: ' + e.message;
+        console.error('downloadStmtXlsm 오류:', e);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    /* ════ 모바일 바코드 스캐너 ════ */
+    function openBarcodeScanner() {
+      if (barcodeModal) barcodeModal.show();
+      startBarcodeScanner();
+    }
+
+    async function startBarcodeScanner() {
+      const video  = document.getElementById('barcode-video');
+      const status = document.getElementById('barcode-status');
+      const result = document.getElementById('barcode-result');
+      const manualWrap = document.getElementById('barcode-manual-wrap');
+      result.textContent = '';
+
+      try {
+        barcodeStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } }
+        });
+        video.srcObject = barcodeStream;
+        await video.play();
+      } catch(e) {
+        status.textContent = '카메라 접근 실패: ' + e.message;
+        if (manualWrap) manualWrap.classList.remove('d-none');
+        return;
+      }
+
+      if (!('BarcodeDetector' in window)) {
+        status.textContent = '자동 인식 미지원 — 바코드를 직접 입력하세요';
+        if (manualWrap) manualWrap.classList.remove('d-none');
+        return;
+      }
+
+      const detector = new BarcodeDetector({
+        formats: ['code_128', 'qr_code', 'data_matrix', 'code_39', 'ean_13', 'ean_8']
+      });
+      status.textContent = '카메라로 바코드를 비춰주세요';
+
+      const scan = async () => {
+        if (!barcodeStream?.active || !video.readyState) { requestAnimationFrame(scan); return; }
+        try {
+          const codes = await detector.detect(video);
+          if (codes.length > 0) {
+            const val = codes[0].rawValue;
+            result.textContent = '✅ ' + val;
+            status.textContent = '인식 완료! 검색 중...';
+            document.getElementById('search-input').value = val;
+            renderList();
+            setTimeout(() => { stopBarcodeScanner(); if (barcodeModal) barcodeModal.hide(); }, 1800);
+            return;
+          }
+        } catch {}
+        requestAnimationFrame(scan);
+      };
+      requestAnimationFrame(scan);
+    }
+
+    function stopBarcodeScanner() {
+      if (barcodeStream) {
+        barcodeStream.getTracks().forEach(t => t.stop());
+        barcodeStream = null;
+      }
+      const video = document.getElementById('barcode-video');
+      if (video) video.srcObject = null;
+    }
+
+    function applyManualBarcode() {
+      const val = document.getElementById('barcode-manual-input')?.value?.trim();
+      if (!val) return;
+      document.getElementById('search-input').value = val;
+      renderList();
+      stopBarcodeScanner();
+      if (barcodeModal) barcodeModal.hide();
     }
   </script>
 </body>

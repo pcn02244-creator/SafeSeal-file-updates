@@ -359,7 +359,10 @@ async function generateQuotation(mesFile, masterFile) {
   // quotation_amounts_cache save for shipment auto-load
   try {
     const amtCache = {};
-    for (const q of quotation) { amtCache[q.sn] = { usd: q.totalUSD, krw: q.totalKRW }; }
+    for (const q of quotation) {
+      amtCache[q.sn] = { usd: q.totalUSD, krw: q.totalKRW };
+      if (q.po) amtCache[q.po] = { usd: q.totalUSD, krw: q.totalKRW };
+    }
     localStorage.setItem('quotation_amounts_cache', JSON.stringify(amtCache));
   } catch (e) {}
 
