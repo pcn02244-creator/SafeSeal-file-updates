@@ -1119,31 +1119,37 @@
       });
     }
 
-    // 바코드 이미지가 포함된 drawing XML (sheet의 왼쪽/오른쪽 각 1개씩)
-    function makeDrawingXml(po) {
+    // 원본 drawing XML에 바코드 앵커를 추가 (원본 서식 보존)
+    // origDrawingXml: 템플릿의 drawing3.xml 내용 (회사 서식 도형 포함)
+    function makeDrawingXml(origDrawingXml, po, bcRid) {
       const name = escXml(String(po));
-      // 맨 왼쪽 상단 빈 공간(B1~D3)에 바코드 하나만 작게 배치
-      // col 0-indexed: 0=A(border) 1=B 2=C 3=D / row 0-indexed: 0=row1
-      const anchor = (colFrom, rowFrom, colTo, rowTo, rId, id) =>
+
+      // 원본에 r: 네임스페이스 없으면 추가 (blip r:embed 사용 위해 필요)
+      let xml = origDrawingXml;
+      if (!xml.includes('xmlns:r=')) {
+        xml = xml.replace(
+          '<xdr:wsDr ',
+          '<xdr:wsDr xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
+        );
+      }
+
+      // 바코드 앵커: 왼쪽 상단 빈 공간(B1~D3), id=999로 기존 도형과 충돌 방지
+      const barcodeAnchor =
         `<xdr:twoCellAnchor editAs="oneCell">` +
-        `<xdr:from><xdr:col>${colFrom}</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${rowFrom}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>` +
-        `<xdr:to><xdr:col>${colTo}</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${rowTo}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>` +
+        `<xdr:from><xdr:col>1</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>0</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>` +
+        `<xdr:to><xdr:col>4</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>2</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>` +
         `<xdr:pic><xdr:nvPicPr>` +
-        `<xdr:cNvPr id="${id}" name="BC_${name}_${id}"/>` +
+        `<xdr:cNvPr id="999" name="BC_${name}"/>` +
         `<xdr:cNvPicPr><a:picLocks noChangeAspect="1"/></xdr:cNvPicPr>` +
         `</xdr:nvPicPr><xdr:blipFill>` +
-        `<a:blip r:embed="${rId}"/><a:stretch><a:fillRect/></a:stretch>` +
+        `<a:blip r:embed="${bcRid}"/><a:stretch><a:fillRect/></a:stretch>` +
         `</xdr:blipFill><xdr:spPr>` +
         `<a:xfrm><a:off x="0" y="0"/><a:ext cx="1" cy="1"/></a:xfrm>` +
         `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>` +
         `</xdr:spPr></xdr:pic><xdr:clientData/></xdr:twoCellAnchor>`;
 
-      return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-        `<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"` +
-        ` xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"` +
-        ` xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">` +
-        anchor(1, 0, 4, 2, 'rId1', 2) +
-        `</xdr:wsDr>`;
+      // 닫는 태그 바로 앞에 삽입
+      return xml.replace('</xdr:wsDr>', barcodeAnchor + '</xdr:wsDr>');
     }
 
     // drawing → media 관계 XML (바코드 PNG 1개를 두 앵커에서 공유)
@@ -1251,7 +1257,8 @@
         const buf = await resp.arrayBuffer();
         const zip = await JSZip.loadAsync(buf);
 
-        const tplXml  = await zip.file('xl/worksheets/sheet3.xml').async('string');
+        const tplXml      = await zip.file('xl/worksheets/sheet3.xml').async('string');
+        const origDrawing = await zip.file('xl/drawings/drawing3.xml').async('string');
         const origWb  = await zip.file('xl/workbook.xml').async('string');
         const origRel = await zip.file('xl/_rels/workbook.xml.rels').async('string');
         const origCt  = await zip.file('[Content_Types].xml').async('string');
@@ -1296,8 +1303,8 @@
           const sheetXml = fillStmtSheet(tplXml, { date: excelDate, tkm, amount, po, sn });
           zip.file(`xl/worksheets/sheet${idx}.xml`, sheetXml);
 
-          // Drawing + rels
-          zip.file(`xl/drawings/drawing${idx}.xml`, makeDrawingXml(po));
+          // Drawing: 원본 서식 도형 유지 + 바코드 앵커 추가 / rels: bcRid=rId1
+          zip.file(`xl/drawings/drawing${idx}.xml`, makeDrawingXml(origDrawing, po, 'rId1'));
           zip.file(`xl/drawings/_rels/drawing${idx}.xml.rels`, makeDrawingRels(idx));
           zip.file(`xl/worksheets/_rels/sheet${idx}.xml.rels`, makeSheetRels(idx));
         }
