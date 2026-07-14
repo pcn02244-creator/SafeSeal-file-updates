@@ -17,6 +17,16 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="js/core.js"></script>
   <script src="js/auth.js"></script>
+  <!-- zxing-wasm IIFE (로컬 호스팅) -->
+  <script src="js/zxing-wasm.js"></script>
+  <script>
+    /* WASM 파일 경로를 로컬 js/ 폴더로 지정 (CDN 의존 제거) */
+    if (window.ZXingWASM && ZXingWASM.setZXingModuleOverrides) {
+      ZXingWASM.setZXingModuleOverrides({
+        locateFile: (path) => 'js/' + path
+      });
+    }
+  </script>
 
   <style>
     /* ── Design tokens (shipment.html 동일) ─────── */
@@ -625,18 +635,13 @@ async function startCamera() {
     return;
   }
 
-  /* zxing-wasm 동적 로드 */
-  let readBarcodesFromImageData;
-  try {
-    scanMsg.textContent = '스캐너 초기화 중…';
-    ({ readBarcodesFromImageData } = await import(
-      'https://cdn.jsdelivr.net/npm/zxing-wasm@3/dist/browser/index.js'
-    ));
-  } catch (err) {
-    scanMsg.textContent = '스캐너 로드 실패: ' + err.message;
-    showManualSection('zxing-wasm 초기화 실패 — 수동 입력으로 진행하세요');
+  /* zxing-wasm 글로벌 확인 (head에서 동기 로드) */
+  if (!window.ZXingWASM || !ZXingWASM.readBarcodesFromImageData) {
+    scanMsg.textContent = 'zxing-wasm 로드 실패 — 페이지를 새로고침하세요';
+    showManualSection('스캐너 초기화 실패 — 수동 입력으로 진행하세요');
     return;
   }
+  const { readBarcodesFromImageData } = ZXingWASM;
 
   /* 오프스크린 캔버스 */
   const cvs1 = document.createElement('canvas');
