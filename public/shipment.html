@@ -1410,6 +1410,27 @@
         .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
     }
 
+    function removeYellowFills(xml) {
+      return xml.replace(/<fill>[\s\S]*?<\/fill>/g, fill => {
+        if (!/patternType="solid"/.test(fill)) return fill;
+        const fg = fill.match(/<fgColor([^>]*)\/>/);
+        if (!fg) return fill;
+        const attrs = fg[1];
+        if (/indexed="13"/.test(attrs)) return '<fill><patternFill patternType="none"/></fill>';
+        if (/theme="7"/.test(attrs))    return '<fill><patternFill patternType="none"/></fill>';
+        const m = attrs.match(/rgb="([0-9A-Fa-f]+)"/i);
+        if (m) {
+          const h = m[1].length === 8 ? m[1].slice(2) : m[1];
+          const r = parseInt(h.slice(0,2), 16);
+          const g = parseInt(h.slice(2,4), 16);
+          const b = parseInt(h.slice(4,6), 16);
+          if (r >= 0xCC && g >= 0xCC && b <= 0x80)
+            return '<fill><patternFill patternType="none"/></fill>';
+        }
+        return fill;
+      });
+    }
+
     function fillStmtSheet(xml, { date, tkm, amount, po, sn }) {
       const supply = Math.round(amount);
       const tax    = Math.round(amount * 0.1);
@@ -1586,6 +1607,13 @@
         if (!resp.ok) throw new Error('템플릿 파일 없음 (data/stmt_template.xlsm)');
         const buf = await resp.arrayBuffer();
         const zip = await JSZip.loadAsync(buf);
+
+        // 노란색 음영 제거 — styles.xml의 solid yellow fill을 none으로 교체
+        const stylesFile = zip.file('xl/styles.xml');
+        if (stylesFile) {
+          const stylesXml = await stylesFile.async('string');
+          zip.file('xl/styles.xml', removeYellowFills(stylesXml));
+        }
 
         const tplXml      = await zip.file('xl/worksheets/sheet3.xml').async('string');
         const origDrawing = await zip.file('xl/drawings/drawing3.xml').async('string');
