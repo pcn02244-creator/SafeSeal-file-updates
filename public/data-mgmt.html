@@ -179,7 +179,7 @@
       <div class="detail-hdr"><span class="title" id="p-dtitle"></span><span class="cnt" id="p-dcnt"></span></div>
       <div style="overflow-x:auto">
         <table class="dtable"><thead><tr>
-          <th>PO</th><th>주문번호</th><th>PTN NO</th><th>출하일</th><th>업로드 일시</th>
+          <th>PO</th><th>PTN NO</th><th>출하일</th><th>업로드 일시</th>
         </tr></thead><tbody id="p-dbody"></tbody></table>
       </div>
     </div>
@@ -194,7 +194,7 @@
       <div class="detail-hdr"><span class="title" id="s-dtitle"></span><span class="cnt" id="s-dcnt"></span></div>
       <div style="overflow-x:auto">
         <table class="dtable"><thead><tr>
-          <th>PO</th><th>주문번호</th><th>PTN NO</th><th>출하일</th>
+          <th>PO</th><th>PTN NO</th><th>출하일</th>
         </tr></thead><tbody id="s-dbody"></tbody></table>
       </div>
     </div>
@@ -328,7 +328,7 @@ async function loadP() {
 
     const { data, error } = await sb
       .from('shipments')
-      .select('po, order_no, ptn_no, ptn_uploaded_at, ship_date')
+      .select('po, ptn_no, ptn_uploaded_at, ship_date')
       .not('ptn_uploaded_at', 'is', null)
       .order('ptn_uploaded_at', { ascending: false });
 
@@ -379,7 +379,7 @@ async function loadS() {
 
     const { data, error } = await sb
       .from('shipments')
-      .select('po, order_no, ptn_no, ship_date')
+      .select('po, ptn_no, ship_date')
       .not('ship_date', 'is', null)
       .order('ship_date', { ascending: false });
 
@@ -506,7 +506,7 @@ async function showPDetail(date) {
     if (!sb) throw new Error('Supabase 없음');
     const { data, error } = await sb
       .from('shipments')
-      .select('po,order_no,ptn_no,ship_date,ptn_uploaded_at')
+      .select('po,ptn_no,ship_date,ptn_uploaded_at')
       .gte('ptn_uploaded_at', date + 'T00:00:00')
       .lt('ptn_uploaded_at',  date + 'T23:59:59')
       .order('ptn_uploaded_at');
@@ -515,11 +515,10 @@ async function showPDetail(date) {
     body.innerHTML = (data||[]).map(r => `
       <tr>
         <td class="mono">${r.po||'-'}</td>
-        <td>${r.order_no||'-'}</td>
         <td class="mono">${r.ptn_no||'-'}</td>
         <td>${(r.ship_date||'').slice(0,10)||'-'}</td>
         <td style="font-size:11px;color:var(--mut)">${(r.ptn_uploaded_at||'').slice(0,16).replace('T',' ')||'-'}</td>
-      </tr>`).join('') || '<tr><td colspan="5" style="padding:16px;color:var(--mut)">데이터 없음</td></tr>';
+      </tr>`).join('') || '<tr><td colspan="4" style="padding:16px;color:var(--mut)">데이터 없음</td></tr>';
   } catch(e) {
     body.innerHTML = '<tr><td colspan="5" style="padding:16px;color:var(--r)">' + e.message + '</td></tr>';
   }
@@ -542,7 +541,7 @@ async function showSDetail(date) {
     if (!sb) throw new Error('Supabase 없음');
     const { data, error } = await sb
       .from('shipments')
-      .select('po,order_no,ptn_no,ship_date')
+      .select('po,ptn_no,ship_date')
       .eq('ship_date', date)
       .order('po');
     if (error) throw error;
@@ -550,10 +549,9 @@ async function showSDetail(date) {
     body.innerHTML = (data||[]).map(r => `
       <tr>
         <td class="mono">${r.po||'-'}</td>
-        <td>${r.order_no||'-'}</td>
         <td class="mono">${r.ptn_no||'-'}</td>
         <td>${(r.ship_date||'').slice(0,10)||'-'}</td>
-      </tr>`).join('') || '<tr><td colspan="4" style="padding:16px;color:var(--mut)">데이터 없음</td></tr>';
+      </tr>`).join('') || '<tr><td colspan="3" style="padding:16px;color:var(--mut)">데이터 없음</td></tr>';
   } catch(e) {
     body.innerHTML = '<tr><td colspan="4" style="padding:16px;color:var(--r)">' + e.message + '</td></tr>';
   }
