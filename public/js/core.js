@@ -413,6 +413,77 @@ async function generateQuotation(mesFile, masterFile) {
   };
 }
 
+// ── 검증 세트 동기화 (master_jobs + shipments → verification_sets) ──
+async function syncVerificationSets() {
+  const sb = getSB();
+  if (!sb) throw new Error('Supabase 미연결');
+
+  const [{ data: jobs, error: e1 }, { data: ships, error: e2 }] = await Promise.all([
+    sb.from('master_jobs').select('order_no, po, sn'),
+    sb.from('shipments').select('po, ptn_no'),
+  ]);
+
+  if (e1) throw new Error('master_jobs 조회 오류: ' + e1.message);
+  if (e2) throw new Error('shipments 조회 오류: ' + e2.message);
+
+  // po → ptn_no 맵 (shipments 기준)
+  const ptnMap = {};
+  for (const s of ships || []) {
+    const poKey = (s.po || '').trim().toUpperCase();
+    if (poKey && s.ptn_no) ptnMap[poKey] = s.ptn_no.trim().toUpperCase();
+  }
+
+  const rows = (jobs || [])
+    .filter(j => j.order_no && j.po)
+    .map(j => {
+      const po = (j.po || '').trim().toUpperCase();
+      return {
+        order_no:   j.order_no.trim(),
+        po,
+        sn:         (j.sn || '').trim().replace(/\s/g, '').toUpperCase(),
+        ptn_no:     ptnMap[po] || null,
+        created_at: new Date().toISOString(),
+      };
+    });
+
+  if (!rows.length) return { synced: 0 };
+
+  const { error: upsertErr } = await sb
+    .from('verification_sets')
+    .upsert(rows, { onConflict: 'order_no' });
+
+  if (upsertErr) throw new Error('verification_sets upsert 오류: ' + upsertErr.message);
+  return { synced: rows.length };
+}
+
+// ── 바코드 3종 검증 ──────────────────────────────────────────────────
+// input : { po, sn, ptn_no }  (각각 스캔된 원시값 — 정규화는 내부에서 처리)
+// output: { pass, order_no, mismatch_field?, error? }
+async function verifyBarcodeSet({ po, sn, ptn_no }) {
+  const sb = getSB();
+  if (!sb) return { pass: false, order_no: null, error: 'Supabase 미연결' };
+
+  const poKey  = (po     || '').trim().toUpperCase();
+  const snKey  = (sn     || '').trim().replace(/\s/g, '').toUpperCase();
+  const ptnKey = (ptn_no || '').trim().toUpperCase();
+
+  if (!poKey) return { pass: false, order_no: null, mismatch_field: 'po', error: 'PO 값 없음' };
+
+  const { data, error } = await sb
+    .from('verification_sets')
+    .select('order_no, po, sn, ptn_no')
+    .eq('po', poKey)
+    .maybeSingle();
+
+  if (error) return { pass: false, order_no: null, error: error.message };
+  if (!data) return { pass: false, order_no: null, mismatch_field: 'po', error: `PO "${poKey}" 없음 — 동기화 필요` };
+
+  if (snKey  && data.sn     && data.sn     !== snKey)  return { pass: false, order_no: data.order_no, mismatch_field: 'sn' };
+  if (ptnKey && data.ptn_no && data.ptn_no !== ptnKey) return { pass: false, order_no: data.order_no, mismatch_field: 'ptn_no' };
+
+  return { pass: true, order_no: data.order_no };
+}
+
 // ── 마스터 업데이트 ────────────────────────────────────
 const BASIC_SCREW_PN   = 'A0405465';
 const BASIC_SCREW_UNIT = 15;

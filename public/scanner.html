@@ -84,6 +84,13 @@
       background: rgba(220,38,38,.18);
       color: #fca5a5;
     }
+    #sync-btn {
+      font-family: 'Material Symbols Outlined';
+      font-size: 18px; color: rgba(255,255,255,.35);
+      cursor: pointer; user-select: none;
+      transition: color .15s;
+    }
+    #sync-btn:hover { color: rgba(255,255,255,.75); }
 
     /* ── Status chips ────────────────────────────── */
     #status-bar {
@@ -316,6 +323,7 @@
     <span class="mi" id="back-btn" title="출하 관리로 이동">arrow_back</span>
     <h1>바코드 검증</h1>
     <div id="master-badge">로드 중...</div>
+    <span class="mi" id="sync-btn" title="재동기화" onclick="doSync().then(()=>scanMsg.textContent='')">sync</span>
   </div>
 
   <!-- STATUS CHIPS -->
@@ -385,9 +393,8 @@
 <script>
 /* ═══════════════════════════════════════════════
    SafeSeal Mobile Barcode Scanner
-   데이터: master_rows_cache (localStorage) → Supabase master_jobs
-   검증: PO + TKM(0247#) + SN 3-way 교차 검증
-   기존 코드 수정 없음 — 읽기(read)만 수행
+   검증: verification_sets (Supabase) 기반 3-way 교차 검증
+   core.js의 syncVerificationSets() / verifyBarcodeSet() 사용
 ═══════════════════════════════════════════════ */
 
 /* ── 상수 ─────────────────────────────────── */
@@ -399,12 +406,14 @@ const NEXT_HINT      = {
   TKM: '0247# 바코드 (PTN 라벨)',
   SN:  'SN 바코드 (제품 시리얼)',
 };
+const FIELD_LABEL = { po: 'PO', sn: 'SN', ptn_no: '0247#(PTN)' };
 
 /* ── 상태 ─────────────────────────────────── */
-let master   = [];           // 마스터 레코드 배열 {po, tkm, pn, sn}
-let scanned  = {PO:null, TKM:null, SN:null};
-let scanning = false;
-let camStream = null;
+let scanned      = { PO: null, TKM: null, SN: null };
+let lastScanType = null;  // 직전 스캔 종류 (연속 동일 타입 감지)
+let lastScanRaw  = null;  // 직전 스캔 원시값 (완전 중복 방지)
+let scanning     = false;
+let camStream    = null;
 
 /* ── DOM ──────────────────────────────────── */
 const $ = id => document.getElementById(id);
@@ -429,48 +438,27 @@ $('back-btn').addEventListener('click', () => {
 });
 
 /* ══════════════════════════════════════════
-   마스터 데이터 로드
-   (기존 shipment.html buildPreview + runVerification 동일 방식)
+   verification_sets 동기화 (core.js의 syncVerificationSets 래퍼)
 ══════════════════════════════════════════ */
-async function buildMaster() {
-  const CI = { pn: 6, sn: 7, po: 8, tkm: 9 };
-
-  /* 1순위: localStorage master_rows_cache */
+async function doSync() {
+  masterBadge.textContent = '동기화 중...';
+  masterBadge.className   = '';
   try {
-    const raw = localStorage.getItem('master_rows_cache');
-    if (raw) {
-      const cache = JSON.parse(raw);
-      if (Array.isArray(cache) && cache.length > 3) {
-        const rows = cache.slice(3)
-          .map(r => ({
-            po:  String(r[CI.po]  || '').trim().toUpperCase(),
-            tkm: String(r[CI.tkm] || '').trim().toUpperCase(),
-            pn:  String(r[CI.pn]  || '').trim().toUpperCase(),
-            sn:  String(r[CI.sn]  || '').trim().replace(/\s/g, '').toUpperCase(),
-          }))
-          .filter(r => r.po || r.sn);
-        if (rows.length) return rows;
-      }
+    const { synced } = await syncVerificationSets();
+    if (synced > 0) {
+      masterBadge.textContent = `${synced}건 준비`;
+      masterBadge.classList.add('loaded');
+    } else {
+      masterBadge.textContent = '데이터 없음';
+      masterBadge.classList.add('error');
+      scanMsg.textContent = '⚠ PC에서 견적 생성 후 재접속';
     }
-  } catch (_) {}
-
-  /* 2순위: Supabase master_jobs (기존 loadData() fallback 동일) */
-  try {
-    const sb = typeof getSB === 'function' && getSB();
-    if (sb) {
-      const { data } = await sb.from('master_jobs').select('po,tkm_no,pn,sn');
-      if (data && data.length) {
-        return data.map(r => ({
-          po:  String(r.po      || '').trim().toUpperCase(),
-          tkm: String(r.tkm_no  || '').trim().toUpperCase(),
-          pn:  String(r.pn      || '').trim().toUpperCase(),
-          sn:  String(r.sn      || '').trim().replace(/\s/g, '').toUpperCase(),
-        })).filter(r => r.po || r.sn);
-      }
-    }
-  } catch (_) {}
-
-  return [];
+  } catch (e) {
+    masterBadge.textContent = '동기화 오류';
+    masterBadge.classList.add('error');
+    console.warn('syncVerificationSets 오류:', e.message);
+    scanMsg.textContent = '⚠ ' + e.message;
+  }
 }
 
 /* ══════════════════════════════════════════
@@ -487,87 +475,101 @@ function classifyBarcode(raw) {
 }
 
 /* ══════════════════════════════════════════
-   3-way 교차 검증
-   (shipment.html의 runVerification() 동일 로직)
+   3-way 검증 (verification_sets 기반, core.js verifyBarcodeSet 사용)
 ══════════════════════════════════════════ */
-function runVerify() {
-  const po  = scanned.PO  || '';
-  const tkm = scanned.TKM || '';
-  const sn  = scanned.SN  || '';
+async function runVerify() {
+  scanning = false;
+  $('scan-line').style.animationPlayState = 'paused';
+  scanMsg.innerHTML = '<span style="color:#38AECC;font-weight:700">검증 중...</span>';
 
-  /* 개별 존재 확인 */
-  const poHit  = po  ? master.some(r => r.po  === po)  : null;
-  const tkmHit = tkm ? master.some(r => r.tkm === tkm) : null;
-  const snHit  = sn  ? master.some(r => r.sn  === sn)  : null;
+  const result = await verifyBarcodeSet({
+    po:     scanned.PO  || '',
+    sn:     scanned.SN  || '',
+    ptn_no: scanned.TKM || '',
+  });
 
-  /* 3-way 교차 확인 (같은 레코드에 모두 일치) */
-  const combo = master.filter(r =>
-    (!po  || r.po  === po)  &&
-    (!tkm || r.tkm === tkm) &&
-    (!sn  || r.sn  === sn)
-  );
-
-  showResult(combo.length > 0, { poHit, tkmHit, snHit }, combo);
+  showResult(result);
 }
 
 /* ══════════════════════════════════════════
    결과 표시
 ══════════════════════════════════════════ */
-function showResult(ok, hits, combo) {
-  scanning = false;
-  document.getElementById('scan-line').style.animationPlayState = 'paused';
+function showResult(result) {
+  const ok = result.pass;
+  $('scan-line').style.animationPlayState = 'paused';
   scanMsg.innerHTML = '';
   rescanBtn.classList.add('show');
 
-  resultBox.className = ok ? 'pass' : 'fail';
+  resultBox.className        = ok ? 'pass' : 'fail';
   $('res-icon').textContent  = ok ? '✅' : '❌';
   $('res-title').textContent = ok ? 'PASS' : 'FAIL';
 
   if (ok) {
-    const m = combo[0];
     $('res-detail').textContent =
-      `PO: ${m.po}\n0247#: ${m.tkm || '—'}\nSN: ${m.sn}` +
-      (combo.length > 1 ? `\n(일치 ${combo.length}건)` : '');
+      `주문번호: ${result.order_no}\nPO: ${scanned.PO}\n0247#: ${scanned.TKM || '—'}\nSN: ${scanned.SN}`;
+  } else if (result.error) {
+    $('res-detail').textContent = result.error;
+  } else if (result.mismatch_field) {
+    const fname = FIELD_LABEL[result.mismatch_field] || result.mismatch_field;
+    const fval  = result.mismatch_field === 'sn' ? scanned.SN
+                : result.mismatch_field === 'ptn_no' ? scanned.TKM : scanned.PO;
+    $('res-detail').textContent = `불일치: ${fname} "${fval}"\n주문번호: ${result.order_no || '—'}`;
   } else {
-    const lines = [];
-    if (hits.po  === false) lines.push(`PO "${scanned.PO}" — 마스터에 없음`);
-    if (hits.tkm === false) lines.push(`0247# "${scanned.TKM}" — 마스터에 없음`);
-    if (hits.sn  === false) lines.push(`SN "${scanned.SN}" — 마스터에 없음`);
-    if (!lines.length)      lines.push('각 항목은 존재하나 동일 건에 없음\n(잘못된 조합)');
-    $('res-detail').textContent = lines.join('\n');
+    $('res-detail').textContent = '검증 실패';
   }
 
-  /* 햅틱 피드백 */
   if (navigator.vibrate) navigator.vibrate(ok ? [80, 40, 80] : [200, 80, 200]);
 }
 
 /* ══════════════════════════════════════════
    스캔 성공 처리 (카메라 BarcodeDetector)
+
+   중복/연속 처리 규칙:
+   1. 동일 원시값 재스캔 → 완전 무시 (카메라 연사 방지)
+   2. 직전과 동일 타입 연속 스캔 → 해당 슬롯의 이전 값 탈락,
+      새 값으로 갱신 (다른 슬롯 유지, 탈락 피드백 표시)
+   3. 그 외 → 해당 슬롯 채움 / 갱신
+   4. 3개 슬롯 모두 채워지면 → 검증 실행
 ══════════════════════════════════════════ */
 function onScan(raw) {
   if (!scanning) return;
-  const type = classifyBarcode(raw);
-  if (scanned[type]) return; // 이미 스캔된 종류 → 무시
 
-  /* 값 저장 */
-  const v = raw.trim().replace(/\s+/g, '').toUpperCase();
+  const v    = raw.trim().replace(/\s+/g, '').toUpperCase();
+  const type = classifyBarcode(v);
+
+  /* 1. 완전 동일 원시값 연속 재스캔 → 무시 */
+  if (v === lastScanRaw) return;
+  lastScanRaw = v;
+
+  /* 2. 직전과 같은 타입 연속 스캔 → 슬롯 탈락 + 새 값으로 갱신 */
+  if (type === lastScanType && scanned[type]) {
+    /* 칩 flash → 탈락 시각 피드백 */
+    const chip = $('chip-' + type);
+    chip.classList.remove('done');
+    chip.querySelector('.mi').textContent = CHIP_ICONS[type];
+    void chip.offsetWidth; // reflow
+    chip.classList.add('flash');
+    chip.addEventListener('animationend', () => chip.classList.remove('flash'), { once: true });
+    if (navigator.vibrate) navigator.vibrate([30, 30, 30]); // 탈락 진동
+  }
+
+  /* 슬롯 갱신 */
   scanned[type] = v;
+  lastScanType  = type;
 
-  /* 칩 갱신 */
+  /* 칩 done 상태 */
   const chip = $('chip-' + type);
   chip.classList.add('done');
   chip.querySelector('.mi').textContent = CHIP_DONE_ICON;
   chip.classList.add('flash');
   chip.addEventListener('animationend', () => chip.classList.remove('flash'), { once: true });
 
-  /* 단발 진동 */
   if (navigator.vibrate) navigator.vibrate(55);
 
-  /* 남은 항목 확인 */
+  /* 완료 여부 확인 */
   const remaining = BARCODE_TYPES.filter(t => !scanned[t]);
   if (remaining.length === 0) {
-    scanMsg.innerHTML = '<span style="color:#38AECC;font-weight:700">검증 중...</span>';
-    setTimeout(runVerify, 350);
+    setTimeout(runVerify, 350); // runVerify는 async
   } else {
     const next = remaining[0];
     scanMsg.innerHTML = `다음: <span class="type-label">${NEXT_HINT[next]}</span>`;
@@ -659,22 +661,18 @@ function onManualChange(type, value) {
 }
 
 function runManualVerify() {
-  if (!master.length) {
-    alert('마스터 데이터가 없습니다.\nPC에서 견적 생성을 먼저 실행해 주세요.');
-    return;
-  }
-  scanning = true; // showResult에서 scanning=false로 바뀜
   $('manual-section').classList.remove('show');
   $('manual-go-btn').classList.remove('show');
-  scanMsg.innerHTML = '<span style="color:#38AECC;font-weight:700">검증 중...</span>';
-  setTimeout(runVerify, 200);
+  runVerify(); // async — 내부에서 Supabase 조회
 }
 
 /* ══════════════════════════════════════════
    리셋 / 재스캔
 ══════════════════════════════════════════ */
 function resetScanner() {
-  scanned = { PO: null, TKM: null, SN: null };
+  scanned      = { PO: null, TKM: null, SN: null };
+  lastScanType = null;
+  lastScanRaw  = null;
 
   /* 칩 초기화 */
   BARCODE_TYPES.forEach(t => {
@@ -714,18 +712,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   /* PC면 app 숨긴 상태이므로 로직 중단 */
   if (!$('app') || $('app').style.display === 'none') return;
 
-  /* 1. 마스터 데이터 로드 */
-  masterBadge.textContent = '로드 중...';
-  master = await buildMaster();
-
-  if (master.length) {
-    masterBadge.textContent = `${master.length}건`;
-    masterBadge.classList.add('loaded');
-  } else {
-    masterBadge.textContent = '데이터 없음';
-    masterBadge.classList.add('error');
-    scanMsg.textContent = '⚠ PC에서 견적 생성을 먼저 실행해 주세요';
-  }
+  /* 1. verification_sets 동기화 (master_jobs + shipments 조인) */
+  await doSync();
 
   /* 2. 카메라 시작 */
   await startCamera();
