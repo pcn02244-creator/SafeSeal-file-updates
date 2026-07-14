@@ -342,8 +342,8 @@
     <div class="chip" id="chip-PO">
       <span class="mi">receipt_long</span>PO
     </div>
-    <div class="chip" id="chip-TKM">
-      <span class="mi">qr_code_2</span>0247#
+    <div class="chip" id="chip-PKG">
+      <span class="mi">inventory_2</span>PKG ID
     </div>
     <div class="chip" id="chip-SN">
       <span class="mi">pin</span>SN
@@ -382,10 +382,10 @@
                oninput="onManualChange('PO', this.value)">
       </div>
       <div class="manual-row">
-        <span class="manual-lbl">0247#</span>
-        <input class="manual-inp" id="m-tkm" type="text" placeholder="0247-XXXXX"
+        <span class="manual-lbl">PKG ID</span>
+        <input class="manual-inp" id="m-pkg" type="text" placeholder="PKG ID (예: 4A7617246)"
                autocapitalize="characters" autocomplete="off" spellcheck="false"
-               oninput="onManualChange('TKM', this.value)">
+               oninput="onManualChange('PKG', this.value)">
       </div>
       <div class="manual-row">
         <span class="manual-lbl">SN</span>
@@ -409,18 +409,18 @@
 ═══════════════════════════════════════════════ */
 
 /* ── 상수 ─────────────────────────────────── */
-const BARCODE_TYPES  = ['PO', 'TKM', 'SN'];
-const CHIP_ICONS     = { PO: 'receipt_long', TKM: 'qr_code_2', SN: 'pin' };
+const BARCODE_TYPES  = ['PO', 'PKG', 'SN'];
+const CHIP_ICONS     = { PO: 'receipt_long', PKG: 'inventory_2', SN: 'pin' };
 const CHIP_DONE_ICON = 'check_circle';
 const NEXT_HINT      = {
-  PO:  'PO 바코드 (거래명세서 CODE128)',
-  TKM: '0247# 바코드 (PTN 라벨)',
-  SN:  'SN 바코드 (제품 시리얼)',
+  PO:  'PO 바코드 (거래명세서)',
+  PKG: 'PKG ID 바코드 (PTN 라벨)',
+  SN:  'SN 바코드 (제품 라벨)',
 };
-const FIELD_LABEL = { po: 'PO', sn: 'SN', ptn_no: '0247#(PTN)' };
+const FIELD_LABEL = { po: 'PO', sn: 'SN', ptn_no: 'PKG ID' };
 
 /* ── 상태 ─────────────────────────────────── */
-let scanned      = { PO: null, TKM: null, SN: null };
+let scanned      = { PO: null, PKG: null, SN: null };
 let lastScanType = null;  // 직전 스캔 종류 (연속 동일 타입 감지)
 const seenRaws   = new Set(); // 중복 인식 방지
 let scanning     = false;
@@ -479,14 +479,14 @@ async function doSync() {
 
 /* ══════════════════════════════════════════
    바코드 종류 분류
-   - TKM: 0247 로 시작 (PTN 라벨)
    - PO:  순수 숫자 10~13자리 (거래명세서 CODE128)
-   - SN:  그 외 (제품 시리얼)
+   - PKG: 숫자+대문자 혼합 (PTN 라벨 PKG ID, 예: 4A7617246)
+   - SN:  그 외 (제품 PN/SN 라벨)
 ══════════════════════════════════════════ */
 function classifyBarcode(raw) {
   const v = raw.trim().replace(/\s+/g, '').toUpperCase();
-  if (/^0247/i.test(v))        return 'TKM';
-  if (/^\d{10,13}$/.test(v))   return 'PO';
+  if (/^\d{10,13}$/.test(v))        return 'PO';
+  if (/^\d[A-Z]\d{5,}$/.test(v))   return 'PKG';
   return 'SN';
 }
 
@@ -501,7 +501,7 @@ async function runVerify() {
   const result = await verifyBarcodeSet({
     po:     scanned.PO  || '',
     sn:     scanned.SN  || '',
-    ptn_no: scanned.TKM || '',
+    ptn_no: scanned.PKG || '',
   });
 
   showResult(result);
@@ -522,13 +522,13 @@ function showResult(result) {
 
   if (ok) {
     $('res-detail').textContent =
-      `주문번호: ${result.order_no}\nPO: ${scanned.PO}\n0247#: ${scanned.TKM || '—'}\nSN: ${scanned.SN}`;
+      `주문번호: ${result.order_no}\nPO: ${scanned.PO}\nPKG ID: ${scanned.PKG || '—'}\nSN: ${scanned.SN}`;
   } else if (result.error) {
     $('res-detail').textContent = result.error;
   } else if (result.mismatch_field) {
     const fname = FIELD_LABEL[result.mismatch_field] || result.mismatch_field;
     const fval  = result.mismatch_field === 'sn' ? scanned.SN
-                : result.mismatch_field === 'ptn_no' ? scanned.TKM : scanned.PO;
+                : result.mismatch_field === 'ptn_no' ? scanned.PKG : scanned.PO;
     $('res-detail').textContent = `불일치: ${fname} "${fval}"\n주문번호: ${result.order_no || '—'}`;
   } else {
     $('res-detail').textContent = '검증 실패';
@@ -738,7 +738,7 @@ function runManualVerify() {
    리셋 / 재스캔
 ══════════════════════════════════════════ */
 function resetScanner() {
-  scanned      = { PO: null, TKM: null, SN: null };
+  scanned      = { PO: null, PKG: null, SN: null };
   lastScanType = null;
   seenRaws.clear();
 
@@ -755,7 +755,7 @@ function resetScanner() {
   rescanBtn.classList.remove('show');
 
   /* 수동 입력 초기화 */
-  ['po','tkm','sn'].forEach(k => {
+  ['po','pkg','sn'].forEach(k => {
     const inp = $('m-' + k);
     if (inp) { inp.value = ''; inp.classList.remove('filled'); }
   });
