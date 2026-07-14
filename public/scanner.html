@@ -234,7 +234,7 @@
       white-space: pre-line;
     }
 
-    /* manual input fallback (iOS / BarcodeDetector 미지원) */
+    /* manual input fallback (zxing-wasm 로드 실패 시) */
     #manual-section {
       display: none; margin-bottom: 12px;
     }
@@ -362,7 +362,7 @@
       <div class="res-detail" id="res-detail"></div>
     </div>
 
-    <!-- Manual input (iOS / BarcodeDetector 미지원) -->
+    <!-- Manual input (zxing-wasm 로드 실패 시 수동 입력) -->
     <div id="manual-section">
       <div class="manual-notice">자동 스캔 미지원 기기 — 바코드 번호를 직접 입력하세요</div>
       <div class="manual-row">
@@ -412,7 +412,7 @@ const FIELD_LABEL = { po: 'PO', sn: 'SN', ptn_no: '0247#(PTN)' };
 /* ── 상태 ─────────────────────────────────── */
 let scanned      = { PO: null, TKM: null, SN: null };
 let lastScanType = null;  // 직전 스캔 종류 (연속 동일 타입 감지)
-let lastScanRaw  = null;  // 직전 스캔 원시값 (완전 중복 방지)
+const seenRaws   = new Set(); // 중복 인식 방지
 let scanning     = false;
 let camStream    = null;
 
@@ -528,7 +528,7 @@ function showResult(result) {
 }
 
 /* ══════════════════════════════════════════
-   스캔 성공 처리 (카메라 BarcodeDetector)
+   스캔 성공 처리 (zxing-wasm readBarcodesFromImageData)
 
    중복/연속 처리 규칙:
    1. 동일 원시값 재스캔 → 완전 무시 (카메라 연사 방지)
@@ -543,9 +543,9 @@ function onScan(raw) {
   const v    = raw.trim().replace(/\s+/g, '').toUpperCase();
   const type = classifyBarcode(v);
 
-  /* 1. 완전 동일 원시값 연속 재스캔 → 무시 */
-  if (v === lastScanRaw) return;
-  lastScanRaw = v;
+  /* 1. 중복 인식 방지 (Set 기반) */
+  if (seenRaws.has(v)) return;
+  seenRaws.add(v);
 
   /* 2. 직전과 같은 타입 연속 스캔 → 슬롯 탈락 + 새 값으로 갱신 */
   if (type === lastScanType && scanned[type]) {
@@ -570,7 +570,8 @@ function onScan(raw) {
   chip.classList.add('flash');
   chip.addEventListener('animationend', () => chip.classList.remove('flash'), { once: true });
 
-  if (navigator.vibrate) navigator.vibrate(55);
+  if (navigator.vibrate) navigator.vibrate(60);
+  beep800();
 
   /* 완료 여부 확인 */
   const remaining = BARCODE_TYPES.filter(t => !scanned[t]);
@@ -583,7 +584,26 @@ function onScan(raw) {
 }
 
 /* ══════════════════════════════════════════
-   카메라 시작 + BarcodeDetector 루프
+   800 Hz 비프음 (스캔 성공 피드백)
+══════════════════════════════════════════ */
+function beep800() {
+  try {
+    const ac   = new (window.AudioContext || window.webkitAudioContext)();
+    const osc  = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.connect(gain);
+    gain.connect(ac.destination);
+    osc.type = 'sine';
+    osc.frequency.value = 800;
+    gain.gain.setValueAtTime(0.25, ac.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.06);
+    osc.start();
+    osc.stop(ac.currentTime + 0.06);
+  } catch (_) {}
+}
+
+/* ══════════════════════════════════════════
+   카메라 시작 + zxing-wasm 2단계 스캔 루프
 ══════════════════════════════════════════ */
 async function startCamera() {
   const video = $('cam-video');
@@ -592,7 +612,7 @@ async function startCamera() {
   try {
     camStream = await navigator.mediaDevices.getUserMedia({
       video: {
-        facingMode: { ideal: 'environment' },
+        facingMode: 'environment',
         width: { ideal: 1920 }, height: { ideal: 1080 },
       },
       audio: false,
@@ -605,40 +625,77 @@ async function startCamera() {
     return;
   }
 
-  /* BarcodeDetector 지원 여부 확인 */
-  if (!('BarcodeDetector' in window)) {
-    showManualSection('이 기기는 자동 스캔을 지원하지 않습니다.');
+  /* zxing-wasm 동적 로드 */
+  let readBarcodesFromImageData;
+  try {
+    scanMsg.textContent = '스캐너 초기화 중…';
+    ({ readBarcodesFromImageData } = await import(
+      'https://cdn.jsdelivr.net/npm/zxing-wasm@3/dist/browser/index.js'
+    ));
+  } catch (err) {
+    scanMsg.textContent = '스캐너 로드 실패: ' + err.message;
+    showManualSection('zxing-wasm 초기화 실패 — 수동 입력으로 진행하세요');
     return;
   }
 
-  const detector = new BarcodeDetector({
-    formats: ['code_128', 'code_39', 'qr_code', 'data_matrix', 'ean_13', 'ean_8', 'upc_a', 'upc_e'],
-  });
+  /* 오프스크린 캔버스 */
+  const cvs1 = document.createElement('canvas');
+  const ctx1 = cvs1.getContext('2d', { willReadFrequently: true });
+  const cvs2 = document.createElement('canvas');
+  const ctx2 = cvs2.getContext('2d', { willReadFrequently: true });
 
   scanning = true;
   scanMsg.innerHTML = `<span class="type-label">${NEXT_HINT.PO}</span>를 스캔하세요`;
 
-  /* 프레임 루프 */
+  let busy       = false;
+  let frameCount = 0;
+
   const tick = async () => {
     if (!camStream?.active) return;
-    if (!scanning) {
-      /* 완료 후에도 프레임은 유지 (카메라 켜 둠) */
-      requestAnimationFrame(tick);
-      return;
-    }
-    if (video.readyState >= HTMLMediaElement.HAVE_ENOUGH_DATA) {
-      try {
-        const codes = await detector.detect(video);
-        if (codes.length > 0) onScan(codes[0].rawValue);
-      } catch (_) {}
-    }
-    requestAnimationFrame(tick);
+    requestAnimationFrame(tick); // 다음 프레임 즉시 예약 (busy 플래그로 중복 실행 차단)
+
+    if (!scanning || busy || video.readyState < HTMLMediaElement.HAVE_ENOUGH_DATA) return;
+
+    busy = true;
+    frameCount++;
+
+    try {
+      const vw = video.videoWidth, vh = video.videoHeight;
+      if (!vw || !vh) { busy = false; return; }
+
+      /* ─ 1단계: 빠른 스캔 (매 프레임, 1200px 리사이즈) ─ */
+      const scale = Math.min(1, 1200 / Math.max(vw, vh));
+      const w1 = Math.round(vw * scale), h1 = Math.round(vh * scale);
+      cvs1.width = w1; cvs1.height = h1;
+      ctx1.drawImage(video, 0, 0, w1, h1);
+
+      const res1 = await readBarcodesFromImageData(
+        ctx1.getImageData(0, 0, w1, h1),
+        { tryHarder: false, tryRotate: true, tryInvert: false, tryDownscale: false }
+      );
+      if (res1.length) { onScan(res1[0].text); busy = false; return; }
+
+      /* ─ 2단계: 정밀 스캔 (3프레임마다 1회, 풀해상도) ─ */
+      if (frameCount % 3 === 0) {
+        cvs2.width = vw; cvs2.height = vh;
+        ctx2.drawImage(video, 0, 0, vw, vh);
+
+        const res2 = await readBarcodesFromImageData(
+          ctx2.getImageData(0, 0, vw, vh),
+          { tryHarder: true, tryRotate: true, tryInvert: true, tryDownscale: true }
+        );
+        if (res2.length) onScan(res2[0].text);
+      }
+    } catch (_) {}
+
+    busy = false;
   };
+
   requestAnimationFrame(tick);
 }
 
 /* ══════════════════════════════════════════
-   수동 입력 (iOS 등 BarcodeDetector 미지원)
+   수동 입력 (zxing-wasm 로드 실패 시 폴백)
 ══════════════════════════════════════════ */
 function showManualSection(notice) {
   $('scan-overlay').style.display = 'none';
@@ -678,7 +735,7 @@ function runManualVerify() {
 function resetScanner() {
   scanned      = { PO: null, TKM: null, SN: null };
   lastScanType = null;
-  lastScanRaw  = null;
+  seenRaws.clear();
 
   /* 칩 초기화 */
   BARCODE_TYPES.forEach(t => {
