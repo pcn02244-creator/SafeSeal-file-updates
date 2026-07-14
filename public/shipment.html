@@ -563,15 +563,24 @@
           </div>
 
           <div id="ptn-results" class="d-none">
-            <div class="mb-3">
-              <div class="small text-muted fw-semibold mb-1">📋 인식된 PO</div>
-              <div id="ptn-po-list"></div>
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <div class="small fw-bold">📋 추출된 PO / PKG ID</div>
+              <span id="ptn-pair-count" class="badge bg-primary">0건</span>
             </div>
-            <div class="mb-3">
-              <label class="form-label small fw-semibold">PTN 번호</label>
-              <input type="text" class="form-control font-monospace" id="ptn-no-input" placeholder="PTN 번호 입력">
-              <div class="mt-2 d-flex flex-wrap gap-1" id="ptn-candidates"></div>
+            <div style="overflow-x:auto;max-height:320px;border:1px solid #dee2e6;border-radius:8px">
+              <table class="table table-sm table-hover mb-0" style="font-size:12px">
+                <thead class="table-dark">
+                  <tr>
+                    <th style="width:36px"><input type="checkbox" id="ptn-chk-all" onchange="toggleAllPtnPairs(this.checked)"></th>
+                    <th>PO</th>
+                    <th>PKG ID</th>
+                    <th>시스템</th>
+                  </tr>
+                </thead>
+                <tbody id="ptn-pairs-tbody"></tbody>
+              </table>
             </div>
+            <div class="mt-1 small text-muted" id="ptn-parse-note"></div>
           </div>
 
         </div>
@@ -1015,10 +1024,28 @@
       document.getElementById('ptn-results').classList.add('d-none');
       document.getElementById('ptn-save-btn').classList.add('d-none');
       document.getElementById('ptn-file-input').value = '';
-      document.getElementById('ptn-no-input').value   = '';
-      document.getElementById('ptn-candidates').innerHTML = '';
+      document.getElementById('ptn-pairs-tbody').innerHTML = '';
+      document.getElementById('ptn-pair-count').textContent = '0건';
+      document.getElementById('ptn-parse-note').textContent = '';
+      window._ptnPairs = [];
       ptnPdfText  = '';
       ptnFileName = '';
+    }
+
+    /* PDF에서 (3S) PKG ID + (K) AMAT ORDER NO 쌍 추출 */
+    function parsePTNPairs(text) {
+      // (3S) PKG ID: [whitespace] 4A7617246
+      const pkgRe   = /\(3S\)\s*PKG\s*ID\s*[:\s]+([A-Z0-9]{5,20})/g;
+      // (K) AMAT ORDER NO: [whitespace] 4523050466 (+ suffix 무시)
+      const orderRe = /\(K\)\s*AMAT\s*ORDER\s*NO\s*[:\s]+(\d{10})/g;
+      const pkgIds  = [...text.matchAll(pkgRe)].map(m => m[1]);
+      const pos     = [...text.matchAll(orderRe)].map(m => m[1]);
+      const n = Math.min(pkgIds.length, pos.length);
+      return Array.from({ length: n }, (_, i) => ({ po: pos[i], pkgId: pkgIds[i] }));
+    }
+
+    function toggleAllPtnPairs(checked) {
+      document.querySelectorAll('.ptn-pair-chk').forEach(c => { c.checked = checked; });
     }
 
     async function handlePtnFile(file) {
@@ -1036,39 +1063,49 @@
       document.getElementById('ptn-save-btn').classList.add('d-none');
 
       try {
-        const ab  = await file.arrayBuffer();
-        const pdf = await pdfjsLib.getDocument({ data: ab }).promise;
-        let text  = '';
-        for (let i = 1; i <= pdf.numPages; i++) {
-          const page = await pdf.getPage(i);
+        const ab     = await file.arrayBuffer();
+        const pdfDoc = await pdfjsLib.getDocument({ data: ab }).promise;
+        let text     = '';
+        for (let i = 1; i <= pdfDoc.numPages; i++) {
+          const page = await pdfDoc.getPage(i);
           const ct   = await page.getTextContent();
           text += ct.items.map(it => it.str).join(' ') + '\n';
         }
         ptnPdfText = text;
 
-        const knownPOs  = new Set(poGroups.map(g => g.po));
-        const knownTKMs = new Set(poGroups.flatMap(g => g.tkmNos));
-        const foundPOs  = [...knownPOs].filter(po => po && text.includes(po));
+        const pairs = parsePTNPairs(text);
+        window._ptnPairs = pairs;
 
-        selectedPos = new Set(foundPOs);
-        updateActionBar();
+        const knownPOs = new Set(poGroups.map(g => g.po));
+        const tbody    = document.getElementById('ptn-pairs-tbody');
 
-        const raw        = [...new Set(text.match(/[A-Z0-9][A-Z0-9\-]{5,24}/g) || [])];
-        const candidates = raw.filter(v => !knownPOs.has(v) && !knownTKMs.has(v)).slice(0, 8);
+        if (pairs.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="4" class="text-center text-muted py-3 small">
+            PO / PKG ID를 찾을 수 없습니다. (총 ${pdfDoc.numPages}페이지 분석)<br>
+            <span class="text-danger">RepairsLabels 형식의 PDF가 맞는지 확인하세요.</span>
+          </td></tr>`;
+        } else {
+          tbody.innerHTML = pairs.map((p, i) => {
+            const inSystem = knownPOs.has(p.po);
+            return `<tr>
+              <td><input type="checkbox" class="ptn-pair-chk" data-idx="${i}" checked></td>
+              <td class="font-monospace">${p.po}</td>
+              <td class="font-monospace fw-bold text-primary">${p.pkgId}</td>
+              <td><span class="badge ${inSystem ? 'bg-success' : 'bg-warning text-dark'}">${inSystem ? '✓ 있음' : '신규'}</span></td>
+            </tr>`;
+          }).join('');
+          // 전체 선택 체크박스 초기화
+          const chkAll = document.getElementById('ptn-chk-all');
+          if (chkAll) chkAll.checked = true;
+        }
+
+        document.getElementById('ptn-pair-count').textContent = pairs.length + '건';
+        document.getElementById('ptn-parse-note').textContent =
+          `총 ${pdfDoc.numPages}페이지 분석 — PO ${pairs.length}건 / PKG ID ${pairs.length}건 추출`;
 
         document.getElementById('ptn-loading').classList.add('d-none');
         document.getElementById('ptn-results').classList.remove('d-none');
-        document.getElementById('ptn-save-btn').classList.remove('d-none');
-
-        document.getElementById('ptn-po-list').innerHTML = foundPOs.length
-          ? foundPOs.map(po => `<span class="badge bg-success font-monospace me-1 mb-1">${po}</span>`).join('')
-          : '<span class="text-muted small">PDF에서 PO를 자동 인식하지 못했습니다.</span>';
-
-        document.getElementById('ptn-candidates').innerHTML = candidates
-          .map(c => `<span class="ptn-candidate" onclick="document.getElementById('ptn-no-input').value='${c}'">${c}</span>`)
-          .join('');
-
-        if (candidates.length) document.getElementById('ptn-no-input').value = candidates[0];
+        if (pairs.length > 0) document.getElementById('ptn-save-btn').classList.remove('d-none');
 
       } catch(e) {
         document.getElementById('ptn-loading').classList.add('d-none');
@@ -1077,36 +1114,53 @@
     }
 
     async function savePtn() {
-      const ptnNo = document.getElementById('ptn-no-input').value.trim();
-      if (!ptnNo) { alert('PTN 번호를 입력해 주세요.'); return; }
-      if (!selectedPos.size) { alert('연결할 PO를 목록에서 선택한 후 저장하세요.'); return; }
       const sb = getSB();
       if (!sb) { alert('Supabase 연결이 필요합니다.'); return; }
 
-      const today   = new Date().toISOString().slice(0, 10);
-      const targets = [...selectedPos];
+      const checked = [...document.querySelectorAll('.ptn-pair-chk:checked')];
+      if (!checked.length) { alert('저장할 항목을 선택하세요.'); return; }
 
-      const { data: existing } = await sb.from('shipments').select('id,po').in('po', targets);
-      const existingPos = new Set((existing||[]).map(r => r.po));
-      const { data: maxRow } = await sb.from('shipments').select('id').order('id', { ascending: false }).limit(1);
-      let nextId = (maxRow?.[0]?.id || 0) + 1;
+      const pairs  = window._ptnPairs || [];
+      const today  = new Date().toISOString().slice(0, 10);
+      const targets = checked.map(c => pairs[parseInt(c.dataset.idx)]).filter(Boolean);
+      if (!targets.length) { alert('유효한 항목이 없습니다.'); return; }
 
-      const ptnData = {
-        ptn_no:          ptnNo,
-        ptn_filename:    ptnFileName,
-        ptn_text:        ptnPdfText.slice(0, 2000),
-        ptn_uploaded_at: today,
-      };
+      const btn = document.getElementById('ptn-save-btn');
+      btn.disabled = true; btn.textContent = '저장 중...';
 
-      const ups = targets.filter(po =>  existingPos.has(po))
-        .map(po => sb.from('shipments').update(ptnData).eq('po', po));
-      const ins = targets.filter(po => !existingPos.has(po))
-        .map(po => sb.from('shipments').insert({ id: nextId++, po, ...ptnData, created_at: today }));
+      try {
+        const pos = targets.map(t => t.po);
+        const { data: existing } = await sb.from('shipments').select('id,po').in('po', pos);
+        const existingMap = {};
+        (existing || []).forEach(r => { existingMap[r.po] = r.id; });
 
-      await Promise.all([...ups, ...ins]);
-      ptnModal.hide();
-      clearSelection();
-      await loadData();
+        const { data: maxRow } = await sb.from('shipments').select('id').order('id', { ascending: false }).limit(1);
+        let nextId = (maxRow?.[0]?.id || 0) + 1;
+
+        const baseData = {
+          ptn_filename:    ptnFileName,
+          ptn_text:        ptnPdfText.slice(0, 2000),
+          ptn_uploaded_at: today,
+        };
+
+        const ops = targets.map(t => {
+          if (existingMap[t.po]) {
+            return sb.from('shipments').update({ ...baseData, ptn_no: t.pkgId }).eq('po', t.po);
+          } else {
+            return sb.from('shipments').insert({ id: nextId++, po: t.po, ptn_no: t.pkgId, ...baseData, created_at: today });
+          }
+        });
+
+        await Promise.all(ops);
+        alert(`✅ ${targets.length}건 저장 완료\nPO: ${pos.join(', ')}`);
+        ptnModal.hide();
+        clearSelection();
+        await loadData();
+      } catch(e) {
+        alert('저장 실패: ' + e.message);
+      } finally {
+        btn.disabled = false; btn.textContent = '💾 저장';
+      }
     }
 
     function renderBarcodes() {
