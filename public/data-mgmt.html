@@ -176,11 +176,25 @@
     <div id="p-err" class="err-box"></div>
     <div class="batch-list" id="p-list"><div style="padding:20px;color:var(--mut);font-size:13px;">로딩 중…</div></div>
     <div class="detail-panel" id="p-detail" style="display:none">
-      <div class="detail-hdr"><span class="title" id="p-dtitle"></span><span class="cnt" id="p-dcnt"></span></div>
+      <div class="detail-hdr">
+        <span class="title" id="p-dtitle"></span>
+        <span class="cnt" id="p-dcnt"></span>
+      </div>
+      <!-- 검색 + 선택 정보 -->
+      <div style="padding:10px 14px;border-bottom:1px solid var(--bdr);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <input type="text" id="p-search" placeholder="PO 또는 PTN 번호 검색…"
+          style="flex:1;min-width:160px;padding:6px 12px;border:1.5px solid var(--bdr);border-radius:6px;font-size:13px;font-family:var(--fn);outline:none;"
+          oninput="filterPDetail()" onfocus="this.style.borderColor='var(--p)'" onblur="this.style.borderColor='var(--bdr)'">
+        <span id="p-sel-info" style="font-size:12px;font-weight:600;color:var(--p);white-space:nowrap"></span>
+      </div>
       <div style="overflow-x:auto">
-        <table class="dtable"><thead><tr>
-          <th>PO</th><th>PTN NO</th><th>출하일</th><th>업로드 일시</th>
-        </tr></thead><tbody id="p-dbody"></tbody></table>
+        <table class="dtable">
+          <thead><tr>
+            <th style="width:36px"><input type="checkbox" id="p-chk-all" title="전체 선택" onchange="toggleAllP(this.checked)"></th>
+            <th>PO</th><th>PTN NO</th><th>출하일</th><th>업로드일</th>
+          </tr></thead>
+          <tbody id="p-dbody"></tbody>
+        </table>
       </div>
     </div>
   </div>
@@ -492,11 +506,19 @@ async function showQDetail(date) {
 /* ──────────────────────────────────────────────
    PTN 상세
 ────────────────────────────────────────────── */
+// PTN 상세용 전역 데이터 (검색 필터링에 사용)
+window._pRows = [];
+
 async function showPDetail(date) {
   const panel = document.getElementById('p-detail');
   const body  = document.getElementById('p-dbody');
+  const srch  = document.getElementById('p-search');
+
   document.getElementById('p-dtitle').textContent = date + ' PTN 상세';
   document.getElementById('p-dcnt').textContent   = '';
+  document.getElementById('p-sel-info').textContent = '';
+  document.getElementById('p-chk-all').checked    = false;
+  if (srch) srch.value = '';
   body.innerHTML = '<tr><td colspan="5" style="padding:16px;color:var(--mut)">로딩 중…</td></tr>';
   panel.style.display = 'block';
   panel.scrollIntoView({ behavior:'smooth', block:'nearest' });
@@ -504,24 +526,65 @@ async function showPDetail(date) {
   try {
     const sb = getClient();
     if (!sb) throw new Error('Supabase 없음');
+
+    // ptn_uploaded_at은 DATE 타입('2026-07-07') → eq로 직접 비교
     const { data, error } = await sb
       .from('shipments')
-      .select('po,ptn_no,ship_date,ptn_uploaded_at')
-      .gte('ptn_uploaded_at', date + 'T00:00:00')
-      .lt('ptn_uploaded_at',  date + 'T23:59:59')
-      .order('ptn_uploaded_at');
+      .select('po, ptn_no, ship_date, ptn_uploaded_at')
+      .eq('ptn_uploaded_at', date)
+      .order('po');
+
     if (error) throw error;
-    document.getElementById('p-dcnt').textContent = (data||[]).length + '건';
-    body.innerHTML = (data||[]).map(r => `
-      <tr>
-        <td class="mono">${r.po||'-'}</td>
-        <td class="mono">${r.ptn_no||'-'}</td>
-        <td>${(r.ship_date||'').slice(0,10)||'-'}</td>
-        <td style="font-size:11px;color:var(--mut)">${(r.ptn_uploaded_at||'').slice(0,16).replace('T',' ')||'-'}</td>
-      </tr>`).join('') || '<tr><td colspan="4" style="padding:16px;color:var(--mut)">데이터 없음</td></tr>';
+
+    window._pRows = data || [];
+    document.getElementById('p-dcnt').textContent = window._pRows.length + '건';
+    renderPRows(window._pRows);
   } catch(e) {
     body.innerHTML = '<tr><td colspan="5" style="padding:16px;color:var(--r)">' + e.message + '</td></tr>';
   }
+}
+
+function renderPRows(rows) {
+  const body = document.getElementById('p-dbody');
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="5" style="padding:16px;color:var(--mut)">해당 날짜 데이터 없음</td></tr>';
+    return;
+  }
+  body.innerHTML = rows.map((r, i) => `
+    <tr>
+      <td style="width:36px"><input type="checkbox" class="p-chk" data-po="${r.po||''}" onchange="updatePSel()"></td>
+      <td class="mono">${r.po||'-'}</td>
+      <td class="mono">${r.ptn_no||'-'}</td>
+      <td>${(r.ship_date||'').slice(0,10)||'-'}</td>
+      <td style="font-size:11px;color:var(--mut)">${r.ptn_uploaded_at||'-'}</td>
+    </tr>`).join('');
+  updatePSel();
+}
+
+function filterPDetail() {
+  const q = (document.getElementById('p-search').value || '').trim().toLowerCase();
+  const filtered = q
+    ? window._pRows.filter(r =>
+        (r.po     || '').toLowerCase().includes(q) ||
+        (r.ptn_no || '').toLowerCase().includes(q))
+    : window._pRows;
+  renderPRows(filtered);
+  document.getElementById('p-dcnt').textContent = filtered.length + '건' + (q ? ' (필터됨)' : '');
+}
+
+function toggleAllP(checked) {
+  document.querySelectorAll('.p-chk').forEach(c => { c.checked = checked; });
+  updatePSel();
+}
+
+function updatePSel() {
+  const all = document.querySelectorAll('.p-chk');
+  const sel = document.querySelectorAll('.p-chk:checked');
+  const info = document.getElementById('p-sel-info');
+  info.textContent = sel.length ? sel.length + '건 선택됨' : '';
+  const chkAll = document.getElementById('p-chk-all');
+  if (chkAll) chkAll.indeterminate = sel.length > 0 && sel.length < all.length;
+  if (chkAll) chkAll.checked = all.length > 0 && sel.length === all.length;
 }
 
 /* ──────────────────────────────────────────────
