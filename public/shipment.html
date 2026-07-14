@@ -740,11 +740,9 @@
           if (rawJobs.length > 0) {
             const latestTs = rawJobs.reduce((m, r) => r.synced_at > m ? r.synced_at : m, '');
             jobs = latestTs ? rawJobs.filter(r => r.synced_at === latestTs) : rawJobs;
+            // Supabase 데이터가 있을 때는 mes_order_nos_cache 필터 미적용
+            // (다른 컴퓨터에서 캐시 내용이 달라 건수가 달리 보이는 문제 방지)
           }
-          try {
-            const mesNos = JSON.parse(localStorage.getItem('mes_order_nos_cache') || '[]');
-            if (mesNos.length > 0) { const ms = new Set(mesNos); jobs = jobs.filter(j => ms.has(j.order_no)); }
-          } catch {}
         }
       } catch (e) { console.warn('Supabase 로드 실패:', e.message); }
 
@@ -760,6 +758,11 @@
             if (!po || po.toLowerCase() === 'po') continue;
             jobs.push({ order_no: String(r[CI.no]||''), pn: String(r[CI.pn]||''), sn: String(r[CI.sn]||''), po, tkm_no: String(r[CI.tkm]||'') });
           }
+          // localStorage 폴백에서만 mes_order_nos_cache 필터 적용
+          try {
+            const mesNos = JSON.parse(localStorage.getItem('mes_order_nos_cache') || '[]');
+            if (mesNos.length > 0) { const ms = new Set(mesNos); jobs = jobs.filter(j => ms.has(j.order_no)); }
+          } catch {}
         } catch {}
       }
 
