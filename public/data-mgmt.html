@@ -10,166 +10,105 @@
   <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
   <link href="style.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-  <script src="js/core.js?v=20260714A"></script>
+  <script src="js/core.js?v=20260714B"></script>
   <script src="js/auth.js"></script>
   <style>
     :root {
-      --p:   #004E89; --p-bg:#deeaf5;
-      --s:   #38AECC; --s-bg:#e0f2f7;
-      --g:   #51CB20; --g-bg:#edfbe3;
-      --r:   #DC2626; --r-bg:#fee2e2;
-      --sur: #ffffff; --bg:  #F8FAFC;
-      --bdr: #e2e8f0; --txt: #0f172a;
-      --mut: #475569; --amb: #b76e00; --amb-bg:#fff8e0;
-      --fn:  'Hanken Grotesk', -apple-system, sans-serif;
+      --p:#004E89; --p-bg:#deeaf5;
+      --s:#38AECC; --s-bg:#e0f2f7;
+      --g:#51CB20; --g-bg:#edfbe3;
+      --r:#DC2626; --r-bg:#fee2e2;
+      --sur:#ffffff; --bg:#F8FAFC;
+      --bdr:#e2e8f0; --txt:#0f172a;
+      --mut:#475569; --amb:#b76e00; --amb-bg:#fff8e0;
+      --fn:'Hanken Grotesk',-apple-system,sans-serif;
     }
-    *, *::before, *::after { box-sizing: border-box; }
-    body { font-family: var(--fn); background: var(--bg); color: var(--txt); margin: 0; }
-    .dot-grid {
-      background-color: var(--bg);
-      background-image: radial-gradient(#cbd5e1 1px, transparent 1px);
-      background-size: 16px 16px;
-    }
-    ::-webkit-scrollbar { width: 5px; }
-    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+    *,*::before,*::after{box-sizing:border-box;}
+    body{font-family:var(--fn);background:var(--bg);color:var(--txt);margin:0;}
+    .dot-grid{background-color:var(--bg);background-image:radial-gradient(#cbd5e1 1px,transparent 1px);background-size:16px 16px;}
+    ::-webkit-scrollbar{width:5px;} ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px;}
+    .mi{font-family:'Material Symbols Outlined';font-size:18px;line-height:1;font-style:normal;}
 
-    /* ── HEADER ── */
-    #top-header {
-      position: fixed; top: 0; left: 0; right: 0;
-      height: 48px; z-index: 1050;
-      background: var(--sur); border-bottom: 1px solid var(--bdr);
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 0 24px; box-shadow: 0 1px 4px rgba(0,0,0,.05);
-    }
-    .brand-mark { display: flex; align-items: center; gap: 9px; font-size: 16px; font-weight: 700; color: var(--p); }
-    .brand-box { width: 28px; height: 28px; background: var(--p); border-radius: 6px; display: flex; align-items: center; justify-content: center; }
-    .brand-box .mi { font-size: 17px; color: #fff; font-variation-settings:'FILL' 1; }
-    .hdr-tag { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--mut); background: var(--bg); border: 1px solid var(--bdr); padding: 3px 10px; border-radius: 4px; }
-    .mi { font-family:'Material Symbols Outlined'; font-size: 18px; line-height: 1; font-style: normal; }
+    /* HEADER */
+    #top-header{position:fixed;top:0;left:0;right:0;height:48px;z-index:1050;background:var(--sur);border-bottom:1px solid var(--bdr);display:flex;align-items:center;justify-content:space-between;padding:0 24px;box-shadow:0 1px 4px rgba(0,0,0,.05);}
+    .brand-mark{display:flex;align-items:center;gap:9px;font-size:16px;font-weight:700;color:var(--p);}
+    .brand-box{width:28px;height:28px;background:var(--p);border-radius:6px;display:flex;align-items:center;justify-content:center;}
+    .brand-box .mi{font-size:17px;color:#fff;font-variation-settings:'FILL' 1;}
+    .hdr-tag{font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--mut);background:var(--bg);border:1px solid var(--bdr);padding:3px 10px;border-radius:4px;}
 
-    /* ── SIDEBAR ── */
-    #sidebar {
-      position: fixed; left: 0; top: 48px; bottom: 0;
-      width: 210px; z-index: 900;
-      background: var(--sur); border-right: 1px solid var(--bdr);
-      padding: 16px 12px; overflow-y: auto;
-    }
-    .sb-lbl { font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--mut); padding: 0 8px; margin-bottom: 6px; margin-top: 4px; }
-    .sb-link { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 8px; font-size: 13px; font-weight: 500; color: var(--mut); text-decoration: none; transition: .15s; margin-bottom: 2px; }
-    .sb-link:hover { background: var(--p-bg); color: var(--p); }
-    .sb-link.active { background: var(--p-bg); color: var(--p); font-weight: 600; }
-    .sb-sep { border: none; border-top: 1px solid var(--bdr); margin: 12px 4px; }
+    /* SIDEBAR */
+    #sidebar{position:fixed;left:0;top:48px;bottom:0;width:210px;z-index:900;background:var(--sur);border-right:1px solid var(--bdr);padding:16px 12px;overflow-y:auto;}
+    .sb-lbl{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);padding:0 8px;margin-bottom:6px;margin-top:4px;}
+    .sb-link{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;font-size:13px;font-weight:500;color:var(--mut);text-decoration:none;transition:.15s;margin-bottom:2px;}
+    .sb-link:hover{background:var(--p-bg);color:var(--p);}
+    .sb-link.active{background:var(--p-bg);color:var(--p);font-weight:600;}
+    .sb-sep{border:none;border-top:1px solid var(--bdr);margin:12px 4px;}
 
-    /* ── MAIN ── */
-    #main { margin-left: 210px; padding-top: 48px; min-height: 100vh; }
-    .page-body { padding: 28px; }
+    /* MAIN */
+    #main{margin-left:210px;padding-top:48px;min-height:100vh;}
+    .page-body{padding:28px;}
 
-    /* ── ACTIVE BATCH CARD ── */
-    .active-card {
-      background: var(--p); color: #fff;
-      border-radius: 12px; padding: 20px 24px;
-      display: flex; align-items: center; gap: 16px;
-      margin-bottom: 24px; position: relative; overflow: hidden;
-    }
-    .active-card::before {
-      content: ''; position: absolute; right: -20px; top: -20px;
-      width: 100px; height: 100px; border-radius: 50%;
-      background: rgba(255,255,255,.08);
-    }
-    .active-card .mi { font-size: 36px; font-variation-settings:'FILL' 1; opacity: .9; }
-    .active-card .label { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; opacity: .7; margin-bottom: 2px; }
-    .active-card .date  { font-size: 22px; font-weight: 700; letter-spacing: -.01em; }
-    .active-card .sub   { font-size: 12px; opacity: .75; margin-top: 2px; }
+    /* ACTIVE BATCH */
+    .active-card{background:var(--p);color:#fff;border-radius:12px;padding:20px 24px;display:flex;align-items:center;gap:16px;margin-bottom:24px;position:relative;overflow:hidden;}
+    .active-card::before{content:'';position:absolute;right:-20px;top:-20px;width:100px;height:100px;border-radius:50%;background:rgba(255,255,255,.08);}
+    .active-card .mi{font-size:36px;font-variation-settings:'FILL' 1;opacity:.9;}
+    .active-card .label{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;opacity:.7;margin-bottom:2px;}
+    .active-card .date{font-size:22px;font-weight:700;letter-spacing:-.01em;}
+    .active-card .sub{font-size:12px;opacity:.75;margin-top:2px;}
 
-    /* ── SECTION TITLE ── */
-    .sec-title { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--mut); margin-bottom: 10px; }
+    /* TABS */
+    .tabs{display:flex;gap:0;border-bottom:2px solid var(--bdr);margin-bottom:18px;}
+    .tab-btn{padding:10px 18px;font-size:13px;font-weight:600;color:var(--mut);background:none;border:none;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:.15s;display:flex;align-items:center;gap:6px;}
+    .tab-btn.active{color:var(--p);border-bottom-color:var(--p);}
+    .tab-content{display:none;} .tab-content.active{display:block;}
 
-    /* ── BATCH CARD ── */
-    .batch-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 28px; }
-    .batch-card {
-      background: var(--sur); border: 1px solid var(--bdr); border-radius: 10px;
-      padding: 14px 16px; display: flex; align-items: center; gap: 12px;
-      cursor: pointer; transition: .15s;
-    }
-    .batch-card:hover { border-color: var(--s); box-shadow: 0 2px 8px rgba(56,174,204,.12); }
-    .batch-card.selected { border-color: var(--p); background: var(--p-bg); }
-    .batch-card.is-active { border-color: var(--g); background: var(--g-bg); }
-    .batch-date { font-size: 15px; font-weight: 700; color: var(--txt); min-width: 96px; }
-    .batch-pills { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; }
-    .pill {
-      font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 20px;
-      display: inline-flex; align-items: center; gap: 4px;
-    }
-    .pill-blue { background: var(--p-bg); color: var(--p); }
-    .pill-teal { background: var(--s-bg); color: var(--s); }
-    .pill-green { background: var(--g-bg); color: #2e7d32; }
-    .pill-active { background: var(--g); color: #fff; }
-    .batch-actions { display: flex; gap: 8px; }
-    .btn-select {
-      font-size: 12px; font-weight: 600; padding: 6px 14px; border-radius: 6px;
-      border: 1.5px solid var(--p); color: var(--p); background: transparent;
-      cursor: pointer; transition: .15s; white-space: nowrap;
-    }
-    .btn-select:hover { background: var(--p); color: #fff; }
-    .btn-select.active-btn { background: var(--g); border-color: var(--g); color: #fff; cursor: default; }
-    .btn-sync {
-      font-size: 12px; font-weight: 600; padding: 6px 14px; border-radius: 6px;
-      border: 1.5px solid var(--s); color: var(--s); background: transparent;
-      cursor: pointer; transition: .15s; white-space: nowrap;
-    }
-    .btn-sync:hover { background: var(--s); color: #fff; }
+    /* BATCH CARDS */
+    .sec-title{font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--mut);margin-bottom:10px;}
+    .batch-list{display:flex;flex-direction:column;gap:8px;margin-bottom:24px;}
+    .batch-card{background:var(--sur);border:1px solid var(--bdr);border-radius:10px;padding:14px 16px;display:flex;align-items:center;gap:12px;transition:.15s;}
+    .batch-card:hover{border-color:var(--s);box-shadow:0 2px 8px rgba(56,174,204,.12);}
+    .batch-card.is-active{border-color:var(--g);background:var(--g-bg);}
+    .batch-date{font-size:15px;font-weight:700;color:var(--txt);min-width:96px;}
+    .batch-meta{font-size:11px;color:var(--mut);margin-top:2px;}
+    .batch-pills{display:flex;gap:6px;flex-wrap:wrap;flex:1;}
+    .pill{font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;display:inline-flex;align-items:center;gap:4px;}
+    .pill-blue{background:var(--p-bg);color:var(--p);}
+    .pill-teal{background:var(--s-bg);color:var(--s);}
+    .pill-amb{background:var(--amb-bg);color:var(--amb);}
+    .pill-green{background:var(--g-bg);color:#2e7d32;}
+    .pill-active{background:var(--g);color:#fff;}
+    .batch-actions{display:flex;gap:6px;flex-shrink:0;}
+    .btn-act{font-size:12px;font-weight:600;padding:5px 12px;border-radius:6px;border:1.5px solid var(--p);color:var(--p);background:transparent;cursor:pointer;transition:.15s;white-space:nowrap;}
+    .btn-act:hover{background:var(--p);color:#fff;}
+    .btn-act.active-btn{background:var(--g);border-color:var(--g);color:#fff;cursor:default;}
+    .btn-act.teal{border-color:var(--s);color:var(--s);} .btn-act.teal:hover{background:var(--s);color:#fff;}
+    .btn-act.gray{border-color:var(--bdr);color:var(--mut);} .btn-act.gray:hover{background:var(--bg);}
 
-    /* ── DETAIL TABLE ── */
-    .detail-panel {
-      background: var(--sur); border: 1px solid var(--bdr); border-radius: 12px;
-      overflow: hidden; margin-top: 8px;
-    }
-    .detail-header {
-      padding: 14px 18px; border-bottom: 1px solid var(--bdr);
-      display: flex; align-items: center; justify-content: space-between;
-    }
-    .detail-header .title { font-size: 13px; font-weight: 700; color: var(--txt); }
-    .detail-header .count { font-size: 12px; color: var(--mut); }
-    .detail-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-    .detail-table th {
-      padding: 8px 14px; text-align: left; font-weight: 700; font-size: 11px;
-      letter-spacing: .04em; text-transform: uppercase; color: var(--mut);
-      background: var(--bg); border-bottom: 1px solid var(--bdr);
-    }
-    .detail-table td { padding: 9px 14px; border-bottom: 1px solid var(--bdr); color: var(--txt); }
-    .detail-table tr:last-child td { border-bottom: none; }
-    .detail-table tr:hover td { background: var(--bg); }
-    .mono { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 11px; color: var(--mut); }
+    /* DETAIL TABLE */
+    .detail-panel{background:var(--sur);border:1px solid var(--bdr);border-radius:12px;overflow:hidden;margin-top:4px;}
+    .detail-hdr{padding:14px 18px;border-bottom:1px solid var(--bdr);display:flex;align-items:center;justify-content:space-between;}
+    .detail-hdr .title{font-size:13px;font-weight:700;}
+    .detail-hdr .cnt{font-size:12px;color:var(--mut);}
+    .dtable{width:100%;border-collapse:collapse;font-size:12px;}
+    .dtable th{padding:8px 14px;text-align:left;font-weight:700;font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--mut);background:var(--bg);border-bottom:1px solid var(--bdr);}
+    .dtable td{padding:9px 14px;border-bottom:1px solid var(--bdr);color:var(--txt);}
+    .dtable tr:last-child td{border-bottom:none;}
+    .dtable tr:hover td{background:var(--bg);}
+    .mono{font-family:'SF Mono','Fira Code',monospace;font-size:11px;color:var(--mut);}
 
-    /* ── TABS ── */
-    .tabs { display: flex; gap: 0; border-bottom: 2px solid var(--bdr); margin-bottom: 16px; }
-    .tab-btn {
-      padding: 10px 20px; font-size: 13px; font-weight: 600; color: var(--mut);
-      background: none; border: none; cursor: pointer; border-bottom: 2px solid transparent;
-      margin-bottom: -2px; transition: .15s; display: flex; align-items: center; gap: 6px;
-    }
-    .tab-btn.active { color: var(--p); border-bottom-color: var(--p); }
-    .tab-content { display: none; }
-    .tab-content.active { display: block; }
+    /* ERROR BOX */
+    .err-box{background:var(--r-bg);border:1px solid var(--r);border-radius:8px;padding:12px 16px;font-size:12px;color:var(--r);margin-bottom:12px;display:none;}
+    .err-box.show{display:block;}
 
-    /* ── TOAST ── */
-    #toast {
-      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
-      background: var(--txt); color: #fff; padding: 10px 20px; border-radius: 8px;
-      font-size: 13px; font-weight: 500; opacity: 0; transition: .3s; pointer-events: none;
-      z-index: 9999; white-space: nowrap;
-    }
-    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-
-    .skeleton { background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%); background-size: 200%; border-radius: 4px; animation: sk 1.5s infinite; }
-    @keyframes sk { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
-    .empty-state { text-align: center; padding: 40px; color: var(--mut); font-size: 13px; }
-    .empty-state .mi { font-size: 36px; display: block; margin-bottom: 8px; opacity: .4; }
+    /* TOAST */
+    #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--txt);color:#fff;padding:10px 20px;border-radius:8px;font-size:13px;font-weight:500;opacity:0;transition:.3s;pointer-events:none;z-index:9999;white-space:nowrap;}
+    #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+    .empty-state{text-align:center;padding:40px;color:var(--mut);font-size:13px;}
+    .empty-state .mi{font-size:36px;display:block;margin-bottom:8px;opacity:.4;}
   </style>
 </head>
 <body class="dot-grid">
 
-<!-- ══ HEADER ══ -->
 <header id="top-header">
   <div class="brand-mark">
     <div class="brand-box"><span class="mi">inventory_2</span></div>
@@ -178,7 +117,6 @@
   <span class="hdr-tag">데이터 관리</span>
 </header>
 
-<!-- ══ SIDEBAR ══ -->
 <nav id="sidebar">
   <div class="sb-lbl">메뉴</div>
   <a href="parts-mgmt.html"  class="sb-link"><span class="mi">sell</span>파트 단가 관리</a>
@@ -188,332 +126,466 @@
   <a href="data-mgmt.html"   class="sb-link active"><span class="mi" style="font-variation-settings:'FILL' 1">calendar_view_month</span>데이터 관리</a>
 </nav>
 
-<!-- ══ MAIN ══ -->
 <main id="main">
-  <div class="page-body">
+<div class="page-body">
 
-    <!-- 활성 배치 카드 -->
-    <div class="active-card">
-      <span class="mi">verified</span>
-      <div>
-        <div class="label">활성 배치 (스캐너 검증 기준)</div>
-        <div class="date" id="active-batch-date">로딩 중…</div>
-        <div class="sub" id="active-batch-sub"></div>
-      </div>
+  <!-- 오류 박스 -->
+  <div class="err-box" id="global-err"></div>
+
+  <!-- 활성 배치 -->
+  <div class="active-card">
+    <span class="mi">verified</span>
+    <div>
+      <div class="label">활성 배치 (스캐너 검증 기준)</div>
+      <div class="date" id="active-batch-date">—</div>
+      <div class="sub"  id="active-batch-sub">배치를 선택하면 바코드 스캐너 검증 기준이 해당 날짜로 고정됩니다</div>
     </div>
-
-    <!-- 탭 -->
-    <div class="tabs">
-      <button class="tab-btn active" onclick="switchTab('quotation')">
-        <span class="mi">request_quote</span>견적 / 마스터
-      </button>
-      <button class="tab-btn" onclick="switchTab('ptn')">
-        <span class="mi">qr_code_2</span>PTN 업로드
-      </button>
-    </div>
-
-    <!-- 견적/마스터 탭 -->
-    <div class="tab-content active" id="tab-quotation">
-      <div class="sec-title">날짜별 견적·마스터 배치</div>
-      <div class="batch-list" id="q-batch-list">
-        <div style="padding:20px;color:var(--mut);font-size:13px;">데이터 로딩 중…</div>
-      </div>
-
-      <!-- 상세 테이블 -->
-      <div class="detail-panel" id="q-detail-panel" style="display:none">
-        <div class="detail-header">
-          <span class="title" id="q-detail-title">상세 보기</span>
-          <span class="count" id="q-detail-count"></span>
-        </div>
-        <div style="overflow-x:auto">
-          <table class="detail-table" id="q-detail-table">
-            <thead>
-              <tr>
-                <th>주문번호</th><th>PO</th><th>SN</th><th>PTN (0247#)</th><th>PN</th><th>CLN DATE</th>
-              </tr>
-            </thead>
-            <tbody id="q-detail-body"></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <!-- PTN 탭 -->
-    <div class="tab-content" id="tab-ptn">
-      <div class="sec-title">날짜별 PTN 업로드</div>
-      <div class="batch-list" id="p-batch-list">
-        <div style="padding:20px;color:var(--mut);font-size:13px;">데이터 로딩 중…</div>
-      </div>
-
-      <div class="detail-panel" id="p-detail-panel" style="display:none">
-        <div class="detail-header">
-          <span class="title" id="p-detail-title">상세 보기</span>
-          <span class="count" id="p-detail-count"></span>
-        </div>
-        <div style="overflow-x:auto">
-          <table class="detail-table" id="p-detail-table">
-            <thead>
-              <tr>
-                <th>PO</th><th>주문번호</th><th>PTN NO</th><th>출하일</th><th>업로드 일시</th>
-              </tr>
-            </thead>
-            <tbody id="p-detail-body"></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
   </div>
+
+  <!-- 탭 -->
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('q')" id="tab-q-btn">
+      <span class="mi">request_quote</span>견적 / 마스터
+    </button>
+    <button class="tab-btn" onclick="switchTab('p')" id="tab-p-btn">
+      <span class="mi">qr_code_2</span>PTN 업로드
+    </button>
+    <button class="tab-btn" onclick="switchTab('s')" id="tab-s-btn">
+      <span class="mi">receipt_long</span>거래명세서
+    </button>
+  </div>
+
+  <!-- ── 견적/마스터 탭 ── -->
+  <div class="tab-content active" id="tab-q">
+    <div class="sec-title">날짜별 견적·마스터 배치</div>
+    <div id="q-err" class="err-box"></div>
+    <div class="batch-list" id="q-list"><div style="padding:20px;color:var(--mut);font-size:13px;">로딩 중…</div></div>
+    <div class="detail-panel" id="q-detail" style="display:none">
+      <div class="detail-hdr"><span class="title" id="q-dtitle"></span><span class="cnt" id="q-dcnt"></span></div>
+      <div style="overflow-x:auto">
+        <table class="dtable"><thead><tr>
+          <th>주문번호</th><th>PO</th><th>SN</th><th>PTN (0247#)</th><th>PN</th><th>CLN DATE</th>
+        </tr></thead><tbody id="q-dbody"></tbody></table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── PTN 탭 ── -->
+  <div class="tab-content" id="tab-p">
+    <div class="sec-title">날짜별 PTN 업로드</div>
+    <div id="p-err" class="err-box"></div>
+    <div class="batch-list" id="p-list"><div style="padding:20px;color:var(--mut);font-size:13px;">로딩 중…</div></div>
+    <div class="detail-panel" id="p-detail" style="display:none">
+      <div class="detail-hdr"><span class="title" id="p-dtitle"></span><span class="cnt" id="p-dcnt"></span></div>
+      <div style="overflow-x:auto">
+        <table class="dtable"><thead><tr>
+          <th>PO</th><th>주문번호</th><th>PTN NO</th><th>출하일</th><th>업로드 일시</th>
+        </tr></thead><tbody id="p-dbody"></tbody></table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 거래명세서 탭 ── -->
+  <div class="tab-content" id="tab-s">
+    <div class="sec-title">날짜별 거래명세서 (출하일 기준)</div>
+    <div id="s-err" class="err-box"></div>
+    <div class="batch-list" id="s-list"><div style="padding:20px;color:var(--mut);font-size:13px;">로딩 중…</div></div>
+    <div class="detail-panel" id="s-detail" style="display:none">
+      <div class="detail-hdr"><span class="title" id="s-dtitle"></span><span class="cnt" id="s-dcnt"></span></div>
+      <div style="overflow-x:auto">
+        <table class="dtable"><thead><tr>
+          <th>PO</th><th>주문번호</th><th>PTN NO</th><th>출하일</th>
+        </tr></thead><tbody id="s-dbody"></tbody></table>
+      </div>
+    </div>
+  </div>
+
+</div>
 </main>
 
 <div id="toast"></div>
 
 <script>
-const SB_URL = 'https://ydekxlonxjwfhdhhbpdc.supabase.co';
-const SB_KEY = 'sb_publishable_aCdcvXkU_hz35DpyrmSCkw_F8TYKZUJ';
-let sb;
-
-function getSB() {
-  if (!sb && window.supabase) sb = window.supabase.createClient(SB_URL, SB_KEY);
-  return sb;
+/* ──────────────────────────────────────────────
+   오류 표시 헬퍼
+────────────────────────────────────────────── */
+function showErr(boxId, msg) {
+  const el = document.getElementById(boxId);
+  if (!el) return;
+  el.textContent = '⚠ ' + msg;
+  el.classList.add('show');
+  console.error('[data-mgmt]', boxId, msg);
 }
 
-function toast(msg, dur = 2200) {
+function toast(msg, dur) {
   const el = document.getElementById('toast');
   el.textContent = msg;
   el.classList.add('show');
-  setTimeout(() => el.classList.remove('show'), dur);
+  setTimeout(() => el.classList.remove('show'), dur || 2400);
 }
 
+/* ──────────────────────────────────────────────
+   탭 전환
+────────────────────────────────────────────── */
 function switchTab(name) {
-  document.querySelectorAll('.tab-btn').forEach((b, i) => b.classList.toggle('active', ['quotation','ptn'][i] === name));
-  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-  document.getElementById(`tab-${name}`).classList.add('active');
+  ['q','p','s'].forEach(n => {
+    document.getElementById('tab-' + n + '-btn').classList.toggle('active', n === name);
+    document.getElementById('tab-' + n).classList.toggle('active', n === name);
+  });
 }
 
-// ── 활성 배치 표시 ───────────────────────────────────
+/* ──────────────────────────────────────────────
+   활성 배치 표시 (core.js getActiveBatch 사용)
+────────────────────────────────────────────── */
 function renderActiveBatch() {
-  const d = localStorage.getItem('active_batch_date');
-  const el = document.getElementById('active-batch-date');
-  const sub = document.getElementById('active-batch-sub');
-  el.textContent = d || '설정되지 않음 (가장 최근 배치 사용)';
-  sub.textContent = d ? `이 날짜의 verification_sets 기준으로 바코드 스캐너가 검증합니다` : '배치를 선택하면 스캐너 검증 기준이 고정됩니다';
+  const d = (typeof getActiveBatch === 'function') ? getActiveBatch() : localStorage.getItem('active_batch_date');
+  document.getElementById('active-batch-date').textContent = d || '설정 안 됨 (가장 최근 배치 자동 사용)';
 }
 
-// ── 견적/마스터 배치 로드 ─────────────────────────────
-async function loadQuotationBatches() {
-  const client = getSB();
-  const el = document.getElementById('q-batch-list');
-  el.innerHTML = '<div style="padding:20px;color:var(--mut);font-size:13px;">로딩 중…</div>';
-
-  const { data, error } = await client
-    .from('master_jobs')
-    .select('batch_date, order_no, po, synced_at')
-    .order('batch_date', { ascending: false });
-
-  if (error || !data) {
-    el.innerHTML = '<div class="empty-state"><span class="mi">error</span>조회 실패</div>';
-    return;
+/* ──────────────────────────────────────────────
+   Supabase 클라이언트 (core.js getSB 재사용)
+────────────────────────────────────────────── */
+function getClient() {
+  if (typeof getSB === 'function') {
+    const c = getSB();
+    if (c) return c;
   }
-
-  // batch_date별 그룹
-  const groups = {};
-  data.forEach(r => {
-    const d = r.batch_date || '날짜 없음';
-    if (!groups[d]) groups[d] = { date: d, count: 0, synced_at: r.synced_at };
-    groups[d].count++;
-  });
-
-  const activeBatch = localStorage.getItem('active_batch_date');
-  const dates = Object.keys(groups).sort().reverse();
-
-  if (!dates.length) {
-    el.innerHTML = '<div class="empty-state"><span class="mi">inbox</span>견적 데이터 없음</div>';
-    return;
+  // 직접 생성 (폴백)
+  if (window.supabase) {
+    return window.supabase.createClient(
+      'https://ydekxlonxjwfhdhhbpdc.supabase.co',
+      'sb_publishable_aCdcvXkU_hz35DpyrmSCkw_F8TYKZUJ'
+    );
   }
-
-  el.innerHTML = dates.map(d => {
-    const g = groups[d];
-    const isActive = d === activeBatch;
-    const syncTime = g.synced_at ? g.synced_at.slice(0, 16).replace('T', ' ') : '';
-    return `
-      <div class="batch-card ${isActive ? 'is-active' : ''}" id="qcard-${d}">
-        <div>
-          <div class="batch-date">${d}</div>
-          <div style="font-size:11px;color:var(--mut);margin-top:2px">${syncTime} 동기화</div>
-        </div>
-        <div class="batch-pills">
-          <span class="pill pill-blue"><span class="mi" style="font-size:13px">assignment</span>${g.count}건</span>
-          ${isActive ? '<span class="pill pill-active"><span class="mi" style="font-size:13px">check_circle</span>활성</span>' : ''}
-        </div>
-        <div class="batch-actions">
-          <button class="btn-select ${isActive ? 'active-btn' : ''}"
-            onclick="selectQuotationBatch('${d}')" ${isActive ? 'disabled' : ''}>
-            ${isActive ? '✓ 활성' : '선택'}
-          </button>
-          <button class="btn-sync" onclick="syncBatch('${d}')">동기화</button>
-          <button class="btn-select" style="border-color:var(--mut);color:var(--mut)"
-            onclick="showQDetail('${d}')">상세</button>
-        </div>
-      </div>`;
-  }).join('');
+  return null;
 }
 
-// ── PTN 배치 로드 ─────────────────────────────────────
-async function loadPtnBatches() {
-  const client = getSB();
-  const el = document.getElementById('p-batch-list');
-  el.innerHTML = '<div style="padding:20px;color:var(--mut);font-size:13px;">로딩 중…</div>';
+/* ──────────────────────────────────────────────
+   견적 / 마스터 배치 로드
+────────────────────────────────────────────── */
+async function loadQ() {
+  const el = document.getElementById('q-list');
+  try {
+    const sb = getClient();
+    if (!sb) throw new Error('Supabase 클라이언트 초기화 실패 (window.supabase 확인)');
 
-  const { data, error } = await client
-    .from('shipments')
-    .select('po, order_no, ptn_no, ptn_uploaded_at, ship_date')
-    .not('ptn_uploaded_at', 'is', null)
-    .order('ptn_uploaded_at', { ascending: false });
+    const { data, error } = await sb
+      .from('master_jobs')
+      .select('batch_date, order_no, synced_at')
+      .order('batch_date', { ascending: false });
 
-  if (error || !data) {
-    el.innerHTML = '<div class="empty-state"><span class="mi">error</span>조회 실패</div>';
-    return;
+    if (error) throw new Error('master_jobs 조회 오류: ' + error.message);
+    if (!data || !data.length) {
+      el.innerHTML = '<div class="empty-state"><span class="mi">inbox</span>견적 데이터 없음</div>';
+      return;
+    }
+
+    const groups = {};
+    data.forEach(r => {
+      const d = r.batch_date || '날짜 없음';
+      if (!groups[d]) groups[d] = { date: d, count: 0, synced_at: r.synced_at };
+      groups[d].count++;
+    });
+
+    const activeBatch = (typeof getActiveBatch === 'function') ? getActiveBatch() : localStorage.getItem('active_batch_date');
+    const dates = Object.keys(groups).sort().reverse();
+
+    el.innerHTML = dates.map(d => {
+      const g = groups[d];
+      const isActive = d === activeBatch;
+      const syncTime = g.synced_at ? g.synced_at.slice(0,16).replace('T',' ') : '';
+      return `
+        <div class="batch-card ${isActive ? 'is-active' : ''}">
+          <div style="min-width:96px">
+            <div class="batch-date">${d}</div>
+            <div class="batch-meta">${syncTime} 동기화</div>
+          </div>
+          <div class="batch-pills">
+            <span class="pill pill-blue"><span class="mi" style="font-size:13px">assignment</span>${g.count}건</span>
+            ${isActive ? '<span class="pill pill-active"><span class="mi" style="font-size:13px">check_circle</span>활성</span>' : ''}
+          </div>
+          <div class="batch-actions">
+            <button class="btn-act ${isActive ? 'active-btn' : ''}" onclick="selectBatch('${d}')" ${isActive ? 'disabled' : ''}>${isActive ? '✓ 활성' : '선택'}</button>
+            <button class="btn-act teal" onclick="doSync('${d}', this)">동기화</button>
+            <button class="btn-act gray" onclick="showQDetail('${d}')">상세</button>
+          </div>
+        </div>`;
+    }).join('');
+  } catch(e) {
+    el.innerHTML = '';
+    showErr('q-err', e.message);
   }
-
-  const groups = {};
-  data.forEach(r => {
-    const d = (r.ptn_uploaded_at || '').slice(0, 10) || '날짜 없음';
-    if (!groups[d]) groups[d] = { date: d, count: 0, rows: [] };
-    groups[d].count++;
-    groups[d].rows.push(r);
-  });
-
-  const dates = Object.keys(groups).sort().reverse();
-
-  if (!dates.length) {
-    el.innerHTML = '<div class="empty-state"><span class="mi">inbox</span>PTN 업로드 데이터 없음</div>';
-    return;
-  }
-
-  el.innerHTML = dates.map(d => {
-    const g = groups[d];
-    return `
-      <div class="batch-card" id="pcard-${d}">
-        <div>
-          <div class="batch-date">${d}</div>
-          <div style="font-size:11px;color:var(--mut);margin-top:2px">PTN 업로드</div>
-        </div>
-        <div class="batch-pills">
-          <span class="pill pill-teal"><span class="mi" style="font-size:13px">qr_code_2</span>${g.count}건</span>
-        </div>
-        <div class="batch-actions">
-          <button class="btn-select" style="border-color:var(--mut);color:var(--mut)"
-            onclick="showPDetail('${d}')">상세</button>
-        </div>
-      </div>`;
-  }).join('');
-
-  // 전역에 PTN 데이터 저장 (상세 조회용)
-  window._ptnGroups = groups;
 }
 
-// ── 배치 선택 (활성 배치 변경) ───────────────────────
-async function selectQuotationBatch(date) {
-  setActiveBatch(date);
+/* ──────────────────────────────────────────────
+   PTN 배치 로드
+────────────────────────────────────────────── */
+async function loadP() {
+  const el = document.getElementById('p-list');
+  try {
+    const sb = getClient();
+    if (!sb) throw new Error('Supabase 클라이언트 초기화 실패');
+
+    const { data, error } = await sb
+      .from('shipments')
+      .select('po, order_no, ptn_no, ptn_uploaded_at, ship_date')
+      .not('ptn_uploaded_at', 'is', null)
+      .order('ptn_uploaded_at', { ascending: false });
+
+    if (error) throw new Error('shipments 조회 오류: ' + error.message);
+    if (!data || !data.length) {
+      el.innerHTML = '<div class="empty-state"><span class="mi">inbox</span>PTN 업로드 데이터 없음</div>';
+      return;
+    }
+
+    const groups = {};
+    data.forEach(r => {
+      const d = (r.ptn_uploaded_at || '').slice(0,10) || '날짜 없음';
+      if (!groups[d]) groups[d] = { date: d, count: 0 };
+      groups[d].count++;
+    });
+
+    const dates = Object.keys(groups).sort().reverse();
+    el.innerHTML = dates.map(d => {
+      const g = groups[d];
+      return `
+        <div class="batch-card">
+          <div style="min-width:96px">
+            <div class="batch-date">${d}</div>
+            <div class="batch-meta">PTN 업로드</div>
+          </div>
+          <div class="batch-pills">
+            <span class="pill pill-teal"><span class="mi" style="font-size:13px">qr_code_2</span>${g.count}건</span>
+          </div>
+          <div class="batch-actions">
+            <button class="btn-act gray" onclick="showPDetail('${d}')">상세</button>
+          </div>
+        </div>`;
+    }).join('');
+  } catch(e) {
+    el.innerHTML = '';
+    showErr('p-err', e.message);
+  }
+}
+
+/* ──────────────────────────────────────────────
+   거래명세서 배치 로드 (shipments.ship_date 기준)
+────────────────────────────────────────────── */
+async function loadS() {
+  const el = document.getElementById('s-list');
+  try {
+    const sb = getClient();
+    if (!sb) throw new Error('Supabase 클라이언트 초기화 실패');
+
+    const { data, error } = await sb
+      .from('shipments')
+      .select('po, order_no, ptn_no, ship_date')
+      .not('ship_date', 'is', null)
+      .order('ship_date', { ascending: false });
+
+    if (error) throw new Error('shipments 조회 오류: ' + error.message);
+    if (!data || !data.length) {
+      el.innerHTML = '<div class="empty-state"><span class="mi">inbox</span>출하일 지정된 데이터 없음<br><span style="font-size:11px;color:var(--mut);display:block;margin-top:4px">출하관리에서 출하일을 지정하면 여기에 표시됩니다</span></div>';
+      return;
+    }
+
+    const groups = {};
+    data.forEach(r => {
+      const d = (r.ship_date || '').slice(0,10) || '날짜 없음';
+      if (!groups[d]) groups[d] = { date: d, count: 0 };
+      groups[d].count++;
+    });
+
+    const dates = Object.keys(groups).sort().reverse();
+    el.innerHTML = dates.map(d => {
+      const g = groups[d];
+      return `
+        <div class="batch-card">
+          <div style="min-width:96px">
+            <div class="batch-date">${d}</div>
+            <div class="batch-meta">출하일 기준</div>
+          </div>
+          <div class="batch-pills">
+            <span class="pill pill-amb"><span class="mi" style="font-size:13px">receipt_long</span>${g.count}건</span>
+          </div>
+          <div class="batch-actions">
+            <button class="btn-act gray" onclick="showSDetail('${d}')">상세</button>
+          </div>
+        </div>`;
+    }).join('');
+  } catch(e) {
+    el.innerHTML = '';
+    showErr('s-err', e.message);
+  }
+}
+
+/* ──────────────────────────────────────────────
+   배치 선택 (활성 배치 변경)
+────────────────────────────────────────────── */
+async function selectBatch(date) {
+  if (typeof setActiveBatch === 'function') setActiveBatch(date);
+  else localStorage.setItem('active_batch_date', date);
   renderActiveBatch();
-  toast(`✅ 배치 ${date} 선택됨 — 스캐너 검증 기준 변경`);
-  await loadQuotationBatches();
+  toast('✅ 배치 ' + date + ' 선택 — 스캐너 기준 변경');
+  await loadQ();
 }
 
-// ── verification_sets 동기화 ─────────────────────────
-async function syncBatch(date) {
-  const btn = event.target;
+/* ──────────────────────────────────────────────
+   verification_sets 동기화
+────────────────────────────────────────────── */
+async function doSync(date, btn) {
+  const orig = btn.textContent;
   btn.disabled = true;
   btn.textContent = '동기화 중…';
   try {
+    if (typeof syncVerificationSets !== 'function') throw new Error('syncVerificationSets 미정의 (core.js 로드 확인)');
     const result = await syncVerificationSets(date);
-    toast(`✅ ${date}: verification_sets ${result.synced}건 동기화 완료`);
-    setActiveBatch(date);
+    if (typeof setActiveBatch === 'function') setActiveBatch(date);
     renderActiveBatch();
-    await loadQuotationBatches();
+    toast('✅ ' + date + ': ' + result.synced + '건 동기화');
+    await loadQ();
   } catch(e) {
-    toast(`❌ 동기화 실패: ${e.message}`);
+    showErr('q-err', '동기화 실패: ' + e.message);
+    toast('❌ ' + e.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = '동기화';
+    btn.textContent = orig;
   }
 }
 
-// ── 견적/마스터 상세 보기 ─────────────────────────────
+/* ──────────────────────────────────────────────
+   견적/마스터 상세
+────────────────────────────────────────────── */
 async function showQDetail(date) {
-  const panel = document.getElementById('q-detail-panel');
-  const body  = document.getElementById('q-detail-body');
-  const title = document.getElementById('q-detail-title');
-  const count = document.getElementById('q-detail-count');
-
+  const panel = document.getElementById('q-detail');
+  const body  = document.getElementById('q-dbody');
+  document.getElementById('q-dtitle').textContent = date + ' 배치 상세';
+  document.getElementById('q-dcnt').textContent   = '';
+  body.innerHTML = '<tr><td colspan="6" style="padding:16px;color:var(--mut)">로딩 중…</td></tr>';
   panel.style.display = 'block';
-  body.innerHTML = '<tr><td colspan="6" style="padding:20px;color:var(--mut)">로딩 중…</td></tr>';
-  title.textContent = `${date} 배치 상세`;
-  panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  panel.scrollIntoView({ behavior:'smooth', block:'nearest' });
 
-  const { data, error } = await getSB()
-    .from('master_jobs')
-    .select('order_no, po, sn, tkm_no, pn, cln_date')
-    .eq('batch_date', date)
-    .order('order_no');
-
-  if (error || !data) {
-    body.innerHTML = '<tr><td colspan="6" style="color:#dc2626;padding:16px">조회 실패</td></tr>';
-    return;
+  try {
+    const sb = getClient();
+    if (!sb) throw new Error('Supabase 없음');
+    const { data, error } = await sb
+      .from('master_jobs')
+      .select('order_no,po,sn,tkm_no,pn,cln_date')
+      .eq('batch_date', date)
+      .order('order_no');
+    if (error) throw error;
+    document.getElementById('q-dcnt').textContent = (data||[]).length + '건';
+    body.innerHTML = (data||[]).map(r => `
+      <tr>
+        <td>${r.order_no||'-'}</td>
+        <td class="mono">${r.po||'-'}</td>
+        <td class="mono">${r.sn||'-'}</td>
+        <td class="mono">${r.tkm_no||'-'}</td>
+        <td class="mono">${r.pn||'-'}</td>
+        <td>${(r.cln_date||'').slice(0,10)||'-'}</td>
+      </tr>`).join('') || '<tr><td colspan="6" style="padding:16px;color:var(--mut)">데이터 없음</td></tr>';
+  } catch(e) {
+    body.innerHTML = '<tr><td colspan="6" style="padding:16px;color:var(--r)">' + e.message + '</td></tr>';
   }
-
-  count.textContent = `${data.length}건`;
-  body.innerHTML = data.map(r => `
-    <tr>
-      <td>${r.order_no || '-'}</td>
-      <td class="mono">${r.po || '-'}</td>
-      <td class="mono">${r.sn || '-'}</td>
-      <td class="mono">${r.tkm_no || '-'}</td>
-      <td class="mono">${r.pn || '-'}</td>
-      <td>${r.cln_date ? r.cln_date.slice(0,10) : '-'}</td>
-    </tr>`).join('');
 }
 
-// ── PTN 상세 보기 ─────────────────────────────────────
+/* ──────────────────────────────────────────────
+   PTN 상세
+────────────────────────────────────────────── */
 async function showPDetail(date) {
-  const panel = document.getElementById('p-detail-panel');
-  const body  = document.getElementById('p-detail-body');
-  const title = document.getElementById('p-detail-title');
-  const count = document.getElementById('p-detail-count');
-
+  const panel = document.getElementById('p-detail');
+  const body  = document.getElementById('p-dbody');
+  document.getElementById('p-dtitle').textContent = date + ' PTN 상세';
+  document.getElementById('p-dcnt').textContent   = '';
+  body.innerHTML = '<tr><td colspan="5" style="padding:16px;color:var(--mut)">로딩 중…</td></tr>';
   panel.style.display = 'block';
-  body.innerHTML = '<tr><td colspan="5" style="padding:20px;color:var(--mut)">로딩 중…</td></tr>';
-  title.textContent = `${date} PTN 업로드 상세`;
-  panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  panel.scrollIntoView({ behavior:'smooth', block:'nearest' });
 
-  const { data, error } = await getSB()
-    .from('shipments')
-    .select('po, order_no, ptn_no, ship_date, ptn_uploaded_at')
-    .gte('ptn_uploaded_at', date + 'T00:00:00')
-    .lt('ptn_uploaded_at', date + 'T23:59:59')
-    .order('ptn_uploaded_at');
-
-  if (error || !data) {
-    body.innerHTML = '<tr><td colspan="5" style="color:#dc2626;padding:16px">조회 실패</td></tr>';
-    return;
+  try {
+    const sb = getClient();
+    if (!sb) throw new Error('Supabase 없음');
+    const { data, error } = await sb
+      .from('shipments')
+      .select('po,order_no,ptn_no,ship_date,ptn_uploaded_at')
+      .gte('ptn_uploaded_at', date + 'T00:00:00')
+      .lt('ptn_uploaded_at',  date + 'T23:59:59')
+      .order('ptn_uploaded_at');
+    if (error) throw error;
+    document.getElementById('p-dcnt').textContent = (data||[]).length + '건';
+    body.innerHTML = (data||[]).map(r => `
+      <tr>
+        <td class="mono">${r.po||'-'}</td>
+        <td>${r.order_no||'-'}</td>
+        <td class="mono">${r.ptn_no||'-'}</td>
+        <td>${(r.ship_date||'').slice(0,10)||'-'}</td>
+        <td style="font-size:11px;color:var(--mut)">${(r.ptn_uploaded_at||'').slice(0,16).replace('T',' ')||'-'}</td>
+      </tr>`).join('') || '<tr><td colspan="5" style="padding:16px;color:var(--mut)">데이터 없음</td></tr>';
+  } catch(e) {
+    body.innerHTML = '<tr><td colspan="5" style="padding:16px;color:var(--r)">' + e.message + '</td></tr>';
   }
-
-  count.textContent = `${data.length}건`;
-  body.innerHTML = data.map(r => `
-    <tr>
-      <td class="mono">${r.po || '-'}</td>
-      <td>${r.order_no || '-'}</td>
-      <td class="mono">${r.ptn_no || '-'}</td>
-      <td>${r.ship_date ? r.ship_date.slice(0,10) : '-'}</td>
-      <td style="font-size:11px;color:var(--mut)">${r.ptn_uploaded_at ? r.ptn_uploaded_at.slice(0,16).replace('T',' ') : '-'}</td>
-    </tr>`).join('');
 }
 
-// ── 초기화 ───────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', async () => {
+/* ──────────────────────────────────────────────
+   거래명세서 상세
+────────────────────────────────────────────── */
+async function showSDetail(date) {
+  const panel = document.getElementById('s-detail');
+  const body  = document.getElementById('s-dbody');
+  document.getElementById('s-dtitle').textContent = date + ' 거래명세서 상세';
+  document.getElementById('s-dcnt').textContent   = '';
+  body.innerHTML = '<tr><td colspan="4" style="padding:16px;color:var(--mut)">로딩 중…</td></tr>';
+  panel.style.display = 'block';
+  panel.scrollIntoView({ behavior:'smooth', block:'nearest' });
+
+  try {
+    const sb = getClient();
+    if (!sb) throw new Error('Supabase 없음');
+    const { data, error } = await sb
+      .from('shipments')
+      .select('po,order_no,ptn_no,ship_date')
+      .eq('ship_date', date)
+      .order('po');
+    if (error) throw error;
+    document.getElementById('s-dcnt').textContent = (data||[]).length + '건';
+    body.innerHTML = (data||[]).map(r => `
+      <tr>
+        <td class="mono">${r.po||'-'}</td>
+        <td>${r.order_no||'-'}</td>
+        <td class="mono">${r.ptn_no||'-'}</td>
+        <td>${(r.ship_date||'').slice(0,10)||'-'}</td>
+      </tr>`).join('') || '<tr><td colspan="4" style="padding:16px;color:var(--mut)">데이터 없음</td></tr>';
+  } catch(e) {
+    body.innerHTML = '<tr><td colspan="4" style="padding:16px;color:var(--r)">' + e.message + '</td></tr>';
+  }
+}
+
+/* ──────────────────────────────────────────────
+   초기화
+────────────────────────────────────────────── */
+document.addEventListener('DOMContentLoaded', () => {
   renderActiveBatch();
-  await Promise.all([loadQuotationBatches(), loadPtnBatches()]);
+
+  // Supabase 준비 확인 후 로드
+  function tryLoad() {
+    const sb = getClient();
+    if (!sb) {
+      showErr('global-err', 'Supabase 클라이언트를 초기화할 수 없습니다. CDN 로드 여부를 확인하세요. (window.supabase=' + (typeof window.supabase) + ')');
+      document.getElementById('q-list').innerHTML = '<div class="empty-state"><span class="mi">wifi_off</span>연결 실패</div>';
+      document.getElementById('p-list').innerHTML = '<div class="empty-state"><span class="mi">wifi_off</span>연결 실패</div>';
+      document.getElementById('s-list').innerHTML = '<div class="empty-state"><span class="mi">wifi_off</span>연결 실패</div>';
+      return;
+    }
+    loadQ();
+    loadP();
+    loadS();
+  }
+
+  // supabase.js가 이미 로드된 경우 즉시 실행, 아니면 짧게 대기
+  if (window.supabase) {
+    tryLoad();
+  } else {
+    setTimeout(tryLoad, 500);
+  }
 });
 </script>
 </body>
