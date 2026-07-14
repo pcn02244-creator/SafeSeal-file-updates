@@ -322,6 +322,7 @@
   <div id="header">
     <span class="mi" id="back-btn" title="출하 관리로 이동">arrow_back</span>
     <h1>바코드 검증</h1>
+    <div id="batch-badge" style="font-size:10px;font-weight:700;color:rgba(255,255,255,.5);letter-spacing:.04em;margin-right:2px" title="활성 배치 날짜"></div>
     <div id="master-badge">로드 중...</div>
     <span class="mi" id="sync-btn" title="재동기화" onclick="doSync().then(()=>scanMsg.textContent='')">sync</span>
   </div>
@@ -441,13 +442,18 @@ $('back-btn').addEventListener('click', () => {
    verification_sets 동기화 (core.js의 syncVerificationSets 래퍼)
 ══════════════════════════════════════════ */
 async function doSync() {
+  const activeBatch = getActiveBatch();
+  const batchBadge  = $('batch-badge');
+  if (batchBadge) batchBadge.textContent = activeBatch || '';
+
   masterBadge.textContent = '동기화 중...';
   masterBadge.className   = '';
   try {
-    const { synced } = await syncVerificationSets();
+    const { synced, batch_date } = await syncVerificationSets(activeBatch);
     if (synced > 0) {
       masterBadge.textContent = `${synced}건 준비`;
       masterBadge.classList.add('loaded');
+      if (batchBadge) batchBadge.textContent = batch_date || activeBatch || '';
     } else {
       masterBadge.textContent = '데이터 없음';
       masterBadge.classList.add('error');

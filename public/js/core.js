@@ -14,6 +14,14 @@ function getSB() {
   return _sb;
 }
 
+// ── 활성 배치 날짜 관리 (날짜별 데이터 선택) ─────────
+function getActiveBatch() {
+  return localStorage.getItem('active_batch_date') || new Date().toISOString().slice(0, 10);
+}
+function setActiveBatch(date) {
+  localStorage.setItem('active_batch_date', date || new Date().toISOString().slice(0, 10));
+}
+
 // ── localStorage 캐시 래퍼 ────────────────────────────
 const DB = {
   _g: k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
@@ -241,13 +249,15 @@ async function generateQuotation(mesFile, masterFile) {
       const sb = getSB();
       if (!sb || !masterTargets.length) return;
       try {
-        await sb.from('master_jobs').delete().neq('order_no', '');
+        const batchDate = now.slice(0, 10);
         const rows = masterTargets.map(t => ({
           order_no: t.orderNo, pn: t.pn, sn: t.sn,
           po: t.po, tkm_no: t.tkmNo, cln_date: now, synced_at: now,
+          batch_date: batchDate,
         }));
         await sb.from('master_jobs').upsert(rows, { onConflict: 'order_no' });
-        console.log(`✅ master_jobs 동기화 완료: ${rows.length}건`);
+        setActiveBatch(batchDate);
+        console.log(`✅ master_jobs 동기화 완료: ${rows.length}건 (배치: ${batchDate})`);
       } catch(e) { console.warn('master_jobs 동기화 오류:', e.message); }
     })();
   } else {
@@ -413,62 +423,67 @@ async function generateQuotation(mesFile, masterFile) {
   };
 }
 
-// ── 검증 세트 동기화 (master_jobs + shipments → verification_sets) ──
-async function syncVerificationSets() {
+// ── 검증 세트 동기화 (master_jobs → verification_sets, 날짜별 배치) ──
+async function syncVerificationSets(batchDate) {
   const sb = getSB();
   if (!sb) throw new Error('Supabase 미연결');
 
-  const { data: jobs, error: e1 } = await sb.from('master_jobs').select('order_no, po, sn, tkm_no');
+  batchDate = batchDate || getActiveBatch();
 
+  let query = sb.from('master_jobs').select('order_no, po, sn, tkm_no, batch_date');
+  if (batchDate) query = query.eq('batch_date', batchDate);
+
+  const { data: jobs, error: e1 } = await query;
   if (e1) throw new Error('master_jobs 조회 오류: ' + e1.message);
 
-  // ptn_no = master_jobs.tkm_no (PTN 라벨의 0247# 바코드)
   const rows = (jobs || [])
     .filter(j => j.order_no && j.po)
     .map(j => ({
       order_no:   j.order_no.trim(),
+      batch_date: j.batch_date || batchDate,
       po:         (j.po     || '').trim().toUpperCase(),
       sn:         (j.sn     || '').trim().replace(/\s/g, '').toUpperCase(),
       ptn_no:     (j.tkm_no || '').trim().toUpperCase() || null,
       created_at: new Date().toISOString(),
     }));
 
-  if (!rows.length) return { synced: 0 };
+  if (!rows.length) return { synced: 0, batch_date: batchDate };
 
   const { error: upsertErr } = await sb
     .from('verification_sets')
-    .upsert(rows, { onConflict: 'order_no' });
+    .upsert(rows, { onConflict: 'order_no,batch_date' });
 
   if (upsertErr) throw new Error('verification_sets upsert 오류: ' + upsertErr.message);
-  return { synced: rows.length };
+  setActiveBatch(batchDate);
+  return { synced: rows.length, batch_date: batchDate };
 }
 
 // ── 바코드 3종 검증 ──────────────────────────────────────────────────
 // input : { po, sn, ptn_no }  (각각 스캔된 원시값 — 정규화는 내부에서 처리)
-// output: { pass, order_no, mismatch_field?, error? }
+// output: { pass, order_no, batch_date, mismatch_field?, error? }
 async function verifyBarcodeSet({ po, sn, ptn_no }) {
   const sb = getSB();
   if (!sb) return { pass: false, order_no: null, error: 'Supabase 미연결' };
 
-  const poKey  = (po     || '').trim().toUpperCase();
-  const snKey  = (sn     || '').trim().replace(/\s/g, '').toUpperCase();
-  const ptnKey = (ptn_no || '').trim().toUpperCase();
+  const poKey     = (po     || '').trim().toUpperCase();
+  const snKey     = (sn     || '').trim().replace(/\s/g, '').toUpperCase();
+  const ptnKey    = (ptn_no || '').trim().toUpperCase();
+  const batchDate = getActiveBatch();
 
   if (!poKey) return { pass: false, order_no: null, mismatch_field: 'po', error: 'PO 값 없음' };
 
-  const { data, error } = await sb
-    .from('verification_sets')
-    .select('order_no, po, sn, ptn_no')
-    .eq('po', poKey)
-    .maybeSingle();
+  let query = sb.from('verification_sets').select('order_no, batch_date, po, sn, ptn_no').eq('po', poKey);
+  if (batchDate) query = query.eq('batch_date', batchDate);
+
+  const { data, error } = await query.maybeSingle();
 
   if (error) return { pass: false, order_no: null, error: error.message };
-  if (!data) return { pass: false, order_no: null, mismatch_field: 'po', error: `PO "${poKey}" 없음 — 동기화 필요` };
+  if (!data) return { pass: false, order_no: null, mismatch_field: 'po', error: `PO "${poKey}" 없음 (배치: ${batchDate})` };
 
-  if (snKey  && data.sn     && data.sn     !== snKey)  return { pass: false, order_no: data.order_no, mismatch_field: 'sn' };
-  if (ptnKey && data.ptn_no && data.ptn_no !== ptnKey) return { pass: false, order_no: data.order_no, mismatch_field: 'ptn_no' };
+  if (snKey  && data.sn     && data.sn     !== snKey)  return { pass: false, order_no: data.order_no, batch_date: data.batch_date, mismatch_field: 'sn' };
+  if (ptnKey && data.ptn_no && data.ptn_no !== ptnKey) return { pass: false, order_no: data.order_no, batch_date: data.batch_date, mismatch_field: 'ptn_no' };
 
-  return { pass: true, order_no: data.order_no };
+  return { pass: true, order_no: data.order_no, batch_date: data.batch_date };
 }
 
 // ── 마스터 업데이트 ────────────────────────────────────
@@ -615,10 +630,12 @@ async function buildMasterFillResult(mesFile, masterFile) {
         po: u.po, tkm_no: u.tkmNo, cln_date: u.clnDate, synced_at: now,
       }));
     if (!syncRows.length) return;
+    const batchDate = now.slice(0, 10);
+    const rowsWithBatch = syncRows.map(r => ({ ...r, batch_date: batchDate }));
     try {
-      await sb.from('master_jobs').delete().neq('order_no', '');
-      await sb.from('master_jobs').upsert(syncRows, { onConflict: 'order_no' });
-      console.log('master_jobs sync:', syncRows.length);
+      await sb.from('master_jobs').upsert(rowsWithBatch, { onConflict: 'order_no' });
+      setActiveBatch(batchDate);
+      console.log('master_jobs sync:', rowsWithBatch.length, '배치:', batchDate);
     } catch(e) { console.warn('master_jobs sync error:', e.message); }
   })();
 
