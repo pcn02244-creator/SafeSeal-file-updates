@@ -418,33 +418,20 @@ async function syncVerificationSets() {
   const sb = getSB();
   if (!sb) throw new Error('Supabase 미연결');
 
-  const [{ data: jobs, error: e1 }, { data: ships, error: e2 }] = await Promise.all([
-    sb.from('master_jobs').select('order_no, po, sn'),
-    sb.from('shipments').select('po, ptn_no'),
-  ]);
+  const { data: jobs, error: e1 } = await sb.from('master_jobs').select('order_no, po, sn, tkm_no');
 
   if (e1) throw new Error('master_jobs 조회 오류: ' + e1.message);
-  if (e2) throw new Error('shipments 조회 오류: ' + e2.message);
 
-  // po → ptn_no 맵 (shipments 기준)
-  const ptnMap = {};
-  for (const s of ships || []) {
-    const poKey = (s.po || '').trim().toUpperCase();
-    if (poKey && s.ptn_no) ptnMap[poKey] = s.ptn_no.trim().toUpperCase();
-  }
-
+  // ptn_no = master_jobs.tkm_no (PTN 라벨의 0247# 바코드)
   const rows = (jobs || [])
     .filter(j => j.order_no && j.po)
-    .map(j => {
-      const po = (j.po || '').trim().toUpperCase();
-      return {
-        order_no:   j.order_no.trim(),
-        po,
-        sn:         (j.sn || '').trim().replace(/\s/g, '').toUpperCase(),
-        ptn_no:     ptnMap[po] || null,
-        created_at: new Date().toISOString(),
-      };
-    });
+    .map(j => ({
+      order_no:   j.order_no.trim(),
+      po:         (j.po     || '').trim().toUpperCase(),
+      sn:         (j.sn     || '').trim().replace(/\s/g, '').toUpperCase(),
+      ptn_no:     (j.tkm_no || '').trim().toUpperCase() || null,
+      created_at: new Date().toISOString(),
+    }));
 
   if (!rows.length) return { synced: 0 };
 
