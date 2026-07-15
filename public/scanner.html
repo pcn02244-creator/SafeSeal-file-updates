@@ -496,6 +496,7 @@ let scanned      = { PO: null, PKG: null, SN: null };
 let lastScanType = null;  // 직전 스캔 종류 (연속 동일 타입 감지)
 const seenRaws   = new Set(); // 중복 인식 방지
 let scanning     = false;
+let autoResetTimer = null;
 let camStream    = null;
 
 /* ── DOM ──────────────────────────────────── */
@@ -618,9 +619,9 @@ async function runVerify() {
 ══════════════════════════════════════════ */
 function showResult(result) {
   const ok = result.pass;
+  clearTimeout(autoResetTimer);
   $('scan-line').style.animationPlayState = 'paused';
   scanMsg.innerHTML = '';
-  rescanBtn.classList.add('show');
 
   resultBox.className        = ok ? 'pass' : 'fail';
   $('res-icon').textContent  = ok ? '✅' : '❌';
@@ -629,19 +630,24 @@ function showResult(result) {
   if (ok) {
     $('res-detail').textContent =
       `주문번호: ${result.order_no}\nPO: ${scanned.PO}\nPKG ID: ${scanned.PKG || '—'}\nSN: ${scanned.SN}`;
-  } else if (result.error) {
-    $('res-detail').textContent = result.error;
-  } else if (result.mismatch_field) {
-    const fname = FIELD_LABEL[result.mismatch_field] || result.mismatch_field;
-    const fval  = result.mismatch_field === 'sn' ? scanned.SN
-                : result.mismatch_field === 'ptn_no' ? scanned.PKG : scanned.PO;
-    $('res-detail').textContent = `불일치: ${fname} "${fval}"\n주문번호: ${result.order_no || '—'}`;
+    rescanBtn.classList.remove('show');
+    saveScanLog(result);
+    autoResetTimer = setTimeout(resetScanner, 1500);
   } else {
-    $('res-detail').textContent = '검증 실패';
+    if (result.error) {
+      $('res-detail').textContent = result.error;
+    } else if (result.mismatch_field) {
+      const fname = FIELD_LABEL[result.mismatch_field] || result.mismatch_field;
+      const fval  = result.mismatch_field === 'sn' ? scanned.SN
+                  : result.mismatch_field === 'ptn_no' ? scanned.PKG : scanned.PO;
+      $('res-detail').textContent = `불일치: ${fname} "${fval}"\n주문번호: ${result.order_no || '—'}`;
+    } else {
+      $('res-detail').textContent = '검증 실패';
+    }
+    rescanBtn.classList.add('show');
   }
 
   if (navigator.vibrate) navigator.vibrate(ok ? [80, 40, 80] : [200, 80, 200]);
-  if (ok) saveScanLog(result);
 }
 
 /* ══════════════════════════════════════════
@@ -937,6 +943,7 @@ function runManualVerify() {
    리셋 / 재스캔
 ══════════════════════════════════════════ */
 function resetScanner() {
+  clearTimeout(autoResetTimer);
   scanned      = { PO: null, PKG: null, SN: null };
   lastScanType = null;
   seenRaws.clear();
