@@ -514,8 +514,12 @@ async function doSync() {
 ══════════════════════════════════════════ */
 function normalizeBarcode(raw) {
   let v = raw.replace(/[\x00-\x1f\x7f]/g, '').trim().toUpperCase();
-  // GS1 AI 괄호 제거 (반복 적용: "(3S)(K)..." 처럼 여러 개 붙은 경우도 처리)
+  // GS1 AI 괄호 제거
   v = v.replace(/\([A-Z0-9]{1,4}\)/g, '');
+  // PN+SN 복합 바코드: "A0496495 185317703" → SN(숫자)만 추출
+  // DB에는 SN 숫자만 저장되어 있음
+  const pnSn = v.match(/^([A-Z][A-Z0-9]*)\s+(\d+)$/);
+  if (pnSn) return pnSn[2];
   return v.replace(/\s+/g, '');
 }
 
