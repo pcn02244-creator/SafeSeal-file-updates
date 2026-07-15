@@ -480,14 +480,17 @@ async function doSync() {
 /* ══════════════════════════════════════════
    바코드 종류 분류
    - PO:  순수 숫자 10~13자리 (거래명세서 CODE128)
-   - PKG: 숫자+대문자 혼합 (PTN 라벨 PKG ID, 예: 4A7617246)
-   - SN:  그 외 (제품 PN/SN 라벨)
+   - PKG: 숫자+대문자+숫자 혼합 (PTN 라벨 PKG ID, 예: 4A7617246)
+   - SN:  그 외 영숫자 4자 이상 (제품 PN/SN 라벨)
+   - null: 너무 짧거나 판별 불가 → 무시
 ══════════════════════════════════════════ */
 function classifyBarcode(raw) {
   const v = raw.trim().replace(/\s+/g, '').toUpperCase();
+  if (v.length < 4)                  return null;   // 너무 짧으면 무시
   if (/^\d{10,13}$/.test(v))        return 'PO';
   if (/^\d[A-Z]\d{5,}$/.test(v))   return 'PKG';
-  return 'SN';
+  if (/^[A-Z0-9]{4,}$/.test(v))    return 'SN';
+  return null;                                       // 특수문자 등 알 수 없는 형식
 }
 
 /* ══════════════════════════════════════════
@@ -552,6 +555,9 @@ function onScan(raw) {
 
   const v    = raw.trim().replace(/\s+/g, '').toUpperCase();
   const type = classifyBarcode(v);
+
+  /* 판별 불가 바코드 무시 */
+  if (!type) return;
 
   /* 1. 중복 인식 방지 (Set 기반) */
   if (seenRaws.has(v)) return;

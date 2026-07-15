@@ -423,31 +423,47 @@ async function generateQuotation(mesFile, masterFile) {
   };
 }
 
-// ── 검증 세트 동기화 (master_jobs → verification_sets, 날짜별 배치) ──
+// ── 검증 세트 동기화 ──
+// master_jobs(order_no, po, sn) + shipments(ptn_no = PKG ID) 조인
+// → verification_sets에 upsert
 async function syncVerificationSets(batchDate) {
   const sb = getSB();
   if (!sb) throw new Error('Supabase 미연결');
 
   batchDate = batchDate || getActiveBatch();
 
-  let query = sb.from('master_jobs').select('order_no, po, sn, tkm_no, batch_date');
+  // 1. master_jobs 조회 (order_no, po, sn)
+  let query = sb.from('master_jobs').select('order_no, po, sn, batch_date');
   if (batchDate) query = query.eq('batch_date', batchDate);
-
   const { data: jobs, error: e1 } = await query;
   if (e1) throw new Error('master_jobs 조회 오류: ' + e1.message);
 
-  const rows = (jobs || [])
-    .filter(j => j.order_no && j.po)
-    .map(j => ({
+  const filtered = (jobs || []).filter(j => j.order_no && j.po);
+  if (!filtered.length) return { synced: 0, batch_date: batchDate };
+
+  // 2. shipments에서 PKG ID(ptn_no) 조회 — PO 기준 매핑
+  const poList = [...new Set(filtered.map(j => j.po.trim().toUpperCase()))];
+  const { data: shipments, error: e2 } = await sb
+    .from('shipments').select('po, ptn_no').in('po', poList);
+  if (e2) throw new Error('shipments 조회 오류: ' + e2.message);
+
+  const pkgMap = {};
+  (shipments || []).forEach(s => {
+    if (s.ptn_no) pkgMap[s.po.trim().toUpperCase()] = s.ptn_no.trim().toUpperCase();
+  });
+
+  // 3. verification_sets rows 생성
+  const rows = filtered.map(j => {
+    const poKey = j.po.trim().toUpperCase();
+    return {
       order_no:   j.order_no.trim(),
       batch_date: j.batch_date || batchDate,
-      po:         (j.po     || '').trim().toUpperCase(),
-      sn:         (j.sn     || '').trim().replace(/\s/g, '').toUpperCase(),
-      ptn_no:     (j.tkm_no || '').trim().toUpperCase() || null,
+      po:         poKey,
+      sn:         (j.sn || '').trim().replace(/\s/g, '').toUpperCase(),
+      ptn_no:     pkgMap[poKey] || null,
       created_at: new Date().toISOString(),
-    }));
-
-  if (!rows.length) return { synced: 0, batch_date: batchDate };
+    };
+  });
 
   const { error: upsertErr } = await sb
     .from('verification_sets')
