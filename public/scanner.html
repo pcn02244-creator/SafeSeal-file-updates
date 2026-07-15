@@ -377,6 +377,16 @@
     </div>
   </div>
 
+  <!-- DEBUG PANEL -->
+  <div id="dbg-wrap" style="
+    background:#000;color:#0f0;font:12px/1.5 monospace;
+    padding:8px 10px;max-height:130px;overflow-y:auto;
+    border-top:1px solid #333;
+  ">
+    <div style="color:#888;margin-bottom:4px">📡 RAW 스캔 로그 (최근 10건)</div>
+    <div id="dbg-log"></div>
+  </div>
+
   <!-- BOTTOM PANEL -->
   <div id="bottom">
 
@@ -583,6 +593,21 @@ function showResult(result) {
 }
 
 /* ══════════════════════════════════════════
+   디버그 로그 출력 (화면 하단 패널)
+══════════════════════════════════════════ */
+const dbgLines = [];
+function dbgLog(raw, norm, type) {
+  const tag  = type ? `[${type}]` : '[무시]';
+  const line = `${tag} raw="${raw}" → "${norm}"`;
+  dbgLines.unshift(line);
+  if (dbgLines.length > 10) dbgLines.pop();
+  const el = document.getElementById('dbg-log');
+  if (el) el.innerHTML = dbgLines
+    .map(l => `<div style="color:${l.startsWith('[무시]')?'#666':l.startsWith('[PKG]')?'#ff0':'#0f0'}">${l}</div>`)
+    .join('');
+}
+
+/* ══════════════════════════════════════════
    스캔 성공 처리 (zxing-wasm readBarcodesFromImageData)
 
    중복/연속 처리 규칙:
@@ -597,6 +622,9 @@ function onScan(raw) {
 
   const v    = normalizeBarcode(raw);
   const type = classifyBarcode(v);
+
+  /* 항상 로그 출력 (null 포함) */
+  dbgLog(raw, v, type);
 
   /* 판별 불가 바코드 무시 */
   if (!type) return;
