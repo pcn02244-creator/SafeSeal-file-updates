@@ -521,16 +521,21 @@ function normalizeBarcode(raw) {
 
 /* ══════════════════════════════════════════
    바코드 종류 분류 (정규화된 값을 받음)
-   - PO:  순수 숫자 10~13자리 (거래명세서 CODE128)
-   - PKG: 숫자+대문자+숫자 혼합 (PTN 라벨 PKG ID, 예: 4A7617246)
-   - SN:  그 외 영숫자 4자 이상 (제품 PN/SN 라벨)
-   - null: 너무 짧거나 판별 불가 → 무시
+   반환: { type, value } | null
+   - PO:  순수 숫자 10~13자리
+   - PKG: 문자열 안 어디서든 \d[A-Z]\d{5,} 패턴 추출
+          예) "3S4A7617246" → value:"4A7617246"
+              "(3S)4A7617246" → normalizeBarcode 후 → "4A7617246"
+   - SN:  그 외 영숫자 4자 이상
+   - null: 판별 불가
 ══════════════════════════════════════════ */
 function classifyBarcode(v) {
-  if (v.length < 4)                  return null;
-  if (/^\d{10,13}$/.test(v))        return 'PO';
-  if (/^\d[A-Z]\d{5,}$/.test(v))   return 'PKG';
-  if (/^[A-Z0-9]{4,}$/.test(v))    return 'SN';
+  if (v.length < 4) return null;
+  if (/^\d{10,13}$/.test(v)) return { type: 'PO', value: v };
+  // PKG ID: 전체 매치 대신 패턴 서치 — GS1 AI 접두어가 붙어도 추출
+  const pkgM = v.match(/\d[A-Z]\d{5,}/);
+  if (pkgM) return { type: 'PKG', value: pkgM[0] };
+  if (/^[A-Z0-9]{4,}$/.test(v)) return { type: 'SN', value: v };
   return null;
 }
 
@@ -620,33 +625,34 @@ function dbgLog(raw, norm, type) {
 function onScan(raw) {
   if (!scanning) return;
 
-  const v    = normalizeBarcode(raw);
-  const type = classifyBarcode(v);
+  const norm = normalizeBarcode(raw);
+  const res  = classifyBarcode(norm);
 
   /* 항상 로그 출력 (null 포함) */
-  dbgLog(raw, v, type);
+  dbgLog(raw, norm, res ? res.type : null);
 
   /* 판별 불가 바코드 무시 */
-  if (!type) return;
+  if (!res) return;
 
-  /* 1. 중복 인식 방지 (Set 기반) */
-  if (seenRaws.has(v)) return;
-  seenRaws.add(v);
+  const { type, value } = res;
+
+  /* 1. 중복 인식 방지 — raw 원본 기준 (같은 물리 바코드 재스캔 차단) */
+  if (seenRaws.has(norm)) return;
+  seenRaws.add(norm);
 
   /* 2. 직전과 같은 타입 연속 스캔 → 슬롯 탈락 + 새 값으로 갱신 */
   if (type === lastScanType && scanned[type]) {
-    /* 칩 flash → 탈락 시각 피드백 */
     const chip = $('chip-' + type);
     chip.classList.remove('done');
     chip.querySelector('.mi').textContent = CHIP_ICONS[type];
-    void chip.offsetWidth; // reflow
+    void chip.offsetWidth;
     chip.classList.add('flash');
     chip.addEventListener('animationend', () => chip.classList.remove('flash'), { once: true });
-    if (navigator.vibrate) navigator.vibrate([30, 30, 30]); // 탈락 진동
+    if (navigator.vibrate) navigator.vibrate([30, 30, 30]);
   }
 
-  /* 슬롯 갱신 */
-  scanned[type] = v;
+  /* 슬롯 갱신 — PKG는 추출된 순수 PKG ID만 저장 */
+  scanned[type] = value;
   lastScanType  = type;
 
   /* 칩 done 상태 */
@@ -755,7 +761,10 @@ async function startCamera() {
         ctx1.getImageData(0, 0, w1, h1),
         { tryHarder: false, tryRotate: true, tryInvert: false, tryDownscale: false }
       );
-      if (res1.length) { onScan(res1[0].text); busy = false; return; }
+      if (res1.length) {
+        res1.forEach(r => onScan(r.text)); // 복수 바코드 전부 처리
+        busy = false; return;
+      }
 
       /* ─ 2단계: 정밀 스캔 (3프레임마다 1회, 풀해상도) ─ */
       if (frameCount % 3 === 0) {
@@ -766,7 +775,7 @@ async function startCamera() {
           ctx2.getImageData(0, 0, vw, vh),
           { tryHarder: true, tryRotate: true, tryInvert: true, tryDownscale: true }
         );
-        if (res2.length) onScan(res2[0].text);
+        res2.forEach(r => onScan(r.text)); // 복수 바코드 전부 처리
       }
     } catch (_) {}
 
