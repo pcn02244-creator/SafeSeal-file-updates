@@ -313,6 +313,23 @@
       font-family: var(--fn); font-size: 14px; font-weight: 700;
       cursor: pointer;
     }
+
+    /* 스캔 성공 화이트 플래시 */
+    #scan-flash {
+      position: fixed; inset: 0; z-index: 9999;
+      background: #fff;
+      opacity: 0; pointer-events: none;
+    }
+    #scan-flash.go {
+      animation: flash-fade 0.35s ease-out forwards;
+    }
+    @keyframes flash-fade {
+      0%   { opacity: 0.85; }
+      100% { opacity: 0; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #scan-flash.go { animation: none; opacity: 0; }
+    }
   </style>
 </head>
 <body>
@@ -401,6 +418,9 @@
 
 </div>
 
+<!-- 스캔 성공 화이트 플래시 오버레이 -->
+<div id="scan-flash"></div>
+
 <script>
 /* ═══════════════════════════════════════════════
    SafeSeal Mobile Barcode Scanner
@@ -478,19 +498,41 @@ async function doSync() {
 }
 
 /* ══════════════════════════════════════════
-   바코드 종류 분류
+   바코드 정규화
+   GS1-128 AI 괄호 제거: "(3S)4A7617246" → "4A7617246"
+   제어문자(GS \x1d 등) 제거, 대문자 변환
+══════════════════════════════════════════ */
+function normalizeBarcode(raw) {
+  let v = raw.replace(/[\x00-\x1f\x7f]/g, '').trim().toUpperCase();
+  // GS1 AI 괄호 제거 (반복 적용: "(3S)(K)..." 처럼 여러 개 붙은 경우도 처리)
+  v = v.replace(/\([A-Z0-9]{1,4}\)/g, '');
+  return v.replace(/\s+/g, '');
+}
+
+/* ══════════════════════════════════════════
+   바코드 종류 분류 (정규화된 값을 받음)
    - PO:  순수 숫자 10~13자리 (거래명세서 CODE128)
    - PKG: 숫자+대문자+숫자 혼합 (PTN 라벨 PKG ID, 예: 4A7617246)
    - SN:  그 외 영숫자 4자 이상 (제품 PN/SN 라벨)
    - null: 너무 짧거나 판별 불가 → 무시
 ══════════════════════════════════════════ */
-function classifyBarcode(raw) {
-  const v = raw.trim().replace(/\s+/g, '').toUpperCase();
-  if (v.length < 4)                  return null;   // 너무 짧으면 무시
+function classifyBarcode(v) {
+  if (v.length < 4)                  return null;
   if (/^\d{10,13}$/.test(v))        return 'PO';
   if (/^\d[A-Z]\d{5,}$/.test(v))   return 'PKG';
   if (/^[A-Z0-9]{4,}$/.test(v))    return 'SN';
-  return null;                                       // 특수문자 등 알 수 없는 형식
+  return null;
+}
+
+/* ══════════════════════════════════════════
+   스캔 성공 화이트 플래시
+══════════════════════════════════════════ */
+function flashScreen() {
+  const el = document.getElementById('scan-flash');
+  el.classList.remove('go');
+  void el.offsetWidth; // reflow
+  el.classList.add('go');
+  el.addEventListener('animationend', () => el.classList.remove('go'), { once: true });
 }
 
 /* ══════════════════════════════════════════
@@ -553,7 +595,7 @@ function showResult(result) {
 function onScan(raw) {
   if (!scanning) return;
 
-  const v    = raw.trim().replace(/\s+/g, '').toUpperCase();
+  const v    = normalizeBarcode(raw);
   const type = classifyBarcode(v);
 
   /* 판별 불가 바코드 무시 */
@@ -586,6 +628,7 @@ function onScan(raw) {
   chip.classList.add('flash');
   chip.addEventListener('animationend', () => chip.classList.remove('flash'), { once: true });
 
+  flashScreen();
   if (navigator.vibrate) navigator.vibrate(60);
   beep800();
 
