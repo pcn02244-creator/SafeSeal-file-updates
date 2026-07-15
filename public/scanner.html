@@ -314,6 +314,38 @@
       cursor: pointer;
     }
 
+    /* 스캔 이력 패널 */
+    #hist-panel {
+      display: none;
+      position: fixed; inset: 0; z-index: 8000;
+      background: #0a0f1e;
+      flex-direction: column;
+      font-family: var(--fn);
+    }
+    #hist-panel.show { display: flex; }
+    #hist-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 16px;
+      border-bottom: 1px solid rgba(255,255,255,.1);
+      color: #fff;
+    }
+    #hist-list {
+      flex: 1; overflow-y: auto; padding: 10px 12px;
+    }
+    .hist-item {
+      background: rgba(255,255,255,.05);
+      border: 1px solid rgba(255,255,255,.1);
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin-bottom: 10px;
+      color: #fff;
+    }
+    .hist-item .hi-time { font-size: 11px; color: rgba(255,255,255,.4); margin-bottom: 6px; }
+    .hist-item .hi-row  { font-size: 13px; display: flex; gap: 8px; margin-bottom: 3px; }
+    .hist-item .hi-lbl  { color: rgba(255,255,255,.45); min-width: 52px; font-size: 11px; padding-top:1px; }
+    .hist-item .hi-val  { font-family: monospace; font-size: 13px; color: #7ee8a2; }
+    .hist-empty { color: rgba(255,255,255,.3); text-align: center; padding: 40px 0; font-size: 14px; }
+
     /* 스캔 성공 화이트 플래시 */
     #scan-flash {
       position: fixed; inset: 0; z-index: 9999;
@@ -352,6 +384,16 @@
     <div id="batch-badge" style="font-size:10px;font-weight:700;color:rgba(255,255,255,.5);letter-spacing:.04em;margin-right:2px" title="활성 배치 날짜"></div>
     <div id="master-badge">로드 중...</div>
     <span class="mi" id="sync-btn" title="재동기화" onclick="doSync().then(()=>scanMsg.textContent='')">sync</span>
+    <span class="mi" id="hist-btn" title="스캔 이력" onclick="toggleHistory()" style="margin-left:4px">history</span>
+  </div>
+
+  <!-- 이력 패널 -->
+  <div id="hist-panel">
+    <div id="hist-header">
+      <span style="font-weight:700;font-size:13px">📋 스캔 PASS 이력</span>
+      <span class="mi" onclick="toggleHistory()" style="cursor:pointer;font-size:18px">close</span>
+    </div>
+    <div id="hist-list"><div class="hist-empty">불러오는 중...</div></div>
   </div>
 
   <!-- STATUS CHIPS -->
@@ -599,6 +641,73 @@ function showResult(result) {
   }
 
   if (navigator.vibrate) navigator.vibrate(ok ? [80, 40, 80] : [200, 80, 200]);
+  if (ok) saveScanLog(result);
+}
+
+/* ══════════════════════════════════════════
+   스캔 PASS 이력 저장
+══════════════════════════════════════════ */
+async function saveScanLog(result) {
+  const sb = getSB();
+  if (!sb) return;
+  try {
+    await sb.from('scan_logs').insert({
+      po:         scanned.PO  || null,
+      pkg_id:     scanned.PKG || null,
+      sn:         scanned.SN  || null,
+      order_no:   result.order_no   || null,
+      batch_date: result.batch_date || null,
+      result:     'PASS',
+    });
+  } catch(e) {
+    console.warn('scan_logs 저장 실패:', e.message);
+  }
+}
+
+/* ══════════════════════════════════════════
+   이력 패널 토글 / 조회
+══════════════════════════════════════════ */
+function toggleHistory() {
+  const panel = $('hist-panel');
+  if (panel.classList.contains('show')) {
+    panel.classList.remove('show');
+  } else {
+    panel.classList.add('show');
+    loadHistory();
+  }
+}
+
+async function loadHistory() {
+  const list = $('hist-list');
+  list.innerHTML = '<div class="hist-empty">불러오는 중...</div>';
+  const sb = getSB();
+  if (!sb) { list.innerHTML = '<div class="hist-empty">Supabase 미연결</div>'; return; }
+  try {
+    const { data, error } = await sb
+      .from('scan_logs')
+      .select('scanned_at,po,pkg_id,sn,order_no')
+      .order('scanned_at', { ascending: false })
+      .limit(50);
+    if (error) throw error;
+    if (!data || !data.length) {
+      list.innerHTML = '<div class="hist-empty">이력 없음</div>';
+      return;
+    }
+    list.innerHTML = data.map(r => {
+      const dt = new Date(r.scanned_at);
+      const ts = dt.toLocaleDateString('ko-KR',{month:'2-digit',day:'2-digit'})
+               + ' ' + dt.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+      return `<div class="hist-item">
+        <div class="hi-time">${ts}</div>
+        <div class="hi-row"><span class="hi-lbl">주문번호</span><span class="hi-val">${r.order_no||'—'}</span></div>
+        <div class="hi-row"><span class="hi-lbl">PO</span><span class="hi-val">${r.po||'—'}</span></div>
+        <div class="hi-row"><span class="hi-lbl">PKG ID</span><span class="hi-val">${r.pkg_id||'—'}</span></div>
+        <div class="hi-row"><span class="hi-lbl">SN</span><span class="hi-val">${r.sn||'—'}</span></div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    list.innerHTML = `<div class="hist-empty">조회 실패: ${e.message}</div>`;
+  }
 }
 
 /* ══════════════════════════════════════════
