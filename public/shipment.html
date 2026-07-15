@@ -1034,14 +1034,18 @@
 
     /* PDF에서 (3S) PKG ID + (K) AMAT ORDER NO 쌍 추출 */
     function parsePTNPairs(text) {
-      // (3S) PKG ID: [whitespace] 4A7617246
-      const pkgRe   = /\(3S\)\s*PKG\s*ID\s*[:\s]+([A-Z0-9]{5,20})/g;
-      // (K) AMAT ORDER NO: [whitespace] 4523050466 (+ suffix 무시)
-      const orderRe = /\(K\)\s*AMAT\s*ORDER\s*NO\s*[:\s]+(\d{10})/g;
-      const pkgIds  = [...text.matchAll(pkgRe)].map(m => m[1]);
-      const pos     = [...text.matchAll(orderRe)].map(m => m[1]);
-      const n = Math.min(pkgIds.length, pos.length);
-      return Array.from({ length: n }, (_, i) => ({ po: pos[i], pkgId: pkgIds[i] }));
+      const pkgMatches   = [...text.matchAll(/\(3S\)\s*PKG ID:\s*([A-Z0-9]+)/gi)].map(m => m[1]);
+      const poMatches    = [...text.matchAll(/\(K\)\s*AMAT ORDER NO:\s*(\d+)/gi)].map(m => m[1]);
+      if (pkgMatches.length !== poMatches.length) {
+        console.warn(
+          `PTN 파싱: PKG ID(${pkgMatches.length}건)와 PO 번호(${poMatches.length}건) 개수가 다릅니다. ` +
+          `더 적은 쪽 개수만큼만 짝지어 반환합니다.`
+        );
+      }
+      const count = Math.min(pkgMatches.length, poMatches.length);
+      const results = [];
+      for (let i = 0; i < count; i++) results.push({ po: poMatches[i], pkgId: pkgMatches[i] });
+      return results;
     }
 
     function toggleAllPtnPairs(checked) {
@@ -1069,7 +1073,7 @@
         for (let i = 1; i <= pdfDoc.numPages; i++) {
           const page = await pdfDoc.getPage(i);
           const ct   = await page.getTextContent();
-          text += ct.items.map(it => it.str).join(' ') + '\n';
+          text += ct.items.map(it => it.str).join('\n') + '\n';
         }
         ptnPdfText = text;
 
