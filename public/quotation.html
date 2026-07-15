@@ -147,6 +147,7 @@
           <span class="fw-bold">📋 견적서 데이터</span>
           <div class="d-flex align-items-center gap-3">
             <span id="filter-count" class="small text-muted"></span>
+            <button class="btn btn-sm btn-outline-warning fw-semibold" onclick="openUsageModal()">📊 Usage 등록</button>
             <button class="btn btn-sm btn-outline-primary" onclick="exportExcel()">📥 엑셀 다운로드</button>
             <button class="btn btn-sm btn-outline-success" onclick="exportCSV()">📥 CSV</button>
           </div>
@@ -287,6 +288,59 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+  <!-- Usage 등록 모달 -->
+  <div class="modal fade" id="usageModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header bg-warning">
+          <h5 class="modal-title fw-bold">📊 견적 기반 Usage 등록</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="row g-2 mb-3">
+            <div class="col-auto">
+              <label class="form-label small fw-semibold mb-1">기준 날짜</label>
+              <input type="date" class="form-control form-control-sm" id="u-date" style="width:160px">
+            </div>
+            <div class="col">
+              <label class="form-label small fw-semibold mb-1">비고</label>
+              <input type="text" class="form-control form-control-sm" id="u-note" placeholder="예: 2026-07-15 견적분">
+            </div>
+          </div>
+          <div class="mb-2 d-flex align-items-center gap-3">
+            <span class="small fw-semibold">파트별 합산 수량 — 등록할 항목 선택</span>
+            <label class="small text-muted d-flex align-items-center gap-1" style="cursor:pointer">
+              <input type="checkbox" id="u-chk-all" onchange="uToggleAll(this.checked)"> 전체 선택
+            </label>
+          </div>
+          <div style="max-height:380px;overflow-y:auto;border:1px solid #dee2e6;border-radius:6px">
+            <table class="table table-hover table-sm mb-0 align-middle" style="font-size:13px">
+              <thead class="table-dark sticky-top">
+                <tr>
+                  <th style="width:36px"></th>
+                  <th>Part Number</th>
+                  <th>Description</th>
+                  <th class="text-center">이번 수량</th>
+                  <th class="text-center">현재 누적</th>
+                  <th class="text-center">등록 후 누적</th>
+                  <th class="text-center">단가 구분</th>
+                </tr>
+              </thead>
+              <tbody id="u-tbody"></tbody>
+            </table>
+          </div>
+          <div id="u-warn" class="alert alert-warning mt-2 mb-0 py-2 small d-none"></div>
+        </div>
+        <div class="modal-footer">
+          <span class="text-muted small me-auto" id="u-sel-count"></span>
+          <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">취소</button>
+          <button class="btn btn-warning btn-sm fw-bold" onclick="saveUsageFromQuotation()">✅ 선택 항목 Usage 등록</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     let quotationData = [];
     let filteredData  = [];
@@ -690,6 +744,135 @@
       a.href = URL.createObjectURL(blob);
       a.download = `견적_${new Date().toISOString().slice(0,10)}.csv`;
       a.click();
+    }
+
+    /* ══════════════════════════════════════════
+       Usage 등록 모달
+    ══════════════════════════════════════════ */
+    let usageModalInst = null;
+    let uRows = [];  // { pn, description, qty, cumBefore, cumAfter, threshold, priceType }
+
+    function openUsageModal() {
+      if (!quotationData.length) { alert('먼저 견적을 생성하세요.'); return; }
+
+      // 파트별 수량 합산
+      const qtyMap = {};
+      quotationData.forEach(q => {
+        q.replParts.forEach(p => {
+          qtyMap[p.pn] = (qtyMap[p.pn] || 0) + p.qty;
+        });
+      });
+
+      // 현재 usage 누적 & 파트 단가 정보 조회
+      const parts   = DB.parts.get();
+      const usageDB = DB.usage.get();
+      const partsMap = {};
+      parts.forEach(p => { partsMap[p.part_number] = p; });
+      const cumMap = {};
+      usageDB.forEach(u => { cumMap[u.part_number] = (cumMap[u.part_number] || 0) + u.quantity; });
+
+      uRows = Object.entries(qtyMap).map(([pn, qty]) => {
+        const p         = partsMap[pn] || {};
+        const cumBefore = cumMap[pn] || 0;
+        const cumAfter  = cumBefore + qty;
+        const threshold = p.qty_threshold || 0;
+        const exceeded  = threshold > 0 && cumAfter > threshold;
+        return {
+          pn, qty,
+          description: p.description || '',
+          cumBefore, cumAfter, threshold,
+          crossThreshold: threshold > 0 && cumBefore <= threshold && cumAfter > threshold,
+          priceType: exceeded ? 'To-be' : 'As-is',
+        };
+      }).sort((a, b) => a.pn.localeCompare(b.pn));
+
+      // 날짜 기본값 오늘
+      const today = new Date().toISOString().slice(0, 10);
+      document.getElementById('u-date').value = today;
+      document.getElementById('u-note').value = `${today} 견적분`;
+
+      // 테이블 렌더
+      const tbody = document.getElementById('u-tbody');
+      tbody.innerHTML = uRows.map((r, i) => {
+        const crossBadge = r.crossThreshold
+          ? '<span class="badge bg-danger ms-1">임계 초과!</span>' : '';
+        const cumAfterCls = r.crossThreshold ? 'text-danger fw-bold' : '';
+        return `<tr class="${r.crossThreshold ? 'table-danger' : ''}">
+          <td class="text-center">
+            <input type="checkbox" class="u-chk" data-i="${i}" checked onchange="uUpdateCount()">
+          </td>
+          <td class="font-monospace fw-semibold">${r.pn}</td>
+          <td class="text-muted small">${r.description || '—'}</td>
+          <td class="text-center fw-bold">${r.qty.toLocaleString()}</td>
+          <td class="text-center">${r.cumBefore.toLocaleString()}</td>
+          <td class="text-center ${cumAfterCls}">${r.cumAfter.toLocaleString()}${crossBadge}</td>
+          <td class="text-center">
+            <span class="badge ${r.priceType === 'To-be' ? 'bg-danger' : 'bg-success'}">${r.priceType}</span>
+          </td>
+        </tr>`;
+      }).join('');
+
+      document.getElementById('u-chk-all').checked = true;
+      uUpdateCount();
+
+      const crosses = uRows.filter(r => r.crossThreshold);
+      const warn = document.getElementById('u-warn');
+      if (crosses.length) {
+        warn.textContent = `⚠️ ${crosses.map(r => r.pn).join(', ')} — 이번 등록으로 As-is 임계 수량을 초과하여 To-be 단가로 전환됩니다.`;
+        warn.classList.remove('d-none');
+      } else {
+        warn.classList.add('d-none');
+      }
+
+      if (!usageModalInst) usageModalInst = new bootstrap.Modal(document.getElementById('usageModal'));
+      usageModalInst.show();
+    }
+
+    function uToggleAll(checked) {
+      document.querySelectorAll('.u-chk').forEach(c => c.checked = checked);
+      uUpdateCount();
+    }
+
+    function uUpdateCount() {
+      const n = document.querySelectorAll('.u-chk:checked').length;
+      document.getElementById('u-sel-count').textContent = `${n}개 파트 선택됨`;
+    }
+
+    async function saveUsageFromQuotation() {
+      const date = document.getElementById('u-date').value;
+      const note = document.getElementById('u-note').value.trim();
+      if (!date) { alert('날짜를 입력하세요.'); return; }
+
+      const selected = [...document.querySelectorAll('.u-chk:checked')].map(c => uRows[+c.dataset.i]);
+      if (!selected.length) { alert('등록할 항목을 선택하세요.'); return; }
+
+      const sb      = getSB();
+      const usageDB = DB.usage.get();
+      const newId0  = usageDB.length ? Math.max(...usageDB.map(u => u.id || 0)) + 1 : 1;
+
+      const records = selected.map((r, i) => ({
+        id:           newId0 + i,
+        date,
+        part_number:  r.pn,
+        quantity:     r.qty,
+        note:         note || null,
+      }));
+
+      try {
+        if (sb) {
+          const { error } = await sb.from('usage').insert(records);
+          if (error) throw error;
+          const { data } = await sb.from('usage').select('*').order('id');
+          if (data) DB._s('usage', data);
+        } else {
+          const updated = [...usageDB, ...records];
+          DB._s('usage', updated);
+        }
+        usageModalInst.hide();
+        alert(`✅ ${records.length}개 파트 Usage 등록 완료`);
+      } catch(e) {
+        alert('저장 실패: ' + e.message);
+      }
     }
   </script>
 </body>
