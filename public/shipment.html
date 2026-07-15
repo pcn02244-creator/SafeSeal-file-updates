@@ -390,6 +390,9 @@
           placeholder="PO번호 / 0247# 검색" oninput="renderList()"
           style="width:224px;padding-left:30px">
       </div>
+      <select class="form-select form-select-sm" id="date-filter" onchange="renderList()" style="width:140px">
+        <option value="">전체 출하일</option>
+      </select>
       <select class="form-select form-select-sm" id="ptn-filter" onchange="renderList()" style="width:150px">
         <option value="">전체 상태</option>
         <option value="uploaded">PTN 업로드됨</option>
@@ -801,14 +804,26 @@
       finally {
         document.getElementById('loading').classList.add('d-none');
         document.getElementById('po-container').classList.remove('d-none');
+        populateDateFilter();
         renderList();
       }
     }
 
     /* ════ 리스트 렌더 ════ */
+    function populateDateFilter() {
+      const sel = document.getElementById('date-filter');
+      const cur = sel.value;
+      const dates = [...new Set(
+        poGroups.map(g => g.shipment?.ship_date).filter(Boolean)
+      )].sort((a, b) => b.localeCompare(a));
+      sel.innerHTML = '<option value="">전체 출하일</option>'
+        + dates.map(d => `<option value="${d}"${d === cur ? ' selected' : ''}>${d}</option>`).join('');
+    }
+
     function renderList() {
-      const search    = document.getElementById('search-input').value.trim().toLowerCase();
-      const ptnFilter = document.getElementById('ptn-filter').value;
+      const search     = document.getElementById('search-input').value.trim().toLowerCase();
+      const ptnFilter  = document.getElementById('ptn-filter').value;
+      const dateFilter = document.getElementById('date-filter').value;
 
       filteredGrps = poGroups.filter(g => {
         const matchSearch = !search
@@ -817,7 +832,9 @@
         const matchPtn = !ptnFilter
           || (ptnFilter === 'uploaded' &&  g.shipment?.ptn_no)
           || (ptnFilter === 'missing'  && !g.shipment?.ptn_no);
-        return matchSearch && matchPtn;
+        const matchDate = !dateFilter
+          || g.shipment?.ship_date === dateFilter;
+        return matchSearch && matchPtn && matchDate;
       });
 
       const total = filteredGrps.length;
