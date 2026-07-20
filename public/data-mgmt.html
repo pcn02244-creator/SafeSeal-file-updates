@@ -110,6 +110,40 @@
     .empty-state{text-align:center;padding:40px;color:var(--mut);font-size:13px;}
     .empty-state .mi{font-size:36px;display:block;margin-bottom:8px;opacity:.4;}
 
+    /* CALENDAR */
+    .cal-wrap{background:var(--sur);border:1px solid var(--bdr);border-radius:12px;overflow:hidden;}
+    .cal-nav{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--bdr);}
+    .cal-nav-btn{background:none;border:1.5px solid var(--bdr);border-radius:8px;width:32px;height:32px;cursor:pointer;font-size:16px;color:var(--mut);display:flex;align-items:center;justify-content:center;transition:.15s;}
+    .cal-nav-btn:hover{border-color:var(--p);color:var(--p);}
+    .cal-title{font-size:15px;font-weight:700;color:var(--txt);}
+    .cal-legend{display:flex;gap:12px;flex-wrap:wrap;padding:10px 20px;border-bottom:1px solid var(--bdr);background:var(--bg);}
+    .cal-leg-item{display:flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:var(--mut);}
+    .cal-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+    .dot-master{background:#004E89;} .dot-ptn{background:#51CB20;} .dot-ship{background:#f59e0b;} .dot-scan{background:#DC2626;}
+    .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);}
+    .cal-dow{padding:8px 4px;text-align:center;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--mut);background:var(--bg);border-bottom:1px solid var(--bdr);}
+    .cal-dow:first-child{color:#e53e3e;} .cal-dow:last-child{color:#3182ce;}
+    .cal-cell{min-height:72px;padding:6px 8px;border-right:1px solid var(--bdr);border-bottom:1px solid var(--bdr);cursor:pointer;transition:.12s;position:relative;}
+    .cal-cell:nth-child(7n){border-right:none;}
+    .cal-cell:hover{background:var(--p-bg);}
+    .cal-cell.empty{background:var(--bg);cursor:default;}
+    .cal-cell.today .cal-day-num{background:var(--p);color:#fff;border-radius:50%;}
+    .cal-cell.selected{background:var(--p-bg);box-shadow:inset 0 0 0 2px var(--p);}
+    .cal-day-num{width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:var(--txt);margin-bottom:4px;}
+    .cal-cell.sunday .cal-day-num{color:#e53e3e;}
+    .cal-cell.saturday .cal-day-num{color:#3182ce;}
+    .cal-dots{display:flex;flex-wrap:wrap;gap:3px;}
+    .cal-dot-sm{width:6px;height:6px;border-radius:50%;}
+    .cal-cnt{font-size:9px;font-weight:700;color:var(--mut);margin-left:1px;}
+    /* detail */
+    .cal-detail{background:var(--sur);border:1px solid var(--bdr);border-radius:12px;margin-top:14px;overflow:hidden;display:none;}
+    .cal-detail.show{display:block;}
+    .cal-detail-hdr{padding:14px 18px;border-bottom:1px solid var(--bdr);font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:space-between;}
+    .cal-section{padding:12px 18px;border-bottom:1px solid var(--bdr);}
+    .cal-section:last-child{border-bottom:none;}
+    .cal-sec-title{font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;margin-bottom:8px;display:flex;align-items:center;gap:6px;}
+    .cal-sec-empty{font-size:12px;color:var(--mut);padding:4px 0;}
+
     /* DIAG PANEL */
     #diag-wrap{margin-bottom:18px;display:none;}
     #diag-wrap.show{display:block;}
@@ -185,6 +219,9 @@
     </button>
     <button class="tab-btn" onclick="switchTab('h')" id="tab-h-btn">
       <span class="mi">history</span>스캔 이력
+    </button>
+    <button class="tab-btn" onclick="switchTab('c')" id="tab-c-btn">
+      <span class="mi">calendar_month</span>캘린더
     </button>
   </div>
 
@@ -292,6 +329,45 @@
     <div class="empty-state" id="h-empty" style="display:none">
       <span class="mi">history</span>
       선택한 배치에 스캔 이력이 없습니다.
+    </div>
+  </div>
+
+  <!-- ── 캘린더 탭 ── -->
+  <div class="tab-content" id="tab-c">
+    <div class="sec-title">날짜별 데이터 현황</div>
+
+    <div class="cal-wrap">
+      <!-- 월 네비게이션 -->
+      <div class="cal-nav">
+        <button class="cal-nav-btn" onclick="calMove(-1)">‹</button>
+        <span class="cal-title" id="cal-title"></span>
+        <button class="cal-nav-btn" onclick="calMove(1)">›</button>
+      </div>
+      <!-- 범례 -->
+      <div class="cal-legend">
+        <span class="cal-leg-item"><span class="cal-dot dot-master"></span>마스터/견적</span>
+        <span class="cal-leg-item"><span class="cal-dot dot-ptn"></span>PTN 업로드</span>
+        <span class="cal-leg-item"><span class="cal-dot dot-ship"></span>출하일</span>
+        <span class="cal-leg-item"><span class="cal-dot dot-scan"></span>스캔 이력</span>
+      </div>
+      <!-- 요일 헤더 -->
+      <div class="cal-grid" id="cal-dow">
+        <div class="cal-dow">일</div><div class="cal-dow">월</div><div class="cal-dow">화</div>
+        <div class="cal-dow">수</div><div class="cal-dow">목</div><div class="cal-dow">금</div>
+        <div class="cal-dow">토</div>
+      </div>
+      <!-- 날짜 그리드 -->
+      <div class="cal-grid" id="cal-cells"></div>
+    </div>
+
+    <!-- 날짜 클릭 시 상세 -->
+    <div class="cal-detail" id="cal-detail">
+      <div class="cal-detail-hdr">
+        <span id="cal-detail-date"></span>
+        <button onclick="document.getElementById('cal-detail').classList.remove('show')"
+          style="background:none;border:none;cursor:pointer;color:var(--mut);font-size:18px;line-height:1">✕</button>
+      </div>
+      <div id="cal-detail-body"></div>
     </div>
   </div>
 
@@ -484,11 +560,12 @@ function toast(msg, dur) {
    탭 전환
 ────────────────────────────────────────────── */
 function switchTab(name) {
-  ['q','p','s','h'].forEach(n => {
+  ['q','p','s','h','c'].forEach(n => {
     document.getElementById('tab-' + n + '-btn').classList.toggle('active', n === name);
     document.getElementById('tab-' + n).classList.toggle('active', n === name);
   });
   if (name === 'h') initScanHistoryTab();
+  if (name === 'c') initCalTab();
 }
 
 /* ──────────────────────────────────────────────
@@ -670,6 +747,201 @@ async function hDeleteSelected() {
     btn.textContent = `🗑 선택 삭제 (${ids.length}건)`;
     btn.style.pointerEvents = '';
   }
+}
+
+/* ──────────────────────────────────────────────
+   캘린더 탭
+────────────────────────────────────────────── */
+let calData   = null;
+let calYear   = null;
+let calMonth  = null;  // 0-based (null = 미초기화)
+let calLoaded = false;
+
+async function initCalTab() {
+  const now = new Date();
+  if (calYear === null)  calYear  = now.getFullYear();
+  if (calMonth === null) calMonth = now.getMonth();
+
+  // 최초 진입 시 데이터 로드
+  if (!calLoaded) {
+    calLoaded = true;
+    await loadCalData();
+  }
+  renderCal();
+}
+
+async function loadCalData() {
+  const sb = getClient();
+  if (!sb) return;
+
+  const dateMap = {};
+  const ensure = d => { if (!dateMap[d]) dateMap[d] = { master:0, ptn:0, ship:0, scan:0 }; };
+
+  // 1. master_jobs — batch_date 기준
+  const { data: mj } = await sb.from('master_jobs').select('batch_date, order_no, po, sn');
+  (mj || []).forEach(r => {
+    if (!r.batch_date) return;
+    ensure(r.batch_date);
+    dateMap[r.batch_date].master++;
+  });
+
+  // 2. shipments — ship_date & ptn_uploaded_at
+  const { data: sh } = await sb.from('shipments').select('po, ship_date, ptn_no, ptn_uploaded_at');
+  (sh || []).forEach(r => {
+    if (r.ptn_uploaded_at) {
+      const d = r.ptn_uploaded_at.slice(0,10);
+      ensure(d); dateMap[d].ptn++;
+    }
+    if (r.ship_date) {
+      const d = r.ship_date.slice(0,10);
+      ensure(d); dateMap[d].ship++;
+    }
+  });
+
+  // 3. scan_logs — scanned_at 날짜 추출
+  const { data: sc } = await sb.from('scan_logs').select('scanned_at, po, sn, order_no');
+  (sc || []).forEach(r => {
+    if (!r.scanned_at) return;
+    const d = r.scanned_at.slice(0,10);
+    ensure(d); dateMap[d].scan++;
+  });
+
+  // 상세용 원본 데이터도 보관
+  calData = { dateMap, mj: mj||[], sh: sh||[], sc: sc||[] };
+}
+
+function calMove(delta) {
+  calMonth += delta;
+  if (calMonth > 11) { calMonth = 0;  calYear++; }
+  if (calMonth < 0)  { calMonth = 11; calYear--; }
+  renderCal();
+  // 선택 상세 닫기
+  document.getElementById('cal-detail').classList.remove('show');
+}
+
+function renderCal() {
+  const KO_MONTHS = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+  document.getElementById('cal-title').textContent = `${calYear}년 ${KO_MONTHS[calMonth]}`;
+
+  const today = new Date().toISOString().slice(0,10);
+  const firstDay  = new Date(calYear, calMonth, 1).getDay(); // 0=일
+  const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+  const dm = calData?.dateMap || {};
+
+  let html = '';
+  // 빈 칸 (월 첫날 이전)
+  for (let i = 0; i < firstDay; i++) {
+    html += '<div class="cal-cell empty"></div>';
+  }
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const mm  = String(calMonth + 1).padStart(2,'0');
+    const dd  = String(d).padStart(2,'0');
+    const iso = `${calYear}-${mm}-${dd}`;
+    const info = dm[iso] || {};
+    const isToday = iso === today;
+    const dow = (firstDay + d - 1) % 7;
+    const cls = [
+      'cal-cell',
+      isToday ? 'today' : '',
+      dow === 0 ? 'sunday' : '',
+      dow === 6 ? 'saturday' : '',
+    ].filter(Boolean).join(' ');
+
+    let dots = '';
+    if (info.master) dots += `<span class="cal-dot-sm dot-master" title="마스터/견적 ${info.master}건"></span>`;
+    if (info.ptn)    dots += `<span class="cal-dot-sm dot-ptn"    title="PTN 업로드 ${info.ptn}건"></span>`;
+    if (info.ship)   dots += `<span class="cal-dot-sm dot-ship"   title="출하 ${info.ship}건"></span>`;
+    if (info.scan)   dots += `<span class="cal-dot-sm dot-scan"   title="스캔 ${info.scan}건"></span>`;
+
+    html += `<div class="${cls}" onclick="calClickDay('${iso}')">
+      <div class="cal-day-num">${d}</div>
+      <div class="cal-dots">${dots}</div>
+    </div>`;
+  }
+
+  document.getElementById('cal-cells').innerHTML = html;
+}
+
+function calClickDay(iso) {
+  if (!calData) return;
+
+  // 선택 강조
+  document.querySelectorAll('.cal-cell.selected').forEach(el => el.classList.remove('selected'));
+  event.currentTarget.classList.add('selected');
+
+  const { mj, sh, sc } = calData;
+
+  // 해당 날짜 데이터 필터
+  const masters  = mj.filter(r => r.batch_date === iso);
+  const ptns     = sh.filter(r => (r.ptn_uploaded_at||'').slice(0,10) === iso);
+  const ships    = sh.filter(r => (r.ship_date||'').slice(0,10) === iso);
+  const scans    = sc.filter(r => (r.scanned_at||'').slice(0,10) === iso);
+
+  const [y,m,d] = iso.split('-');
+  document.getElementById('cal-detail-date').textContent = `${y}년 ${parseInt(m)}월 ${parseInt(d)}일`;
+
+  let body = '';
+
+  // 마스터/견적
+  body += `<div class="cal-section">
+    <div class="cal-sec-title"><span class="cal-dot dot-master"></span>마스터 / 견적 (${masters.length}건)</div>`;
+  if (masters.length) {
+    body += `<div style="overflow-x:auto"><table class="dtable" style="font-size:11px">
+      <thead><tr><th>주문번호</th><th>PO</th><th>SN</th></tr></thead><tbody>
+      ${masters.map(r=>`<tr><td class="mono">${r.order_no||'—'}</td><td class="mono">${r.po||'—'}</td><td>${r.sn||'—'}</td></tr>`).join('')}
+      </tbody></table></div>`;
+  } else {
+    body += `<div class="cal-sec-empty">데이터 없음</div>`;
+  }
+  body += '</div>';
+
+  // PTN 업로드
+  body += `<div class="cal-section">
+    <div class="cal-sec-title"><span class="cal-dot dot-ptn"></span>PTN 업로드 (${ptns.length}건)</div>`;
+  if (ptns.length) {
+    body += `<div style="overflow-x:auto"><table class="dtable" style="font-size:11px">
+      <thead><tr><th>PO</th><th>PTN NO</th></tr></thead><tbody>
+      ${ptns.map(r=>`<tr><td class="mono">${r.po||'—'}</td><td class="mono">${r.ptn_no||'—'}</td></tr>`).join('')}
+      </tbody></table></div>`;
+  } else {
+    body += `<div class="cal-sec-empty">데이터 없음</div>`;
+  }
+  body += '</div>';
+
+  // 출하
+  body += `<div class="cal-section">
+    <div class="cal-sec-title"><span class="cal-dot dot-ship"></span>출하 (${ships.length}건)</div>`;
+  if (ships.length) {
+    body += `<div style="overflow-x:auto"><table class="dtable" style="font-size:11px">
+      <thead><tr><th>PO</th><th>PTN NO</th></tr></thead><tbody>
+      ${ships.map(r=>`<tr><td class="mono">${r.po||'—'}</td><td class="mono">${r.ptn_no||'—'}</td></tr>`).join('')}
+      </tbody></table></div>`;
+  } else {
+    body += `<div class="cal-sec-empty">데이터 없음</div>`;
+  }
+  body += '</div>';
+
+  // 스캔 이력
+  body += `<div class="cal-section">
+    <div class="cal-sec-title"><span class="cal-dot dot-scan"></span>스캔 PASS 이력 (${scans.length}건)</div>`;
+  if (scans.length) {
+    body += `<div style="overflow-x:auto"><table class="dtable" style="font-size:11px">
+      <thead><tr><th>시각</th><th>PO</th><th>SN</th><th>주문번호</th></tr></thead><tbody>
+      ${scans.map(r=>{
+        const t = new Date(r.scanned_at).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+        return `<tr><td class="mono">${t}</td><td class="mono">${r.po||'—'}</td><td>${r.sn||'—'}</td><td class="mono">${r.order_no||'—'}</td></tr>`;
+      }).join('')}
+      </tbody></table></div>`;
+  } else {
+    body += `<div class="cal-sec-empty">데이터 없음</div>`;
+  }
+  body += '</div>';
+
+  document.getElementById('cal-detail-body').innerHTML = body;
+  const detail = document.getElementById('cal-detail');
+  detail.classList.add('show');
+  detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 /* ──────────────────────────────────────────────
