@@ -651,12 +651,12 @@ async function buildMasterFillResult(mesFile, masterFile) {
     updates.push({ ...rowInfo, toWrite });
   }
 
-  // master_jobs sync: current MES batch only (updates + alreadyFilled)
+  // master_jobs sync: updates + alreadyFilled + noMesMatch (PO/SN 있는 마스터 전체)
   (async () => {
     const sb = getSB();
     if (!sb) return;
     const now = new Date().toISOString();
-    const syncRows = [...updates, ...alreadyFilled]
+    const syncRows = [...updates, ...alreadyFilled, ...noMesMatch]
       .filter(u => u.orderNo && u.po)
       .map(u => ({
         order_no: u.orderNo, pn: u.pn, sn: u.sn,
