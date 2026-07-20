@@ -14,6 +14,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="js/core.js?v=20260714C"></script>
   <script src="js/auth.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <style>
     :root {
       --p:#004E89; --p-bg:#deeaf5;
@@ -59,7 +60,9 @@
     .active-card .sub{font-size:12px;opacity:.75;margin-top:2px;}
 
     /* TABS */
-    .tabs{display:flex;gap:0;border-bottom:2px solid var(--bdr);margin-bottom:18px;}
+    .tabs{display:flex;gap:0;border-bottom:2px solid var(--bdr);margin-bottom:18px;overflow-x:auto;}
+    .btn-excel{font-size:11px;font-weight:700;padding:4px 12px;border-radius:5px;border:1.5px solid var(--g);color:var(--g);background:transparent;cursor:pointer;white-space:nowrap;transition:.15s;}
+    .btn-excel:hover{background:var(--g-bg);}
     .tab-btn{padding:10px 18px;font-size:13px;font-weight:600;color:var(--mut);background:none;border:none;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:.15s;display:flex;align-items:center;gap:6px;}
     .tab-btn.active{color:var(--p);border-bottom-color:var(--p);}
     .tab-content{display:none;} .tab-content.active{display:block;}
@@ -231,9 +234,15 @@
     <div id="q-err" class="err-box"></div>
     <div class="batch-list" id="q-list"><div style="padding:20px;color:var(--mut);font-size:13px;">로딩 중…</div></div>
     <div class="detail-panel" id="q-detail" style="display:none">
-      <div class="detail-hdr"><span class="title" id="q-dtitle"></span><span class="cnt" id="q-dcnt"></span></div>
+      <div class="detail-hdr">
+        <span class="title" id="q-dtitle"></span>
+        <span class="cnt" id="q-dcnt"></span>
+        <span id="q-sel-info" style="font-size:12px;font-weight:600;color:var(--p)"></span>
+        <button onclick="dmExcelDownload('q')" class="btn-excel">⬇ 엑셀</button>
+      </div>
       <div style="overflow-x:auto">
         <table class="dtable"><thead><tr>
+          <th style="width:36px"><input type="checkbox" id="q-chk-all" title="전체 선택" onchange="toggleAllQ(this.checked)"></th>
           <th>주문번호</th><th>PO</th><th>SN</th><th>PTN (0247#)</th><th>PN</th><th>CLN DATE</th>
         </tr></thead><tbody id="q-dbody"></tbody></table>
       </div>
@@ -249,6 +258,7 @@
       <div class="detail-hdr">
         <span class="title" id="p-dtitle"></span>
         <span class="cnt" id="p-dcnt"></span>
+        <button onclick="dmExcelDownload('p')" class="btn-excel">⬇ 엑셀</button>
       </div>
       <!-- 검색 + 선택 정보 -->
       <div style="padding:10px 14px;border-bottom:1px solid var(--bdr);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -275,9 +285,15 @@
     <div id="s-err" class="err-box"></div>
     <div class="batch-list" id="s-list"><div style="padding:20px;color:var(--mut);font-size:13px;">로딩 중…</div></div>
     <div class="detail-panel" id="s-detail" style="display:none">
-      <div class="detail-hdr"><span class="title" id="s-dtitle"></span><span class="cnt" id="s-dcnt"></span></div>
+      <div class="detail-hdr">
+        <span class="title" id="s-dtitle"></span>
+        <span class="cnt" id="s-dcnt"></span>
+        <span id="s-sel-info" style="font-size:12px;font-weight:600;color:var(--p)"></span>
+        <button onclick="dmExcelDownload('s')" class="btn-excel">⬇ 엑셀</button>
+      </div>
       <div style="overflow-x:auto">
         <table class="dtable"><thead><tr>
+          <th style="width:36px"><input type="checkbox" id="s-chk-all" title="전체 선택" onchange="toggleAllS(this.checked)"></th>
           <th>PO</th><th>PTN NO</th><th>출하일</th>
         </tr></thead><tbody id="s-dbody"></tbody></table>
       </div>
@@ -312,6 +328,7 @@
         <button id="h-del-btn" class="btn-del-sel" onclick="hDeleteSelected()" style="display:none">
           🗑 선택 삭제
         </button>
+        <button onclick="dmExcelDownload('h')" class="btn-excel">⬇ 엑셀</button>
       </div>
       <div style="overflow-x:auto">
         <table class="dtable">
@@ -668,6 +685,7 @@ async function loadScanLogs() {
     return;
   }
 
+  window._hRows = data;
   rcnt.textContent = `총 ${data.length}건`;
   // 전체 선택 체크박스 초기화
   const allChk = document.getElementById('h-chk-all-rows');
@@ -1184,18 +1202,23 @@ async function showQDetail(date) {
       .eq('batch_date', date)
       .order('order_no');
     if (error) throw error;
-    document.getElementById('q-dcnt').textContent = (data||[]).length + '건';
-    body.innerHTML = (data||[]).map(r => `
+    window._qRows = data || [];
+    document.getElementById('q-dcnt').textContent = window._qRows.length + '건';
+    const qChkAll = document.getElementById('q-chk-all');
+    if (qChkAll) { qChkAll.checked = false; qChkAll.indeterminate = false; }
+    document.getElementById('q-sel-info').textContent = '';
+    body.innerHTML = window._qRows.map((r, i) => `
       <tr>
+        <td style="width:36px;text-align:center"><input type="checkbox" class="q-chk" data-i="${i}" onchange="updateQSel()" style="accent-color:var(--p);cursor:pointer"></td>
         <td>${r.order_no||'-'}</td>
         <td class="mono">${r.po||'-'}</td>
         <td class="mono">${r.sn||'-'}</td>
         <td class="mono">${r.tkm_no||'-'}</td>
         <td class="mono">${r.pn||'-'}</td>
         <td>${(r.cln_date||'').slice(0,10)||'-'}</td>
-      </tr>`).join('') || '<tr><td colspan="6" style="padding:16px;color:var(--mut)">데이터 없음</td></tr>';
+      </tr>`).join('') || '<tr><td colspan="7" style="padding:16px;color:var(--mut)">데이터 없음</td></tr>';
   } catch(e) {
-    body.innerHTML = '<tr><td colspan="6" style="padding:16px;color:var(--r)">' + e.message + '</td></tr>';
+    body.innerHTML = '<tr><td colspan="7" style="padding:16px;color:var(--r)">' + e.message + '</td></tr>';
   }
 }
 
@@ -1304,16 +1327,122 @@ async function showSDetail(date) {
       .eq('ship_date', date)
       .order('po');
     if (error) throw error;
-    document.getElementById('s-dcnt').textContent = (data||[]).length + '건';
-    body.innerHTML = (data||[]).map(r => `
+    window._sRows = data || [];
+    document.getElementById('s-dcnt').textContent = window._sRows.length + '건';
+    const sChkAll = document.getElementById('s-chk-all');
+    if (sChkAll) { sChkAll.checked = false; sChkAll.indeterminate = false; }
+    document.getElementById('s-sel-info').textContent = '';
+    body.innerHTML = window._sRows.map((r, i) => `
       <tr>
+        <td style="width:36px;text-align:center"><input type="checkbox" class="s-chk" data-i="${i}" onchange="updateSSel()" style="accent-color:var(--p);cursor:pointer"></td>
         <td class="mono">${r.po||'-'}</td>
         <td class="mono">${r.ptn_no||'-'}</td>
         <td>${(r.ship_date||'').slice(0,10)||'-'}</td>
-      </tr>`).join('') || '<tr><td colspan="3" style="padding:16px;color:var(--mut)">데이터 없음</td></tr>';
+      </tr>`).join('') || '<tr><td colspan="4" style="padding:16px;color:var(--mut)">데이터 없음</td></tr>';
   } catch(e) {
     body.innerHTML = '<tr><td colspan="4" style="padding:16px;color:var(--r)">' + e.message + '</td></tr>';
   }
+}
+
+/* ──────────────────────────────────────────────
+   견적/마스터 체크박스
+────────────────────────────────────────────── */
+window._qRows = [];
+function toggleAllQ(checked) {
+  document.querySelectorAll('.q-chk').forEach(c => { c.checked = checked; });
+  updateQSel();
+}
+function updateQSel() {
+  const all = document.querySelectorAll('.q-chk');
+  const sel = document.querySelectorAll('.q-chk:checked');
+  const info = document.getElementById('q-sel-info');
+  if (info) info.textContent = sel.length ? sel.length + '건 선택됨' : '';
+  const chkAll = document.getElementById('q-chk-all');
+  if (chkAll) {
+    chkAll.indeterminate = sel.length > 0 && sel.length < all.length;
+    chkAll.checked = all.length > 0 && sel.length === all.length;
+  }
+}
+
+/* ──────────────────────────────────────────────
+   거래명세서 체크박스
+────────────────────────────────────────────── */
+window._sRows = [];
+function toggleAllS(checked) {
+  document.querySelectorAll('.s-chk').forEach(c => { c.checked = checked; });
+  updateSSel();
+}
+function updateSSel() {
+  const all = document.querySelectorAll('.s-chk');
+  const sel = document.querySelectorAll('.s-chk:checked');
+  const info = document.getElementById('s-sel-info');
+  if (info) info.textContent = sel.length ? sel.length + '건 선택됨' : '';
+  const chkAll = document.getElementById('s-chk-all');
+  if (chkAll) {
+    chkAll.indeterminate = sel.length > 0 && sel.length < all.length;
+    chkAll.checked = all.length > 0 && sel.length === all.length;
+  }
+}
+
+/* ──────────────────────────────────────────────
+   Excel 다운로드 (SheetJS)
+   선택된 행만 — 선택 없으면 전체
+────────────────────────────────────────────── */
+window._hRows = [];
+function dmExcelDownload(tab) {
+  if (typeof XLSX === 'undefined') { alert('SheetJS 로드 중… 잠시 후 다시 시도하세요.'); return; }
+
+  let rows, filename;
+
+  if (tab === 'q') {
+    const selIdx = [...document.querySelectorAll('.q-chk:checked')].map(c => parseInt(c.dataset.i));
+    const src = selIdx.length ? selIdx.map(i => window._qRows[i]) : window._qRows;
+    if (!src.length) { alert('다운로드할 데이터가 없습니다.'); return; }
+    rows = src.map(r => ({
+      '주문번호': r.order_no||'', 'PO': r.po||'', 'SN': r.sn||'',
+      'PTN(0247#)': r.tkm_no||'', 'PN': r.pn||'',
+      'CLN DATE': (r.cln_date||'').slice(0,10)
+    }));
+    filename = '견적_마스터_' + new Date().toISOString().slice(0,10) + '.xlsx';
+
+  } else if (tab === 'p') {
+    const selPO = new Set([...document.querySelectorAll('.p-chk:checked')].map(c => c.dataset.po));
+    const src = selPO.size ? window._pRows.filter(r => selPO.has(r.po||'')) : window._pRows;
+    if (!src.length) { alert('다운로드할 데이터가 없습니다.'); return; }
+    rows = src.map(r => ({
+      'PO': r.po||'', 'PTN NO': r.ptn_no||'',
+      '출하일': (r.ship_date||'').slice(0,10),
+      '업로드일': r.ptn_uploaded_at||''
+    }));
+    filename = 'PTN_업로드_' + new Date().toISOString().slice(0,10) + '.xlsx';
+
+  } else if (tab === 's') {
+    const selIdx = [...document.querySelectorAll('.s-chk:checked')].map(c => parseInt(c.dataset.i));
+    const src = selIdx.length ? selIdx.map(i => window._sRows[i]) : window._sRows;
+    if (!src.length) { alert('다운로드할 데이터가 없습니다.'); return; }
+    rows = src.map(r => ({
+      'PO': r.po||'', 'PTN NO': r.ptn_no||'',
+      '출하일': (r.ship_date||'').slice(0,10)
+    }));
+    filename = '거래명세서_' + new Date().toISOString().slice(0,10) + '.xlsx';
+
+  } else if (tab === 'h') {
+    const selId = new Set([...document.querySelectorAll('.h-row-chk:checked')].map(c => String(c.dataset.id)));
+    const src = selId.size ? window._hRows.filter(r => selId.has(String(r.id))) : window._hRows;
+    if (!src.length) { alert('다운로드할 데이터가 없습니다.'); return; }
+    rows = src.map(r => ({
+      '스캔일시': r.scanned_at ? new Date(r.scanned_at).toLocaleString('ko-KR') : '',
+      '배치날짜': r.batch_date||'', '주문번호': r.order_no||'',
+      'PO': r.po||'', 'PKG ID': r.pkg_id||'', 'SN': r.sn||''
+    }));
+    filename = '스캔이력_' + new Date().toISOString().slice(0,10) + '.xlsx';
+
+  } else { return; }
+
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+  XLSX.writeFile(wb, filename);
 }
 
 /* ──────────────────────────────────────────────
