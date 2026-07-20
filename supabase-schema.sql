@@ -77,6 +77,20 @@ create table if not exists shipments (
   created_at text
 );
 
+create table if not exists scan_logs (
+  id         bigserial primary key,
+  scanned_at timestamptz not null default now(),
+  po         text,
+  pkg_id     text,
+  sn         text,
+  order_no   text,
+  batch_date text,
+  result     text not null default 'PASS'
+);
+
+create index if not exists idx_scan_logs_scanned_at on scan_logs(scanned_at desc);
+create index if not exists idx_scan_logs_po         on scan_logs(po);
+
 -- anon 키로 읽기/쓰기 허용
 grant select, insert, update, delete on parts to anon;
 grant select, insert, update, delete on usage to anon;
@@ -84,3 +98,5 @@ grant select, insert, update, delete on lots to anon;
 grant select, insert, update, delete on process_costs to anon;
 grant select, insert, update, delete on master_jobs to anon;
 grant select, insert, update, delete on shipments to anon;
+grant select, insert on scan_logs to anon;
+grant usage, select on sequence scan_logs_id_seq to anon;

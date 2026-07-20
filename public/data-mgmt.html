@@ -88,9 +88,11 @@
 
     /* DETAIL TABLE */
     .detail-panel{background:var(--sur);border:1px solid var(--bdr);border-radius:12px;overflow:hidden;margin-top:4px;}
-    .detail-hdr{padding:14px 18px;border-bottom:1px solid var(--bdr);display:flex;align-items:center;justify-content:space-between;}
+    .detail-hdr{padding:14px 18px;border-bottom:1px solid var(--bdr);display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
     .detail-hdr .title{font-size:13px;font-weight:700;}
     .detail-hdr .cnt{font-size:12px;color:var(--mut);}
+    .btn-del-sel{font-size:12px;font-weight:700;padding:4px 14px;border-radius:6px;border:1.5px solid var(--r);color:var(--r);background:transparent;cursor:pointer;margin-left:auto;transition:.15s;}
+    .btn-del-sel:hover{background:var(--r);color:#fff;}
     .dtable{width:100%;border-collapse:collapse;font-size:12px;}
     .dtable th{padding:8px 14px;text-align:left;font-weight:700;font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--mut);background:var(--bg);border-bottom:1px solid var(--bdr);}
     .dtable td{padding:9px 14px;border-bottom:1px solid var(--bdr);color:var(--txt);}
@@ -270,10 +272,17 @@
       <div class="detail-hdr">
         <span class="title" id="h-rtitle">스캔 이력</span>
         <span class="cnt"   id="h-rcnt"></span>
+        <button id="h-del-btn" class="btn-del-sel" onclick="hDeleteSelected()" style="display:none">
+          🗑 선택 삭제
+        </button>
       </div>
       <div style="overflow-x:auto">
         <table class="dtable">
           <thead><tr>
+            <th style="width:36px;text-align:center">
+              <input type="checkbox" id="h-chk-all-rows" onchange="hRowCheckAll(this)"
+                style="accent-color:var(--p);cursor:pointer">
+            </th>
             <th>스캔 일시</th><th>배치 날짜</th><th>주문번호</th><th>PO</th><th>PKG ID</th><th>SN</th>
           </tr></thead>
           <tbody id="h-tbody"></tbody>
@@ -564,7 +573,7 @@ async function loadScanLogs() {
 
   const { data, error } = await sb
     .from('scan_logs')
-    .select('scanned_at,batch_date,order_no,po,pkg_id,sn')
+    .select('id,scanned_at,batch_date,order_no,po,pkg_id,sn')
     .in('batch_date', selected)
     .order('scanned_at', { ascending: false })
     .limit(500);
@@ -583,11 +592,20 @@ async function loadScanLogs() {
   }
 
   rcnt.textContent = `총 ${data.length}건`;
+  // 전체 선택 체크박스 초기화
+  const allChk = document.getElementById('h-chk-all-rows');
+  if (allChk) allChk.checked = false;
+  document.getElementById('h-del-btn').style.display = 'none';
+
   tbody.innerHTML = data.map(r => {
     const dt = new Date(r.scanned_at);
     const ts = dt.toLocaleDateString('ko-KR',{month:'2-digit',day:'2-digit'})
              + ' ' + dt.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-    return `<tr>
+    return `<tr id="h-row-${r.id}">
+      <td style="text-align:center">
+        <input type="checkbox" class="h-row-chk" data-id="${r.id}"
+          onchange="hUpdateDelBtn()" style="accent-color:var(--p);cursor:pointer">
+      </td>
       <td class="mono">${ts}</td>
       <td>${r.batch_date || '—'}</td>
       <td>${r.order_no  || '—'}</td>
@@ -596,6 +614,62 @@ async function loadScanLogs() {
       <td class="mono">${r.sn     || '—'}</td>
     </tr>`;
   }).join('');
+}
+
+function hRowCheckAll(el) {
+  document.querySelectorAll('.h-row-chk').forEach(c => c.checked = el.checked);
+  hUpdateDelBtn();
+}
+
+function hUpdateDelBtn() {
+  const checked = document.querySelectorAll('.h-row-chk:checked');
+  const btn = document.getElementById('h-del-btn');
+  const rcnt = document.getElementById('h-rcnt');
+  const total = document.querySelectorAll('.h-row-chk').length;
+  if (checked.length > 0) {
+    btn.style.display = 'inline-block';
+    btn.textContent = `🗑 선택 삭제 (${checked.length}건)`;
+    rcnt.textContent = `총 ${total}건 / ${checked.length}건 선택`;
+  } else {
+    btn.style.display = 'none';
+    rcnt.textContent = `총 ${total}건`;
+  }
+  // 전체 선택 체크박스 상태 동기화
+  const allChk = document.getElementById('h-chk-all-rows');
+  if (allChk) allChk.checked = checked.length > 0 && checked.length === total;
+}
+
+async function hDeleteSelected() {
+  const checked = [...document.querySelectorAll('.h-row-chk:checked')];
+  if (!checked.length) return;
+  if (!confirm(`선택한 ${checked.length}건을 삭제하시겠습니까?`)) return;
+
+  const sb = getClient();
+  if (!sb) { alert('Supabase 미연결'); return; }
+
+  const ids = checked.map(c => parseInt(c.dataset.id));
+  const btn = document.getElementById('h-del-btn');
+  btn.textContent = '삭제 중...';
+  btn.style.pointerEvents = 'none';
+
+  try {
+    const { error } = await sb.from('scan_logs').delete().in('id', ids);
+    if (error) throw error;
+    // 삭제된 행 DOM에서 제거
+    ids.forEach(id => document.getElementById('h-row-' + id)?.remove());
+    const remaining = document.querySelectorAll('.h-row-chk').length;
+    document.getElementById('h-rcnt').textContent = `총 ${remaining}건`;
+    btn.style.display = 'none';
+    if (!remaining) {
+      document.getElementById('h-result').style.display = 'none';
+      document.getElementById('h-empty').style.display  = 'block';
+    }
+    toast(`✅ ${ids.length}건 삭제 완료`);
+  } catch(e) {
+    alert('삭제 실패: ' + e.message);
+    btn.textContent = `🗑 선택 삭제 (${ids.length}건)`;
+    btn.style.pointerEvents = '';
+  }
 }
 
 /* ──────────────────────────────────────────────

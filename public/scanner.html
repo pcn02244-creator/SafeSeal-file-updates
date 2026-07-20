@@ -525,18 +525,16 @@ $('back-btn').addEventListener('click', () => {
    verification_sets 동기화 (core.js의 syncVerificationSets 래퍼)
 ══════════════════════════════════════════ */
 async function doSync() {
-  const activeBatch = getActiveBatch();
-  const batchBadge  = $('batch-badge');
-  if (batchBadge) batchBadge.textContent = activeBatch || '';
-
+  const batchBadge = $('batch-badge');
   masterBadge.textContent = '동기화 중...';
   masterBadge.className   = '';
   try {
-    const { synced, batch_date } = await syncVerificationSets(activeBatch);
+    const { synced, latestBatchDate } = await syncVerificationSets();
+    // 배지는 synced 값 무관하게 항상 최신 날짜로 갱신
+    if (batchBadge) batchBadge.textContent = latestBatchDate || '';
     if (synced > 0) {
       masterBadge.textContent = `${synced}건 준비`;
       masterBadge.classList.add('loaded');
-      if (batchBadge) batchBadge.textContent = batch_date || activeBatch || '';
     } else {
       masterBadge.textContent = '데이터 없음';
       masterBadge.classList.add('error');

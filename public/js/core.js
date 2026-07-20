@@ -426,44 +426,51 @@ async function generateQuotation(mesFile, masterFile) {
 // ── 검증 세트 동기화 ──
 // master_jobs(order_no, po, sn) + shipments(ptn_no = PKG ID) 조인
 // → verification_sets에 upsert
-async function syncVerificationSets(batchDate) {
+//
+// 날짜 필드 정의:
+//   master_jobs.batch_date  = 마스터 동기화 실행 날짜 (PC에서 견적/마스터 채울 때 기록)
+//   master_jobs.cln_date    = 세정 완료/승인 날짜 (마스터 Excel 원본값)
+//   shipments.ship_date     = 출하(선적) 날짜 (출하 등록 시 입력)
+//   verification_sets.batch_date = 각 master_jobs row의 동기화 날짜 (batch_date 그대로)
+async function syncVerificationSets() {
   const sb = getSB();
   if (!sb) throw new Error('Supabase 미연결');
 
-  // 1. master_jobs 전체 조회 (배치 필터 없음 — 날짜 무관하게 모든 PO 검증 가능)
+  // 1. master_jobs 전체 조회 (배치 필터 없음 — 모든 PO 검증 가능)
   const { data: jobs, error: e1 } = await sb
     .from('master_jobs').select('order_no, po, sn, batch_date');
   if (e1) throw new Error('master_jobs 조회 오류: ' + e1.message);
 
-  // master_jobs의 최신 batch_date를 활성 배치로 사용 (localStorage 덮어쓰기)
-  const latestBatch = (jobs || [])
+  // DB의 최신 batch_date를 활성 배치 날짜로 채택 (stale localStorage 덮어쓰기)
+  const today = new Date().toISOString().slice(0, 10);
+  const latestBatchDate = (jobs || [])
     .map(j => j.batch_date).filter(Boolean)
-    .sort().reverse()[0] || batchDate || getActiveBatch();
-  const activeBatch = latestBatch;
+    .sort().reverse()[0] || today;
 
   const filtered = (jobs || []).filter(j => j.order_no && j.po);
-  if (!filtered.length) return { synced: 0, batch_date: activeBatch };
+  if (!filtered.length) return { synced: 0, latestBatchDate };
 
-  // 2. shipments에서 PKG ID(ptn_no) 조회 — PO 기준 매핑
+  // 2. shipments에서 PKG ID(ptn_no) 조회 — PO → ptn_no 매핑
   const poList = [...new Set(filtered.map(j => j.po.trim().toUpperCase()))];
-  const { data: shipments, error: e2 } = await sb
+  const { data: shipRows, error: e2 } = await sb
     .from('shipments').select('po, ptn_no').in('po', poList);
   if (e2) throw new Error('shipments 조회 오류: ' + e2.message);
 
-  const pkgMap = {};
-  (shipments || []).forEach(s => {
-    if (s.ptn_no) pkgMap[s.po.trim().toUpperCase()] = s.ptn_no.trim().toUpperCase();
+  const pkgByPO = {};
+  (shipRows || []).forEach(s => {
+    if (s.ptn_no) pkgByPO[s.po.trim().toUpperCase()] = s.ptn_no.trim().toUpperCase();
   });
 
   // 3. verification_sets rows 생성
+  //    batch_date: 각 master_jobs row의 동기화 날짜를 그대로 사용 (없으면 today 폴백)
   const rows = filtered.map(j => {
     const poKey = j.po.trim().toUpperCase();
     return {
       order_no:   j.order_no.trim(),
-      batch_date: j.batch_date || batchDate,
+      batch_date: j.batch_date || today,
       po:         poKey,
       sn:         (j.sn || '').trim().replace(/\s/g, '').toUpperCase(),
-      ptn_no:     pkgMap[poKey] || null,
+      ptn_no:     pkgByPO[poKey] || null,
       created_at: new Date().toISOString(),
     };
   });
@@ -473,8 +480,8 @@ async function syncVerificationSets(batchDate) {
     .upsert(rows, { onConflict: 'order_no,batch_date' });
 
   if (upsertErr) throw new Error('verification_sets upsert 오류: ' + upsertErr.message);
-  setActiveBatch(activeBatch);
-  return { synced: rows.length, batch_date: activeBatch };
+  setActiveBatch(latestBatchDate);
+  return { synced: rows.length, latestBatchDate };
 }
 
 // ── 바코드 3종 검증 ──────────────────────────────────────────────────
