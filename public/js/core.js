@@ -488,13 +488,30 @@ async function verifyBarcodeSet({ po, sn, ptn_no }) {
 
   if (!poKey) return { pass: false, order_no: null, mismatch_field: 'po', error: 'PO 값 없음' };
 
-  let query = sb.from('verification_sets').select('order_no, batch_date, po, sn, ptn_no').eq('po', poKey);
-  if (batchDate) query = query.eq('batch_date', batchDate);
+  // 1차: 활성 배치 기준 검색
+  let data = null;
+  {
+    let q = sb.from('verification_sets').select('order_no, batch_date, po, sn, ptn_no').eq('po', poKey);
+    if (batchDate) q = q.eq('batch_date', batchDate);
+    const { data: d, error } = await q.maybeSingle();
+    if (error) return { pass: false, order_no: null, error: error.message };
+    data = d;
+  }
 
-  const { data, error } = await query.maybeSingle();
+  // 2차: 활성 배치에 없으면 전체 배치에서 폴백 검색
+  if (!data && batchDate) {
+    const { data: d2, error: e2 } = await sb
+      .from('verification_sets')
+      .select('order_no, batch_date, po, sn, ptn_no')
+      .eq('po', poKey)
+      .order('batch_date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (e2) return { pass: false, order_no: null, error: e2.message };
+    data = d2;
+  }
 
-  if (error) return { pass: false, order_no: null, error: error.message };
-  if (!data) return { pass: false, order_no: null, mismatch_field: 'po', error: `PO "${poKey}" 없음 (배치: ${batchDate})` };
+  if (!data) return { pass: false, order_no: null, mismatch_field: 'po', error: `PO "${poKey}" 미등록 — 재동기화(↻) 후 재시도` };
 
   if (snKey  && data.sn     && data.sn     !== snKey)  return { pass: false, order_no: data.order_no, batch_date: data.batch_date, mismatch_field: 'sn' };
   if (ptnKey && data.ptn_no && data.ptn_no !== ptnKey) return { pass: false, order_no: data.order_no, batch_date: data.batch_date, mismatch_field: 'ptn_no' };
