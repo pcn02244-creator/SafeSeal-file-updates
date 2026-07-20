@@ -693,6 +693,7 @@ async function downloadQuotationExcel(quotation) {
     const HDR_FONT = 'FF1F3864'; // 헤더 글자 (진남색)
     const BRD_BLUE = 'FF8DB4E2'; // 파랑 테두리
     const BRD_GRAY = 'FFD9D9D9'; // 회색 테두리
+    const SUM_BG   = 'FFFFF2CC'; // 합계 행 배경 (연노랑)
     const colWidths = [12, 14, 13, 12, 13, 13, 15,
       ...activeParts.flatMap(() => [12, 15]),
       12, 15, 26];
@@ -700,6 +701,22 @@ async function downloadQuotationExcel(quotation) {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('견적');
     ws.columns = colWidths.map(w => ({ width: w }));
+
+    // 컬럼 인덱스 상수 (1-based)
+    const NUM_START   = 6;                    // Cleaning USD 컬럼
+    const REMARK_COL  = headers.length;       // Remark 컬럼
+    const TOTAL_USD   = REMARK_COL - 2;       // Total USD 컬럼
+    const TOTAL_KRW   = REMARK_COL - 1;       // Total KRW 컬럼
+
+    // 숫자→엑셀 컬럼 문자 변환 (A, B, ..., Z, AA, ...)
+    const col = n => { let s=''; while(n>0){s=String.fromCharCode(64+(n-1)%26+1)+s;n=Math.floor((n-1)/26);} return s; };
+
+    // USD 컬럼 목록: NUM_START, NUM_START+2, ... TOTAL_USD-1
+    const usdCols = [];
+    for (let c = NUM_START; c < TOTAL_USD; c += 2) usdCols.push(c);
+    // KRW 컬럼 목록: NUM_START+1, NUM_START+3, ... TOTAL_KRW-1
+    const krwCols = [];
+    for (let c = NUM_START + 1; c < TOTAL_KRW; c += 2) krwCols.push(c);
 
     // Row 1: 빈 구분행 — 하단 테두리만
     const row1 = ws.addRow(new Array(headers.length).fill(null));
@@ -723,19 +740,9 @@ async function downloadQuotationExcel(quotation) {
       };
     });
 
-    // 데이터 행
-    const NUM_START  = 6; // Cleaning USD (1-based)
-    const REMARK_COL = headers.length;
-    for (const q of quotation) {
-      const partCols = activeParts.flatMap(fp => {
-        const p = q.replParts.find(r => r.partType === fp.type);
-        return p ? [p.totalUSD, p.totalKRW] : [0, 0];
-      });
-      const remark = q.replParts.map(p => `${p.pn} ×${p.qty}`).join('\n');
-      const row = ws.addRow([
-        q.pn, q.sn, q.po, q.tkmNo, q.processName || q.process,
-        q.processUSD, q.processKRW, ...partCols, q.totalUSD, q.totalKRW, remark,
-      ]);
+    // 데이터 행 (3행부터 시작)
+    const DATA_START_ROW = 3;
+    const applyDataStyle = (row, rowIdx) => {
       row.height = 18;
       row.eachCell((cell, c) => {
         cell.font   = { name: 'Calibri', size: 10 };
@@ -754,7 +761,59 @@ async function downloadQuotationExcel(quotation) {
           cell.alignment = { vertical: 'middle' };
         }
       });
+    };
+
+    let currentRow = DATA_START_ROW;
+    for (const q of quotation) {
+      const partCols = activeParts.flatMap(fp => {
+        const p = q.replParts.find(r => r.partType === fp.type);
+        return p ? [p.totalUSD, p.totalKRW] : [0, 0];
+      });
+      const remark = q.replParts.map(p => `${p.pn} ×${p.qty}`).join('\n');
+
+      // Total USD/KRW를 수식으로 — 단가·수량 셀을 직접 수정해도 자동 재계산
+      const usdFormula = usdCols.map(c => `${col(c)}${currentRow}`).join('+');
+      const krwFormula = krwCols.map(c => `${col(c)}${currentRow}`).join('+');
+
+      const row = ws.addRow([
+        q.pn, q.sn, q.po, q.tkmNo, q.processName || q.process,
+        q.processUSD, q.processKRW, ...partCols,
+        { formula: usdFormula, result: q.totalUSD },
+        { formula: krwFormula, result: q.totalKRW },
+        remark,
+      ]);
+      applyDataStyle(row, currentRow);
+      currentRow++;
     }
+
+    // 합계 행 — 모든 숫자 컬럼에 SUM 수식
+    const lastDataRow = currentRow - 1;
+    const sumValues = new Array(headers.length).fill(null);
+    sumValues[0] = '합계';
+    for (let c = NUM_START; c < REMARK_COL; c++) {
+      sumValues[c - 1] = {
+        formula: `SUM(${col(c)}${DATA_START_ROW}:${col(c)}${lastDataRow})`,
+        result: 0,
+      };
+    }
+    const sumRow = ws.addRow(sumValues);
+    sumRow.height = 20;
+    sumRow.eachCell((cell, c) => {
+      cell.font = { name: 'Calibri', size: 10, bold: true };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: SUM_BG } };
+      cell.border = {
+        top:    { style: 'medium', color: { argb: BRD_BLUE } },
+        bottom: { style: 'medium', color: { argb: BRD_BLUE } },
+        left:   { style: 'thin',   color: { argb: BRD_GRAY } },
+        right:  { style: 'thin',   color: { argb: BRD_GRAY } },
+      };
+      if (c >= NUM_START && c < REMARK_COL) {
+        cell.numFmt    = (c - NUM_START) % 2 === 0 ? '"$"#,##0.00' : '[$₩-412]#,##0';
+        cell.alignment = { horizontal: 'right', vertical: 'middle' };
+      } else {
+        cell.alignment = { vertical: 'middle' };
+      }
+    });
 
     const buffer = await wb.xlsx.writeBuffer();
     const blob   = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
