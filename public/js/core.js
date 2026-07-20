@@ -430,16 +430,16 @@ async function syncVerificationSets(batchDate) {
   const sb = getSB();
   if (!sb) throw new Error('Supabase 미연결');
 
-  batchDate = batchDate || getActiveBatch();
+  // batchDate가 명시된 경우만 필터 적용 — 없으면 전체 master_jobs 동기화
+  const activeBatch = batchDate || getActiveBatch();
 
-  // 1. master_jobs 조회 (order_no, po, sn)
-  let query = sb.from('master_jobs').select('order_no, po, sn, batch_date');
-  if (batchDate) query = query.eq('batch_date', batchDate);
-  const { data: jobs, error: e1 } = await query;
+  // 1. master_jobs 전체 조회 (배치 필터 없음 — 날짜 무관하게 모든 PO 검증 가능)
+  const { data: jobs, error: e1 } = await sb
+    .from('master_jobs').select('order_no, po, sn, batch_date');
   if (e1) throw new Error('master_jobs 조회 오류: ' + e1.message);
 
   const filtered = (jobs || []).filter(j => j.order_no && j.po);
-  if (!filtered.length) return { synced: 0, batch_date: batchDate };
+  if (!filtered.length) return { synced: 0, batch_date: activeBatch };
 
   // 2. shipments에서 PKG ID(ptn_no) 조회 — PO 기준 매핑
   const poList = [...new Set(filtered.map(j => j.po.trim().toUpperCase()))];
@@ -470,8 +470,8 @@ async function syncVerificationSets(batchDate) {
     .upsert(rows, { onConflict: 'order_no,batch_date' });
 
   if (upsertErr) throw new Error('verification_sets upsert 오류: ' + upsertErr.message);
-  setActiveBatch(batchDate);
-  return { synced: rows.length, batch_date: batchDate };
+  setActiveBatch(activeBatch);
+  return { synced: rows.length, batch_date: activeBatch };
 }
 
 // ── 바코드 3종 검증 ──────────────────────────────────────────────────
