@@ -430,13 +430,16 @@ async function syncVerificationSets(batchDate) {
   const sb = getSB();
   if (!sb) throw new Error('Supabase 미연결');
 
-  // batchDate가 명시된 경우만 필터 적용 — 없으면 전체 master_jobs 동기화
-  const activeBatch = batchDate || getActiveBatch();
-
   // 1. master_jobs 전체 조회 (배치 필터 없음 — 날짜 무관하게 모든 PO 검증 가능)
   const { data: jobs, error: e1 } = await sb
     .from('master_jobs').select('order_no, po, sn, batch_date');
   if (e1) throw new Error('master_jobs 조회 오류: ' + e1.message);
+
+  // master_jobs의 최신 batch_date를 활성 배치로 사용 (localStorage 덮어쓰기)
+  const latestBatch = (jobs || [])
+    .map(j => j.batch_date).filter(Boolean)
+    .sort().reverse()[0] || batchDate || getActiveBatch();
+  const activeBatch = latestBatch;
 
   const filtered = (jobs || []).filter(j => j.order_no && j.po);
   if (!filtered.length) return { synced: 0, batch_date: activeBatch };
