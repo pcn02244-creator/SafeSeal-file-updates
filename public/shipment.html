@@ -283,6 +283,72 @@
       border-radius: 4px; pointer-events: none;
     }
 
+    /* ── 메인 탭 ── */
+    .main-tab-nav {
+      display: flex; gap: 0;
+      border-bottom: 2px solid var(--bdr);
+      margin-bottom: 18px; overflow-x: auto;
+    }
+    .main-tab-btn {
+      display: flex; align-items: center; gap: 6px;
+      padding: 10px 18px; font-size: 13px; font-weight: 600;
+      color: var(--mut); background: none; border: none; cursor: pointer;
+      border-bottom: 2px solid transparent; margin-bottom: -2px; transition: .15s;
+      white-space: nowrap;
+    }
+    .main-tab-btn.active { color: var(--p); border-bottom-color: var(--p); }
+    .main-tab-pane { display: none; }
+    .main-tab-pane.active { display: block; }
+
+    /* ── 외부 견적 임포트 탭 ── */
+    .ext-card {
+      background: var(--sur); border: 1px solid var(--bdr);
+      border-radius: 12px; padding: 22px 24px; margin-bottom: 18px;
+    }
+    .ext-card-title {
+      font-size: 11px; font-weight: 700; letter-spacing: .07em;
+      text-transform: uppercase; color: var(--mut); margin-bottom: 14px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .ext-dropzone {
+      border: 2px dashed #8db4e2; border-radius: 10px;
+      padding: 36px 20px; text-align: center; cursor: pointer;
+      transition: background .15s, border-color .15s;
+      background: #f8fbff;
+    }
+    .ext-dropzone:hover, .ext-dropzone.drag-over { background: var(--p-bg); border-color: var(--p); }
+    .ext-dropzone.has-file { border-style: solid; border-color: var(--g); background: var(--g-bg); }
+    .col-map-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px;
+    }
+    .col-map-item label {
+      font-size: 11px; font-weight: 700; letter-spacing: .05em;
+      text-transform: uppercase; color: var(--mut); display: block; margin-bottom: 4px;
+    }
+    .col-map-item select {
+      width: 100%; padding: 6px 10px; border: 1.5px solid var(--bdr);
+      border-radius: 6px; font-size: 12px; font-family: var(--fn); outline: none;
+    }
+    .col-map-item select:focus { border-color: var(--p); }
+    .ext-preview-tbl { font-size: 11.5px; border-collapse: collapse; width: 100%; }
+    .ext-preview-tbl th {
+      background: var(--p); color: #fff; padding: 7px 10px;
+      font-size: 10px; font-weight: 700; letter-spacing: .05em;
+      text-transform: uppercase; white-space: nowrap;
+    }
+    .ext-preview-tbl td { padding: 6px 10px; border-bottom: 1px solid var(--bdr); white-space: nowrap; }
+    .ext-preview-tbl tr:hover td { background: var(--p-bg); }
+    .match-ok { color: var(--g); font-weight: 700; }
+    .match-warn { color: var(--amb); font-weight: 700; }
+    .match-err { color: #dc2626; font-weight: 700; }
+    .btn-ext-import {
+      background: var(--p); color: #fff; border: none; border-radius: 8px;
+      padding: 10px 24px; font-size: 13px; font-weight: 700; cursor: pointer;
+      display: flex; align-items: center; gap: 8px; transition: .15s;
+    }
+    .btn-ext-import:hover { background: #003a6b; }
+    .btn-ext-import:disabled { opacity: .45; cursor: not-allowed; }
+
     /* Material Symbols helper */
     .mi {
       font-family: 'Material Symbols Outlined';
@@ -369,6 +435,19 @@
       </button>
     </div>
 
+    <!-- 탭 네비게이션 -->
+    <div class="main-tab-nav">
+      <button class="main-tab-btn active" id="mtab-main-btn" onclick="switchMainTab('main')">
+        <span class="mi" style="font-size:16px">inventory</span>출하 PO 관리
+      </button>
+      <button class="main-tab-btn" id="mtab-ext-btn" onclick="switchMainTab('ext')">
+        <span class="mi" style="font-size:16px">upload_file</span>외부 견적 임포트
+      </button>
+    </div>
+
+    <!-- ── 탭 1: 출하 PO 관리 ── -->
+    <div class="main-tab-pane active" id="mtab-main">
+
     <!-- Action Bar -->
     <div id="action-bar" class="d-none mb-3 d-flex align-items-center gap-3 flex-wrap">
       <span class="fw-semibold" id="selected-count">0건 선택</span>
@@ -423,6 +502,72 @@
       </div>
       <div class="d-flex justify-content-center gap-1 mt-3" id="pagination"></div>
     </div>
+
+    </div><!-- /mtab-main -->
+
+    <!-- ── 탭 2: 외부 견적 임포트 ── -->
+    <div class="main-tab-pane" id="mtab-ext">
+
+      <!-- STEP 1: 파일 업로드 -->
+      <div class="ext-card">
+        <div class="ext-card-title">
+          <span class="mi">upload_file</span>STEP 1 — 외부 견적 Excel 업로드
+        </div>
+        <div class="ext-dropzone" id="ext-dropzone" onclick="document.getElementById('ext-file-input').click()">
+          <input type="file" id="ext-file-input" accept=".xlsx,.xls" style="display:none" onchange="handleExtFile(this.files[0])">
+          <span class="mi" style="font-size:36px;color:var(--p);opacity:.6">description</span>
+          <div style="margin-top:10px;font-size:14px;font-weight:600;color:var(--mut)">Excel 파일을 드래그하거나 클릭해서 선택</div>
+          <div style="font-size:11px;color:var(--mut);margin-top:4px">.xlsx / .xls 지원 · PO, PTN(0247#), SN, PN, 단가, 수량 컬럼 포함 파일</div>
+        </div>
+        <div id="ext-file-info" style="margin-top:10px;font-size:12px;color:var(--mut);display:none"></div>
+      </div>
+
+      <!-- STEP 2: 컬럼 매핑 -->
+      <div class="ext-card" id="ext-step2" style="display:none">
+        <div class="ext-card-title">
+          <span class="mi">tune</span>STEP 2 — 컬럼 매핑 확인
+          <span style="font-size:10px;color:var(--mut);font-weight:400;text-transform:none;letter-spacing:0">자동 감지됨. 잘못된 항목이 있으면 드롭다운으로 수정하세요.</span>
+        </div>
+        <div class="col-map-grid" id="ext-col-map"></div>
+        <div style="margin-top:16px">
+          <button class="btn btn-sm btn-primary" onclick="applyColMapping()">
+            <span class="mi" style="font-size:14px">preview</span> 미리보기 생성
+          </button>
+        </div>
+      </div>
+
+      <!-- STEP 3: 미리보기 + 임포트 -->
+      <div class="ext-card" id="ext-step3" style="display:none">
+        <div class="ext-card-title" style="justify-content:space-between">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="mi">table_view</span>STEP 3 — 미리보기
+            <span id="ext-preview-cnt" style="font-size:11px;color:var(--mut);text-transform:none;letter-spacing:0;font-weight:400"></span>
+          </div>
+          <button class="btn-ext-import" id="ext-import-btn" onclick="importExtQuote()">
+            <span class="mi" style="font-size:16px">cloud_upload</span>Supabase에 임포트
+          </button>
+        </div>
+        <div id="ext-match-summary" style="margin-bottom:12px;font-size:12px"></div>
+        <div style="overflow-x:auto">
+          <table class="ext-preview-tbl">
+            <thead>
+              <tr>
+                <th>#</th><th>PO</th><th>PTN (0247#)</th><th>SN</th><th>PN</th>
+                <th>단가 (USD)</th><th>수량</th><th>합계</th><th>수주번호 매칭</th>
+              </tr>
+            </thead>
+            <tbody id="ext-preview-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 임포트 결과 -->
+      <div class="ext-card" id="ext-result" style="display:none">
+        <div class="ext-card-title"><span class="mi">check_circle</span>임포트 완료</div>
+        <div id="ext-result-body"></div>
+      </div>
+
+    </div><!-- /mtab-ext -->
 
   </main>
 
@@ -1980,6 +2125,278 @@
       }
       const video = document.getElementById('verify-cam-video');
       if (video) video.srcObject = null;
+    }
+
+    /* ════════════════════════════════════════════
+       메인 탭 전환
+    ═══════════════════════════════════════════ */
+    function switchMainTab(id) {
+      ['main','ext'].forEach(t => {
+        document.getElementById(`mtab-${t}`).classList.toggle('active', t === id);
+        document.getElementById(`mtab-${t}-btn`).classList.toggle('active', t === id);
+      });
+      // 기존 action-bar는 main 탭에서만 표시
+      if (id !== 'main') document.getElementById('action-bar').classList.add('d-none');
+    }
+
+    /* ════════════════════════════════════════════
+       외부 견적 임포트 — 전역 상태
+    ═══════════════════════════════════════════ */
+    let _extRawRows  = [];   // 원본 Excel 행 (배열)
+    let _extHeaders  = [];   // 헤더 배열
+    let _extColMap   = {};   // { po, ptn, sn, pn, price, qty } → 컬럼 인덱스
+    let _extMapped   = [];   // 최종 매핑된 객체 배열
+    let _extSrcFile  = '';
+
+    /* 드롭존 초기화 */
+    (function setupExtDropzone() {
+      const dz = document.getElementById('ext-dropzone');
+      if (!dz) return;
+      dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+      dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+      dz.addEventListener('drop', e => {
+        e.preventDefault(); dz.classList.remove('drag-over');
+        const f = e.dataTransfer.files[0];
+        if (f) handleExtFile(f);
+      });
+    })();
+
+    /* 파일 처리 */
+    function handleExtFile(file) {
+      if (!file) return;
+      _extSrcFile = file.name;
+      const dz = document.getElementById('ext-dropzone');
+      dz.classList.add('has-file');
+      document.getElementById('ext-file-info').style.display = 'block';
+      document.getElementById('ext-file-info').textContent = `📄 ${file.name} (${(file.size/1024).toFixed(1)} KB)`;
+
+      const reader = new FileReader();
+      reader.onload = e => {
+        const wb = XLSX.read(e.target.result, { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const all = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+        // 헤더 행 탐색: 첫 번째 비어있지 않은 행 (최대 10행 탐색)
+        let hdrIdx = 0;
+        for (let i = 0; i < Math.min(10, all.length); i++) {
+          if (all[i].filter(c => String(c).trim()).length >= 3) { hdrIdx = i; break; }
+        }
+        _extHeaders = all[hdrIdx].map(c => String(c).trim());
+        _extRawRows = all.slice(hdrIdx + 1).filter(r => r.some(c => String(c).trim()));
+        _extColMap  = autoDetectCols(_extHeaders);
+        renderColMapper();
+        document.getElementById('ext-step2').style.display = 'block';
+        document.getElementById('ext-step3').style.display = 'none';
+        document.getElementById('ext-result').style.display = 'none';
+        document.getElementById('ext-step2').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    /* 컬럼 자동 감지 */
+    function autoDetectCols(headers) {
+      const h = headers.map(s => s.toLowerCase());
+      const find = (...kws) => {
+        for (const kw of kws) {
+          const i = h.findIndex(s => s.includes(kw));
+          if (i >= 0) return i;
+        }
+        return -1;
+      };
+      return {
+        po:    find('po', 'purchase order', '구매'),
+        ptn:   find('0247', 'ptn', 'tkm', 'part tag'),
+        sn:    find('sn', 'serial'),
+        pn:    find('pn', 'part no', 'part number', '품번'),
+        price: find('price', '단가', 'unit price', 'selling', 'unit_price'),
+        qty:   find('qty', 'quantity', '수량', 'ea', 'count'),
+      };
+    }
+
+    /* 컬럼 매퍼 UI 렌더 */
+    function renderColMapper() {
+      const fields = [
+        { key: 'po',    label: 'PO 번호',       required: true  },
+        { key: 'ptn',   label: 'PTN (0247#)',    required: false },
+        { key: 'sn',    label: 'SN',             required: false },
+        { key: 'pn',    label: 'PN (부품번호)',  required: false },
+        { key: 'price', label: '단가 (USD)',      required: true  },
+        { key: 'qty',   label: '수량',           required: true  },
+      ];
+      const opts = ['(선택 안 함)', ..._extHeaders].map((h, i) =>
+        `<option value="${i - 1}">${h}</option>`).join('');
+
+      document.getElementById('ext-col-map').innerHTML = fields.map(f => `
+        <div class="col-map-item">
+          <label>${f.label}${f.required ? ' <span style="color:#dc2626">*</span>' : ''}</label>
+          <select id="cm-${f.key}" onchange="_extColMap['${f.key}']=parseInt(this.value)">
+            ${['(선택 안 함)', ..._extHeaders].map((h, i) => {
+              const idx = i - 1;
+              const sel = _extColMap[f.key] === idx ? ' selected' : '';
+              return `<option value="${idx}"${sel}>${h}</option>`;
+            }).join('')}
+          </select>
+        </div>`).join('');
+    }
+
+    /* 컬럼 매핑 적용 → 미리보기 */
+    function applyColMapping() {
+      // 선택값 재수집
+      ['po','ptn','sn','pn','price','qty'].forEach(k => {
+        const el = document.getElementById(`cm-${k}`);
+        if (el) _extColMap[k] = parseInt(el.value);
+      });
+
+      if (_extColMap.po < 0) { alert('PO 번호 컬럼을 선택해주세요.'); return; }
+      if (_extColMap.price < 0) { alert('단가 컬럼을 선택해주세요.'); return; }
+      if (_extColMap.qty < 0) { alert('수량 컬럼을 선택해주세요.'); return; }
+
+      const get = (row, key) => {
+        const idx = _extColMap[key];
+        return idx >= 0 ? String(row[idx] || '').trim() : '';
+      };
+
+      // poGroups에서 order_no 역참조
+      _extMapped = _extRawRows
+        .map(row => {
+          const po    = get(row, 'po');
+          const ptn   = get(row, 'ptn');
+          const sn    = get(row, 'sn');
+          const pn    = get(row, 'pn');
+          const price = parseFloat(String(get(row, 'price')).replace(/[^0-9.]/g, '')) || 0;
+          const qty   = parseInt(String(get(row, 'qty')).replace(/[^0-9]/g, ''))     || 0;
+          if (!po && !ptn && !sn) return null;
+          const order_no = lookupOrderNo(po, ptn, sn, pn);
+          return { po, ptn, sn, pn, price, qty, order_no };
+        })
+        .filter(Boolean);
+
+      renderExtPreview();
+      document.getElementById('ext-step3').style.display = 'block';
+      document.getElementById('ext-step3').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    /* master_jobs에서 order_no 역참조 (po+ptn → po+sn → po+pn 순) */
+    function lookupOrderNo(po, ptn, sn, pn) {
+      for (const grp of poGroups) {
+        if (grp.po !== po) continue;
+        for (const o of grp.orders) {
+          if (ptn && o.tkm_no && o.tkm_no === ptn) return o.order_no;
+        }
+      }
+      for (const grp of poGroups) {
+        if (grp.po !== po) continue;
+        for (const o of grp.orders) {
+          if (sn && o.sn && o.sn === sn) return o.order_no;
+        }
+      }
+      for (const grp of poGroups) {
+        if (grp.po !== po) continue;
+        for (const o of grp.orders) {
+          if (pn && o.pn && o.pn === pn) return o.order_no;
+        }
+      }
+      return null;
+    }
+
+    /* 미리보기 테이블 렌더 */
+    function renderExtPreview() {
+      const matched   = _extMapped.filter(r => r.order_no).length;
+      const unmatched = _extMapped.length - matched;
+
+      document.getElementById('ext-preview-cnt').textContent =
+        `총 ${_extMapped.length}건 · 매칭 ${matched}건 · 미매칭 ${unmatched}건`;
+
+      document.getElementById('ext-match-summary').innerHTML = unmatched
+        ? `<span style="color:var(--amb)">⚠ ${unmatched}건은 마스터에서 수주번호를 찾지 못했습니다. 해당 행은 바코드 검증 대상에서 제외되며, 단가 데이터는 저장됩니다.</span>`
+        : `<span style="color:var(--g);font-weight:700">✅ 전체 ${matched}건 수주번호 매칭 완료</span>`;
+
+      document.getElementById('ext-preview-tbody').innerHTML = _extMapped.map((r, i) => {
+        const mCls = r.order_no ? 'match-ok' : 'match-warn';
+        const mTxt = r.order_no ? `✅ ${r.order_no}` : '⚠ 미매칭';
+        return `<tr>
+          <td style="color:var(--mut)">${i+1}</td>
+          <td class="mono">${r.po||'—'}</td>
+          <td class="mono">${r.ptn||'—'}</td>
+          <td class="mono">${r.sn||'—'}</td>
+          <td class="mono">${r.pn||'—'}</td>
+          <td style="text-align:right">$${r.price.toFixed(2)}</td>
+          <td style="text-align:right">${r.qty}</td>
+          <td style="text-align:right">$${(r.price*r.qty).toFixed(2)}</td>
+          <td class="${mCls}">${mTxt}</td>
+        </tr>`;
+      }).join('');
+
+      document.getElementById('ext-import-btn').disabled = _extMapped.length === 0;
+    }
+
+    /* 임포트 실행 */
+    async function importExtQuote() {
+      const btn = document.getElementById('ext-import-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="mi" style="font-size:16px">hourglass_top</span>임포트 중…';
+
+      const sb = getSB();
+      const today = new Date().toISOString().slice(0, 10);
+      let vsOk = 0, vsSkip = 0, priceOk = 0, extOk = 0, extErr = '';
+
+      try {
+        // 1. verification_sets upsert (order_no 매칭된 행만)
+        const vsRows = _extMapped
+          .filter(r => r.order_no)
+          .map(r => ({ order_no: r.order_no, batch_date: today, po: r.po, sn: r.sn||'', ptn_no: r.ptn||'' }));
+
+        if (sb && vsRows.length) {
+          const { error } = await sb.from('verification_sets')
+            .upsert(vsRows, { onConflict: 'order_no,batch_date' });
+          if (error) throw error;
+          vsOk = vsRows.length;
+        }
+        vsSkip = _extMapped.length - vsRows.length;
+
+        // 2. 단가 데이터 localStorage 저장 (즉시 사용 가능)
+        const priceMap = JSON.parse(localStorage.getItem('ext_quote_prices') || '{}');
+        _extMapped.forEach(r => {
+          const key = `${r.po}|${r.ptn||r.sn||r.pn}`;
+          priceMap[key] = { unit_price: r.price, qty: r.qty, order_no: r.order_no||'', pn: r.pn||'', batch_date: today };
+        });
+        localStorage.setItem('ext_quote_prices', JSON.stringify(priceMap));
+        priceOk = _extMapped.length;
+
+        // 3. ext_quote_lines 테이블 시도 (없으면 무시)
+        if (sb) {
+          try {
+            const extRows = _extMapped.map(r => ({
+              batch_date: today, po: r.po, ptn_no: r.ptn||'', sn: r.sn||'', pn: r.pn||'',
+              order_no: r.order_no||'', unit_price: r.price, qty: r.qty,
+              total_price: +(r.price * r.qty).toFixed(4), source_file: _extSrcFile,
+            }));
+            const { error } = await sb.from('ext_quote_lines').insert(extRows);
+            if (!error) extOk = extRows.length;
+            else extErr = error.message;
+          } catch(e) { extErr = e.message; }
+        }
+
+        // 결과 표시
+        document.getElementById('ext-result').style.display = 'block';
+        document.getElementById('ext-result-body').innerHTML = `
+          <div style="display:flex;flex-direction:column;gap:8px;font-size:13px">
+            <div>✅ <b>바코드 검증 데이터</b> (verification_sets): ${vsOk}건 저장${vsSkip ? ` · ${vsSkip}건 미매칭 제외` : ''}</div>
+            <div>✅ <b>단가 데이터</b> (localStorage): ${priceOk}건 저장 — 거래명세서 생성 시 자동 참조</div>
+            ${extOk ? `<div>✅ <b>ext_quote_lines 테이블</b>: ${extOk}건 저장</div>` : ''}
+            ${extErr && !extOk ? `<div style="color:var(--amb)">⚠ ext_quote_lines 미저장 (테이블 없음) — localStorage로 대체 완료<br><span style="font-size:11px;color:var(--mut)">Supabase SQL Editor에서 아래 migration 실행 시 DB 영구 저장 가능</span></div>` : ''}
+            <div style="margin-top:4px">
+              <button class="btn btn-sm btn-outline-primary" onclick="switchMainTab('main');loadData()">출하 PO 목록으로 이동</button>
+            </div>
+          </div>`;
+        document.getElementById('ext-result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+      } catch(e) {
+        alert('임포트 오류: ' + e.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<span class="mi" style="font-size:16px">cloud_upload</span>Supabase에 임포트';
+      }
     }
 
     /* ════ 기존 바코드 스캐너 (PO 검색용) ════ */
