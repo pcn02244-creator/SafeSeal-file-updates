@@ -280,12 +280,18 @@ async function generateQuotation(mesFile, masterFile) {
   const partPriceMap = {};
   for (const p of parts) {
     const cum      = usage.filter(u => u.part_number === p.part_number).reduce((s, u) => s + u.quantity, 0);
-    const exceeded = p.qty_threshold > 0 && cum > p.qty_threshold;
+    const exceeded = p.qty_threshold > 0 && cum >= p.qty_threshold;
+    // price_override가 설정된 경우 임계치 로직 무시하고 그 값을 강제 사용
+    const hasOverride = p.price_override != null && Number(p.price_override) > 0;
+    const unitPrice   = hasOverride
+      ? Number(p.price_override)
+      : (exceeded ? Number(p.price_to_be) : Number(p.price_as_is));
+    const priceStatus = hasOverride ? 'Fixed' : (exceeded ? 'To-be' : 'As-is');
     const info = {
-      unitPrice: exceeded ? p.price_to_be : p.price_as_is,
+      unitPrice,
       unit: p.unit, unitSize: p.unit_size || 1,
       description: p.description, partType: p.type,
-      priceStatus: exceeded ? 'To-be' : 'As-is', canonicalPN: p.part_number,
+      priceStatus, canonicalPN: p.part_number,
     };
     partPriceMap[p.part_number] = info;
     if (Array.isArray(p.alt_numbers)) p.alt_numbers.forEach(alt => { partPriceMap[alt] = info; });
