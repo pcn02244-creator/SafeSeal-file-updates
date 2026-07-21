@@ -381,8 +381,18 @@
     <div class="cal-detail" id="cal-detail">
       <div class="cal-detail-hdr">
         <span id="cal-detail-date"></span>
-        <button onclick="document.getElementById('cal-detail').classList.remove('show')"
-          style="background:none;border:none;cursor:pointer;color:var(--mut);font-size:18px;line-height:1">✕</button>
+        <div style="display:flex;align-items:center;gap:8px">
+          <button onclick="calExcelDownload()" class="btn-excel">⬇ 엑셀</button>
+          <button onclick="document.getElementById('cal-detail').classList.remove('show')"
+            style="background:none;border:none;cursor:pointer;color:var(--mut);font-size:18px;line-height:1">✕</button>
+        </div>
+      </div>
+      <div style="padding:10px 18px;border-bottom:1px solid var(--bdr);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <input type="text" id="cal-search" placeholder="PO / SN / 주문번호 검색…"
+          style="flex:1;min-width:160px;padding:6px 12px;border:1.5px solid var(--bdr);border-radius:6px;font-size:12px;font-family:var(--fn);outline:none;"
+          oninput="calSearch()"
+          onfocus="this.style.borderColor='var(--p)'" onblur="this.style.borderColor='var(--bdr)'">
+        <span id="cal-sel-info" style="font-size:12px;font-weight:600;color:var(--p);white-space:nowrap"></span>
       </div>
       <div id="cal-detail-body"></div>
     </div>
@@ -884,82 +894,167 @@ function renderCal() {
 function calClickDay(iso) {
   if (!calData) return;
 
-  // 선택 강조
   document.querySelectorAll('.cal-cell.selected').forEach(el => el.classList.remove('selected'));
   event.currentTarget.classList.add('selected');
 
   const { mj, sh, sc } = calData;
-
-  // 해당 날짜 데이터 필터
-  const masters  = mj.filter(r => r.batch_date === iso);
-  const ptns     = sh.filter(r => (r.ptn_uploaded_at||'').slice(0,10) === iso);
-  const ships    = sh.filter(r => (r.ship_date||'').slice(0,10) === iso);
-  const scans    = sc.filter(r => (r.scanned_at||'').slice(0,10) === iso);
+  window._calDay = {
+    iso,
+    masters: mj.filter(r => r.batch_date === iso),
+    ptns:    sh.filter(r => (r.ptn_uploaded_at||'').slice(0,10) === iso),
+    ships:   sh.filter(r => (r.ship_date||'').slice(0,10) === iso),
+    scans:   sc.filter(r => (r.scanned_at||'').slice(0,10) === iso),
+  };
 
   const [y,m,d] = iso.split('-');
   document.getElementById('cal-detail-date').textContent = `${y}년 ${parseInt(m)}월 ${parseInt(d)}일`;
+  const srch = document.getElementById('cal-search');
+  if (srch) srch.value = '';
+  document.getElementById('cal-sel-info').textContent = '';
+
+  renderCalDetail('');
+
+  const detail = document.getElementById('cal-detail');
+  detail.classList.add('show');
+  detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function renderCalDetail(q) {
+  if (!window._calDay) return;
+  const norm = (q || '').trim().toLowerCase();
+  const { masters, ptns, ships, scans } = window._calDay;
+
+  const flt = (rows, fields) => norm
+    ? rows.filter(r => fields.some(f => (r[f]||'').toLowerCase().includes(norm)))
+    : rows;
+
+  const fm = flt(masters, ['order_no','po','sn']);
+  const fp = flt(ptns,    ['po','ptn_no']);
+  const fs = flt(ships,   ['po','ptn_no']);
+  const fc = flt(scans,   ['po','sn','order_no']);
+  window._calFiltered = { masters: fm, ptns: fp, ships: fs, scans: fc };
+
+  const secChk = (sec) =>
+    `<input type="checkbox" class="cal-sec-chk" onchange="calToggleSec('${sec}',this.checked)"
+      title="전체 선택" style="margin-left:6px;accent-color:var(--p);cursor:pointer">`;
 
   let body = '';
 
   // 마스터/견적
   body += `<div class="cal-section">
-    <div class="cal-sec-title"><span class="cal-dot dot-master"></span>마스터 / 견적 (${masters.length}건)</div>`;
-  if (masters.length) {
+    <div class="cal-sec-title"><span class="cal-dot dot-master"></span>마스터 / 견적 (${fm.length}건)${fm.length ? secChk('master') : ''}</div>`;
+  if (fm.length) {
     body += `<div style="overflow-x:auto"><table class="dtable" style="font-size:11px">
-      <thead><tr><th>주문번호</th><th>PO</th><th>SN</th></tr></thead><tbody>
-      ${masters.map(r=>`<tr><td class="mono">${r.order_no||'—'}</td><td class="mono">${r.po||'—'}</td><td>${r.sn||'—'}</td></tr>`).join('')}
+      <thead><tr><th style="width:28px"></th><th>주문번호</th><th>PO</th><th>SN</th></tr></thead><tbody>
+      ${fm.map((r,i) => `<tr>
+        <td style="text-align:center"><input type="checkbox" class="cal-row-chk" data-sec="master" data-i="${i}" onchange="calUpdateSel()" style="accent-color:var(--p);cursor:pointer"></td>
+        <td class="mono">${r.order_no||'—'}</td><td class="mono">${r.po||'—'}</td><td>${r.sn||'—'}</td>
+      </tr>`).join('')}
       </tbody></table></div>`;
-  } else {
-    body += `<div class="cal-sec-empty">데이터 없음</div>`;
-  }
+  } else { body += `<div class="cal-sec-empty">데이터 없음</div>`; }
   body += '</div>';
 
   // PTN 업로드
   body += `<div class="cal-section">
-    <div class="cal-sec-title"><span class="cal-dot dot-ptn"></span>PTN 업로드 (${ptns.length}건)</div>`;
-  if (ptns.length) {
+    <div class="cal-sec-title"><span class="cal-dot dot-ptn"></span>PTN 업로드 (${fp.length}건)${fp.length ? secChk('ptn') : ''}</div>`;
+  if (fp.length) {
     body += `<div style="overflow-x:auto"><table class="dtable" style="font-size:11px">
-      <thead><tr><th>PO</th><th>PTN NO</th></tr></thead><tbody>
-      ${ptns.map(r=>`<tr><td class="mono">${r.po||'—'}</td><td class="mono">${r.ptn_no||'—'}</td></tr>`).join('')}
+      <thead><tr><th style="width:28px"></th><th>PO</th><th>PTN NO</th></tr></thead><tbody>
+      ${fp.map((r,i) => `<tr>
+        <td style="text-align:center"><input type="checkbox" class="cal-row-chk" data-sec="ptn" data-i="${i}" onchange="calUpdateSel()" style="accent-color:var(--p);cursor:pointer"></td>
+        <td class="mono">${r.po||'—'}</td><td class="mono">${r.ptn_no||'—'}</td>
+      </tr>`).join('')}
       </tbody></table></div>`;
-  } else {
-    body += `<div class="cal-sec-empty">데이터 없음</div>`;
-  }
+  } else { body += `<div class="cal-sec-empty">데이터 없음</div>`; }
   body += '</div>';
 
   // 출하
   body += `<div class="cal-section">
-    <div class="cal-sec-title"><span class="cal-dot dot-ship"></span>출하 (${ships.length}건)</div>`;
-  if (ships.length) {
+    <div class="cal-sec-title"><span class="cal-dot dot-ship"></span>출하 (${fs.length}건)${fs.length ? secChk('ship') : ''}</div>`;
+  if (fs.length) {
     body += `<div style="overflow-x:auto"><table class="dtable" style="font-size:11px">
-      <thead><tr><th>PO</th><th>PTN NO</th></tr></thead><tbody>
-      ${ships.map(r=>`<tr><td class="mono">${r.po||'—'}</td><td class="mono">${r.ptn_no||'—'}</td></tr>`).join('')}
+      <thead><tr><th style="width:28px"></th><th>PO</th><th>PTN NO</th></tr></thead><tbody>
+      ${fs.map((r,i) => `<tr>
+        <td style="text-align:center"><input type="checkbox" class="cal-row-chk" data-sec="ship" data-i="${i}" onchange="calUpdateSel()" style="accent-color:var(--p);cursor:pointer"></td>
+        <td class="mono">${r.po||'—'}</td><td class="mono">${r.ptn_no||'—'}</td>
+      </tr>`).join('')}
       </tbody></table></div>`;
-  } else {
-    body += `<div class="cal-sec-empty">데이터 없음</div>`;
-  }
+  } else { body += `<div class="cal-sec-empty">데이터 없음</div>`; }
   body += '</div>';
 
   // 스캔 이력
   body += `<div class="cal-section">
-    <div class="cal-sec-title"><span class="cal-dot dot-scan"></span>스캔 PASS 이력 (${scans.length}건)</div>`;
-  if (scans.length) {
+    <div class="cal-sec-title"><span class="cal-dot dot-scan"></span>스캔 PASS 이력 (${fc.length}건)${fc.length ? secChk('scan') : ''}</div>`;
+  if (fc.length) {
     body += `<div style="overflow-x:auto"><table class="dtable" style="font-size:11px">
-      <thead><tr><th>시각</th><th>PO</th><th>SN</th><th>주문번호</th></tr></thead><tbody>
-      ${scans.map(r=>{
+      <thead><tr><th style="width:28px"></th><th>시각</th><th>PO</th><th>SN</th><th>주문번호</th></tr></thead><tbody>
+      ${fc.map((r,i) => {
         const t = new Date(r.scanned_at).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-        return `<tr><td class="mono">${t}</td><td class="mono">${r.po||'—'}</td><td>${r.sn||'—'}</td><td class="mono">${r.order_no||'—'}</td></tr>`;
+        return `<tr>
+          <td style="text-align:center"><input type="checkbox" class="cal-row-chk" data-sec="scan" data-i="${i}" onchange="calUpdateSel()" style="accent-color:var(--p);cursor:pointer"></td>
+          <td class="mono">${t}</td><td class="mono">${r.po||'—'}</td><td>${r.sn||'—'}</td><td class="mono">${r.order_no||'—'}</td>
+        </tr>`;
       }).join('')}
       </tbody></table></div>`;
-  } else {
-    body += `<div class="cal-sec-empty">데이터 없음</div>`;
-  }
+  } else { body += `<div class="cal-sec-empty">데이터 없음</div>`; }
   body += '</div>';
 
   document.getElementById('cal-detail-body').innerHTML = body;
-  const detail = document.getElementById('cal-detail');
-  detail.classList.add('show');
-  detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  calUpdateSel();
+}
+
+function calSearch() {
+  renderCalDetail(document.getElementById('cal-search').value || '');
+}
+
+function calToggleSec(sec, checked) {
+  document.querySelectorAll(`.cal-row-chk[data-sec="${sec}"]`).forEach(c => { c.checked = checked; });
+  calUpdateSel();
+}
+
+function calUpdateSel() {
+  const sel = document.querySelectorAll('.cal-row-chk:checked');
+  const info = document.getElementById('cal-sel-info');
+  if (info) info.textContent = sel.length ? `${sel.length}건 선택됨` : '';
+}
+
+function calExcelDownload() {
+  if (typeof XLSX === 'undefined') { alert('SheetJS 로드 중… 잠시 후 다시 시도하세요.'); return; }
+  const f = window._calFiltered;
+  if (!f) { alert('날짜를 먼저 선택하세요.'); return; }
+  const iso = window._calDay?.iso || '';
+
+  const getRows = (sec, rows) => {
+    const idx = [...document.querySelectorAll(`.cal-row-chk[data-sec="${sec}"]:checked`)].map(c => parseInt(c.dataset.i));
+    return idx.length ? idx.map(i => rows[i]) : rows;
+  };
+
+  const wb = XLSX.utils.book_new();
+
+  const mRows = getRows('master', f.masters);
+  if (mRows.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(mRows.map(r => ({
+    '날짜': iso, '주문번호': r.order_no||'', 'PO': r.po||'', 'SN': r.sn||''
+  }))), '마스터견적');
+
+  const pRows = getRows('ptn', f.ptns);
+  if (pRows.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(pRows.map(r => ({
+    '날짜': iso, 'PO': r.po||'', 'PTN NO': r.ptn_no||''
+  }))), 'PTN업로드');
+
+  const sRows = getRows('ship', f.ships);
+  if (sRows.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sRows.map(r => ({
+    '날짜': iso, 'PO': r.po||'', 'PTN NO': r.ptn_no||''
+  }))), '출하');
+
+  const cRows = getRows('scan', f.scans);
+  if (cRows.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(cRows.map(r => ({
+    '날짜': iso,
+    '시각': r.scanned_at ? new Date(r.scanned_at).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '',
+    'PO': r.po||'', 'SN': r.sn||'', '주문번호': r.order_no||''
+  }))), '스캔이력');
+
+  if (!wb.SheetNames.length) { alert('다운로드할 데이터가 없습니다.'); return; }
+  XLSX.writeFile(wb, `캘린더_${iso}.xlsx`);
 }
 
 /* ──────────────────────────────────────────────
