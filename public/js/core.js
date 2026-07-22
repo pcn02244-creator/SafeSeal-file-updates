@@ -80,7 +80,18 @@ async function initData() {
       ]),
       timeout,
     ]);
-    if (p.data) DB._s('parts', p.data);
+    if (p.data) {
+      // alt_numbers: Supabase 테이블에 해당 컬럼 없으면 parts.json에서 보강
+      let sbParts = p.data;
+      try {
+        const _base = (() => { const s = location.pathname.split('/'); return s.length > 2 && s[1] ? '/' + s[1] : ''; })();
+        const jsonParts = await fetch(`${_base}/data/parts.json`).then(r => r.json());
+        const altMap = {};
+        jsonParts.forEach(jp => { if (jp.alt_numbers?.length) altMap[jp.part_number] = jp.alt_numbers; });
+        sbParts = sbParts.map(sp => sp.alt_numbers ? sp : { ...sp, alt_numbers: altMap[sp.part_number] });
+      } catch {}
+      DB._s('parts', sbParts);
+    }
     if (u.data) DB._s('usage', u.data);
     if (l.data) DB._s('lots', l.data);
     if (c.data) {
