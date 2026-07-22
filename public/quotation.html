@@ -72,6 +72,33 @@
     .page-btn:hover { background:#f0f2f5; }
     .page-btn.active { background:#1a73e8; color:#fff; border-color:#1a73e8; }
     .page-btn:disabled { opacity:.4; cursor:not-allowed; }
+
+    /* ── 견적 탭 ── */
+    .q-tab-nav { display:flex; gap:0; border-bottom:2px solid #dee2e6; margin-bottom:24px; }
+    .q-tab-btn { display:flex; align-items:center; gap:6px; padding:10px 20px; font-size:13px; font-weight:600; color:#6c757d; background:none; border:none; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-2px; transition:.15s; white-space:nowrap; }
+    .q-tab-btn.active { color:#1a73e8; border-bottom-color:#1a73e8; }
+    .q-tab-pane { display:none; }
+    .q-tab-pane.active { display:block; }
+
+    /* ── SHT 견적 임포트 ── */
+    .sht-card { background:#fff; border:1px solid #dee2e6; border-radius:12px; padding:22px 24px; margin-bottom:18px; }
+    .sht-card-title { font-size:11px; font-weight:700; letter-spacing:.07em; text-transform:uppercase; color:#6c757d; margin-bottom:14px; display:flex; align-items:center; gap:8px; }
+    .sht-dropzone { border:2px dashed #8db4e2; border-radius:10px; padding:36px 20px; text-align:center; cursor:pointer; transition:background .15s, border-color .15s; background:#f8fbff; }
+    .sht-dropzone:hover, .sht-dropzone.drag-over { background:#eef4ff; border-color:#1a73e8; }
+    .sht-dropzone.has-file { border-style:solid; border-color:#28a745; background:#f0fff4; }
+    .col-map-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:12px; }
+    .col-map-item label { font-size:11px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:#6c757d; display:block; margin-bottom:4px; }
+    .col-map-item select { width:100%; padding:6px 10px; border:1.5px solid #dee2e6; border-radius:6px; font-size:12px; outline:none; }
+    .col-map-item select:focus { border-color:#1a73e8; }
+    .sht-preview-tbl { font-size:11.5px; border-collapse:collapse; width:100%; }
+    .sht-preview-tbl th { background:#1e2a3a; color:#fff; padding:7px 10px; font-size:10px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; white-space:nowrap; }
+    .sht-preview-tbl td { padding:6px 10px; border-bottom:1px solid #dee2e6; white-space:nowrap; }
+    .sht-preview-tbl tr:hover td { background:#eef2ff; }
+    .sht-match-ok { color:#28a745; font-weight:700; }
+    .sht-match-warn { color:#e8710a; font-weight:700; }
+    .btn-sht-import { background:#1a73e8; color:#fff; border:none; border-radius:8px; padding:10px 24px; font-size:13px; font-weight:700; cursor:pointer; display:flex; align-items:center; gap:8px; transition:.15s; }
+    .btn-sht-import:hover { background:#1558c0; }
+    .btn-sht-import:disabled { opacity:.45; cursor:not-allowed; }
   </style>
 </head>
 <body>
@@ -86,6 +113,19 @@
   </nav>
 
   <div class="container-fluid p-4">
+
+    <!-- 탭 네비게이션 -->
+    <div class="q-tab-nav">
+      <button class="q-tab-btn active" id="qtab-self-btn" onclick="switchQTab('self')">
+        📊 자체 견적
+      </button>
+      <button class="q-tab-btn" id="qtab-sht-btn" onclick="switchQTab('sht')">
+        📥 SHT 견적
+      </button>
+    </div>
+
+    <!-- ── 탭 1: 자체 견적 ── -->
+    <div id="qtab-self" class="q-tab-pane active">
 
     <!-- 견적 생성 입력 -->
     <div class="card mb-4" style="border:none;border-radius:10px;box-shadow:0 1px 6px rgba(0,0,0,.07)">
@@ -230,8 +270,73 @@
         </div>
       </div>
 
-    </div>
-  </div>
+    </div><!-- /results -->
+
+    </div><!-- /qtab-self -->
+
+    <!-- ── 탭 2: SHT 견적 ── -->
+    <div id="qtab-sht" class="q-tab-pane">
+
+      <!-- STEP 1: 파일 업로드 -->
+      <div class="sht-card">
+        <div class="sht-card-title">📁 STEP 1 — SHT 견적 Excel 업로드</div>
+        <div id="sht-load-status" style="font-size:11px;color:#6c757d;margin-bottom:8px"></div>
+        <div class="sht-dropzone" id="sht-dropzone" onclick="document.getElementById('sht-file-input').click()">
+          <input type="file" id="sht-file-input" accept=".xlsx,.xls" style="display:none" onchange="handleShtFile(this.files[0])">
+          <div style="font-size:2.2rem;line-height:1">📄</div>
+          <div style="margin-top:10px;font-size:14px;font-weight:600;color:#6c757d">Excel 파일을 드래그하거나 클릭해서 선택</div>
+          <div style="font-size:11px;color:#adb5bd;margin-top:4px">.xlsx / .xls 지원 · PO, PTN(0247#), SN, PN, 단가, 수량 컬럼 포함 파일</div>
+        </div>
+        <div id="sht-file-info" style="margin-top:10px;font-size:12px;color:#6c757d;display:none"></div>
+      </div>
+
+      <!-- STEP 2: 컬럼 매핑 -->
+      <div class="sht-card" id="sht-step2" style="display:none">
+        <div class="sht-card-title">🔧 STEP 2 — 컬럼 매핑 확인
+          <span style="font-size:10px;color:#6c757d;font-weight:400;text-transform:none;letter-spacing:0">자동 감지됨. 잘못된 항목이 있으면 드롭다운으로 수정하세요.</span>
+        </div>
+        <div class="col-map-grid" id="sht-col-map"></div>
+        <div style="margin-top:16px">
+          <button class="btn btn-sm btn-primary" onclick="applyShtColMapping()">
+            👁 미리보기 생성
+          </button>
+        </div>
+      </div>
+
+      <!-- STEP 3: 미리보기 + 임포트 -->
+      <div class="sht-card" id="sht-step3" style="display:none">
+        <div class="sht-card-title" style="justify-content:space-between">
+          <div style="display:flex;align-items:center;gap:8px">
+            📋 STEP 3 — 미리보기
+            <span id="sht-preview-cnt" style="font-size:11px;color:#6c757d;text-transform:none;letter-spacing:0;font-weight:400"></span>
+          </div>
+          <button class="btn-sht-import" id="sht-import-btn" onclick="importShtQuote()">
+            ☁️ Supabase에 임포트
+          </button>
+        </div>
+        <div id="sht-match-summary" style="margin-bottom:12px;font-size:12px"></div>
+        <div style="overflow-x:auto">
+          <table class="sht-preview-tbl">
+            <thead>
+              <tr>
+                <th>#</th><th>PO</th><th>PTN (0247#)</th><th>SN</th><th>PN</th>
+                <th>단가 (USD)</th><th>수량</th><th>합계</th><th>수주번호 매칭</th>
+              </tr>
+            </thead>
+            <tbody id="sht-preview-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 임포트 결과 -->
+      <div class="sht-card" id="sht-result" style="display:none">
+        <div class="sht-card-title">✅ 임포트 완료</div>
+        <div id="sht-result-body"></div>
+      </div>
+
+    </div><!-- /qtab-sht -->
+
+  </div><!-- /container-fluid -->
 
   <!-- 상세 모달 -->
   <div class="modal fade" id="detailModal" tabindex="-1">
@@ -836,6 +941,271 @@
     function uUpdateCount() {
       const n = document.querySelectorAll('.u-chk:checked').length;
       document.getElementById('u-sel-count').textContent = `${n}개 파트 선택됨`;
+    }
+
+    /* ════════════════════════════════════════════
+       SHT 견적 탭 전환
+    ═══════════════════════════════════════════ */
+    function switchQTab(id) {
+      ['self','sht'].forEach(t => {
+        document.getElementById(`qtab-${t}`).classList.toggle('active', t === id);
+        document.getElementById(`qtab-${t}-btn`).classList.toggle('active', t === id);
+      });
+      if (id === 'sht' && !_shtLoaded) loadShtMasterJobs();
+    }
+
+    /* ════════════════════════════════════════════
+       SHT 견적 임포트 — 전역 상태
+    ═══════════════════════════════════════════ */
+    let _shtRawRows    = [];
+    let _shtHeaders    = [];
+    let _shtColMap     = {};
+    let _shtMapped     = [];
+    let _shtSrcFile    = '';
+    let _shtMasterJobs = [];
+    let _shtLoaded     = false;
+
+    async function loadShtMasterJobs() {
+      const el = document.getElementById('sht-load-status');
+      if (el) el.textContent = '마스터 데이터 로드 중…';
+      try {
+        const sb = getSB();
+        if (!sb) throw new Error('Supabase 연결 없음');
+        const { data, error } = await sb.from('master_jobs').select('order_no,po,tkm_no,sn,pn');
+        if (error) throw error;
+        _shtMasterJobs = data || [];
+        _shtLoaded = true;
+        if (el) el.textContent = `마스터 ${_shtMasterJobs.length}건 로드 완료`;
+      } catch(e) {
+        if (el) el.textContent = `마스터 로드 실패: ${e.message}`;
+      }
+    }
+
+    (function setupShtDropzone() {
+      const dz = document.getElementById('sht-dropzone');
+      if (!dz) return;
+      dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+      dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+      dz.addEventListener('drop', e => {
+        e.preventDefault(); dz.classList.remove('drag-over');
+        const f = e.dataTransfer.files[0];
+        if (f) handleShtFile(f);
+      });
+    })();
+
+    function handleShtFile(file) {
+      if (!file) return;
+      _shtSrcFile = file.name;
+      const dz = document.getElementById('sht-dropzone');
+      dz.classList.add('has-file');
+      document.getElementById('sht-file-info').style.display = 'block';
+      document.getElementById('sht-file-info').textContent = `📄 ${file.name} (${(file.size/1024).toFixed(1)} KB)`;
+
+      const reader = new FileReader();
+      reader.onload = ev => {
+        const wb = XLSX.read(ev.target.result, { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const all = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+        let hdrIdx = 0;
+        for (let i = 0; i < Math.min(10, all.length); i++) {
+          if (all[i].filter(c => String(c).trim()).length >= 3) { hdrIdx = i; break; }
+        }
+        _shtHeaders = all[hdrIdx].map(c => String(c).trim());
+        _shtRawRows = all.slice(hdrIdx + 1).filter(r => r.some(c => String(c).trim()));
+        _shtColMap  = shtAutoDetectCols(_shtHeaders);
+        renderShtColMapper();
+        document.getElementById('sht-step2').style.display = 'block';
+        document.getElementById('sht-step3').style.display = 'none';
+        document.getElementById('sht-result').style.display = 'none';
+        document.getElementById('sht-step2').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    function shtAutoDetectCols(headers) {
+      const h = headers.map(s => s.toLowerCase());
+      const find = (...kws) => {
+        for (const kw of kws) {
+          const i = h.findIndex(s => s.includes(kw));
+          if (i >= 0) return i;
+        }
+        return -1;
+      };
+      return {
+        po:    find('po', 'purchase order', '구매'),
+        ptn:   find('0247', 'ptn', 'tkm', 'part tag'),
+        sn:    find('sn', 'serial'),
+        pn:    find('pn', 'part no', 'part number', '품번'),
+        price: find('price', '단가', 'unit price', 'selling', 'unit_price'),
+        qty:   find('qty', 'quantity', '수량', 'ea', 'count'),
+      };
+    }
+
+    function renderShtColMapper() {
+      const fields = [
+        { key: 'po',    label: 'PO 번호',       required: true  },
+        { key: 'ptn',   label: 'PTN (0247#)',    required: false },
+        { key: 'sn',    label: 'SN',             required: false },
+        { key: 'pn',    label: 'PN (부품번호)',  required: false },
+        { key: 'price', label: '단가 (USD)',      required: true  },
+        { key: 'qty',   label: '수량',           required: true  },
+      ];
+
+      document.getElementById('sht-col-map').innerHTML = fields.map(f => `
+        <div class="col-map-item">
+          <label>${f.label}${f.required ? ' <span style="color:#dc2626">*</span>' : ''}</label>
+          <select id="scm-${f.key}" onchange="_shtColMap['${f.key}']=parseInt(this.value)">
+            ${['(선택 안 함)', ..._shtHeaders].map((hh, i) => {
+              const idx = i - 1;
+              const sel = _shtColMap[f.key] === idx ? ' selected' : '';
+              return `<option value="${idx}"${sel}>${hh}</option>`;
+            }).join('')}
+          </select>
+        </div>`).join('');
+    }
+
+    function applyShtColMapping() {
+      ['po','ptn','sn','pn','price','qty'].forEach(k => {
+        const el = document.getElementById(`scm-${k}`);
+        if (el) _shtColMap[k] = parseInt(el.value);
+      });
+
+      if (_shtColMap.po < 0)    { alert('PO 번호 컬럼을 선택해주세요.'); return; }
+      if (_shtColMap.price < 0) { alert('단가 컬럼을 선택해주세요.'); return; }
+      if (_shtColMap.qty < 0)   { alert('수량 컬럼을 선택해주세요.'); return; }
+
+      const get = (row, key) => {
+        const idx = _shtColMap[key];
+        return idx >= 0 ? String(row[idx] || '').trim() : '';
+      };
+
+      _shtMapped = _shtRawRows
+        .map(row => {
+          const po    = get(row, 'po');
+          const ptn   = get(row, 'ptn');
+          const sn    = get(row, 'sn');
+          const pn    = get(row, 'pn');
+          const price = parseFloat(String(get(row, 'price')).replace(/[^0-9.]/g, '')) || 0;
+          const qty   = parseInt(String(get(row, 'qty')).replace(/[^0-9]/g, ''))     || 0;
+          if (!po && !ptn && !sn) return null;
+          const order_no = shtLookupOrderNo(po, ptn, sn, pn);
+          return { po, ptn, sn, pn, price, qty, order_no };
+        })
+        .filter(Boolean);
+
+      renderShtPreview();
+      document.getElementById('sht-step3').style.display = 'block';
+      document.getElementById('sht-step3').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function shtLookupOrderNo(po, ptn, sn, pn) {
+      if (ptn) {
+        const hit = _shtMasterJobs.find(j => j.po === po && j.tkm_no === ptn);
+        if (hit) return hit.order_no;
+      }
+      if (sn) {
+        const hit = _shtMasterJobs.find(j => j.po === po && j.sn === sn);
+        if (hit) return hit.order_no;
+      }
+      if (pn) {
+        const hit = _shtMasterJobs.find(j => j.po === po && j.pn === pn);
+        if (hit) return hit.order_no;
+      }
+      return null;
+    }
+
+    function renderShtPreview() {
+      const matched   = _shtMapped.filter(r => r.order_no).length;
+      const unmatched = _shtMapped.length - matched;
+
+      document.getElementById('sht-preview-cnt').textContent =
+        `총 ${_shtMapped.length}건 · 매칭 ${matched}건 · 미매칭 ${unmatched}건`;
+
+      document.getElementById('sht-match-summary').innerHTML = unmatched
+        ? `<span style="color:#e8710a">⚠ ${unmatched}건은 마스터에서 수주번호를 찾지 못했습니다. 해당 행은 바코드 검증 대상에서 제외되며, 단가 데이터는 저장됩니다.</span>`
+        : `<span style="color:#28a745;font-weight:700">✅ 전체 ${matched}건 수주번호 매칭 완료</span>`;
+
+      document.getElementById('sht-preview-tbody').innerHTML = _shtMapped.map((r, i) => {
+        const mCls = r.order_no ? 'sht-match-ok' : 'sht-match-warn';
+        const mTxt = r.order_no ? `✅ ${r.order_no}` : '⚠ 미매칭';
+        return `<tr>
+          <td style="color:#6c757d">${i+1}</td>
+          <td style="font-family:monospace">${r.po||'—'}</td>
+          <td style="font-family:monospace">${r.ptn||'—'}</td>
+          <td style="font-family:monospace">${r.sn||'—'}</td>
+          <td style="font-family:monospace">${r.pn||'—'}</td>
+          <td style="text-align:right">$${r.price.toFixed(2)}</td>
+          <td style="text-align:right">${r.qty}</td>
+          <td style="text-align:right">$${(r.price*r.qty).toFixed(2)}</td>
+          <td class="${mCls}">${mTxt}</td>
+        </tr>`;
+      }).join('');
+
+      document.getElementById('sht-import-btn').disabled = _shtMapped.length === 0;
+    }
+
+    async function importShtQuote() {
+      const btn = document.getElementById('sht-import-btn');
+      btn.disabled = true;
+      btn.innerHTML = '⏳ 임포트 중…';
+
+      const sb = getSB();
+      if (!sb) { alert('Supabase 연결 없음'); btn.disabled = false; btn.innerHTML = '☁️ Supabase에 임포트'; return; }
+      const today = new Date().toISOString().slice(0, 10);
+      let vsOk = 0, vsSkip = 0, priceOk = 0, extOk = 0, extErr = '';
+
+      try {
+        const vsRows = _shtMapped
+          .filter(r => r.order_no)
+          .map(r => ({ order_no: r.order_no, batch_date: today, po: r.po, sn: r.sn||'', ptn_no: r.ptn||'' }));
+
+        if (vsRows.length) {
+          const { error } = await sb.from('verification_sets')
+            .upsert(vsRows, { onConflict: 'order_no,batch_date' });
+          if (error) throw error;
+          vsOk = vsRows.length;
+        }
+        vsSkip = _shtMapped.length - vsRows.length;
+
+        const priceMap = JSON.parse(localStorage.getItem('ext_quote_prices') || '{}');
+        _shtMapped.forEach(r => {
+          const key = `${r.po}|${r.ptn||r.sn||r.pn}`;
+          priceMap[key] = { unit_price: r.price, qty: r.qty, order_no: r.order_no||'', pn: r.pn||'', batch_date: today };
+        });
+        localStorage.setItem('ext_quote_prices', JSON.stringify(priceMap));
+        priceOk = _shtMapped.length;
+
+        try {
+          const extRows = _shtMapped.map(r => ({
+            batch_date: today, po: r.po, ptn_no: r.ptn||'', sn: r.sn||'', pn: r.pn||'',
+            order_no: r.order_no||'', unit_price: r.price, qty: r.qty,
+            total_price: +(r.price * r.qty).toFixed(4), source_file: _shtSrcFile,
+          }));
+          const { error } = await sb.from('ext_quote_lines').insert(extRows);
+          if (!error) extOk = extRows.length;
+          else extErr = error.message;
+        } catch(e) { extErr = e.message; }
+
+        document.getElementById('sht-result').style.display = 'block';
+        document.getElementById('sht-result-body').innerHTML = `
+          <div style="display:flex;flex-direction:column;gap:8px;font-size:13px">
+            <div>✅ <b>바코드 검증 데이터</b> (verification_sets): ${vsOk}건 저장${vsSkip ? ` · ${vsSkip}건 미매칭 제외` : ''}</div>
+            <div>✅ <b>단가 데이터</b> (localStorage): ${priceOk}건 저장 — 거래명세서 생성 시 자동 참조</div>
+            ${extOk ? `<div>✅ <b>ext_quote_lines 테이블</b>: ${extOk}건 저장</div>` : ''}
+            ${extErr && !extOk ? `<div style="color:#e8710a">⚠ ext_quote_lines 미저장 (테이블 없음) — localStorage로 대체 완료</div>` : ''}
+            <div style="margin-top:4px">
+              <button class="btn btn-sm btn-outline-primary" onclick="switchQTab('self')">자체 견적으로 이동</button>
+            </div>
+          </div>`;
+        document.getElementById('sht-result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+      } catch(e) {
+        alert('임포트 오류: ' + e.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '☁️ Supabase에 임포트';
+      }
     }
 
     async function saveUsageFromQuotation() {
