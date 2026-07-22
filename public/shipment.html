@@ -459,7 +459,7 @@
             <div class="mb-3">
               <label class="form-label small fw-semibold">거래명세서 날짜</label>
               <input type="date" class="form-control form-control-sm" id="stmt-date-input">
-              <div class="text-muted" style="font-size:.75rem">비워두면 오늘 날짜로 자동 설정</div>
+              <div class="text-muted" style="font-size:.75rem">자동: 다음 영업일 (금요일→차주 월요일) · 직접 수정 가능</div>
             </div>
 
             <div class="d-flex align-items-center gap-2 mb-3">
@@ -1240,8 +1240,7 @@
       document.getElementById('stmt-section').classList.remove('d-none');
       document.querySelector('#dateModal .modal-title').textContent = '🖨️ 거래명세서 생성';
       document.getElementById('stmt-status').textContent = '';
-      const todayStr = new Date().toISOString().slice(0, 10);
-      document.getElementById('stmt-date-input').value = todayStr;
+      document.getElementById('stmt-date-input').value = calcNextBizDay();
 
       buildPreview();
       checkDrmBridge();
@@ -1486,6 +1485,15 @@
       return String(str || '')
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+    }
+
+    function calcNextBizDay() {
+      const d = new Date();
+      d.setDate(d.getDate() + 1);
+      const dow = d.getDay(); // 0=일 6=토
+      if (dow === 6) d.setDate(d.getDate() + 2);
+      if (dow === 0) d.setDate(d.getDate() + 1);
+      return d.toISOString().slice(0, 10);
     }
 
     function fillStmtSheet(xml, { date, tkm, amount, po, sn }) {
