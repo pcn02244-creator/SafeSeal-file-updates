@@ -319,8 +319,8 @@
           <table class="sht-preview-tbl">
             <thead>
               <tr>
-                <th>#</th><th>PO</th><th>PTN (0247#)</th><th>SN</th><th>PN</th>
-                <th>단가 (USD)</th><th>수량</th><th>합계</th><th>수주번호 매칭</th>
+                <th>#</th><th>PO</th><th>SN</th><th>PN</th>
+                <th>Total KRW Price</th><th>수주번호 매칭</th>
               </tr>
             </thead>
             <tbody id="sht-preview-tbody"></tbody>
@@ -1024,32 +1024,38 @@
     }
 
     function shtAutoDetectCols(headers) {
-      const h = headers.map(s => s.toLowerCase());
-      const find = (...kws) => {
+      const h = headers.map(s => String(s).toLowerCase().trim());
+      const exact = (...kws) => {
         for (const kw of kws) {
-          const i = h.findIndex(s => s.includes(kw));
+          const i = h.findIndex(s => s === kw.toLowerCase());
           if (i >= 0) return i;
         }
         return -1;
       };
-      return {
-        po:    find('po', 'purchase order', '구매'),
-        ptn:   find('0247', 'ptn', 'tkm', 'part tag'),
-        sn:    find('sn', 'serial'),
-        pn:    find('pn', 'part no', 'part number', '품번'),
-        price: find('price', '단가', 'unit price', 'selling', 'unit_price'),
-        qty:   find('qty', 'quantity', '수량', 'ea', 'count'),
+      const contains = (...kws) => {
+        for (const kw of kws) {
+          const i = h.findIndex(s => s.includes(kw.toLowerCase()));
+          if (i >= 0) return i;
+        }
+        return -1;
       };
+      // PO: 정확히 'po'인 컬럼 우선 (PO Price 등과 구분)
+      const po = exact('po') >= 0 ? exact('po') : contains('purchase order', 'po number');
+      // SN: SS S/N 형식 우선
+      const sn = contains('ss s/n', 'ss sn', 's/n', 'serial number', 'serial no');
+      // PN: Material PN, SS P/N 우선
+      const pn = contains('material pn', 'ss p/n', 'material p/n', 'part number', 'part no');
+      // Price: Total KRW Price 우선 (PO Price 등과 구분)
+      const price = contains('total krw', 'krw price', 'krw total', 'krw');
+      return { po, sn, pn, price };
     }
 
     function renderShtColMapper() {
       const fields = [
-        { key: 'po',    label: 'PO 번호',       required: true  },
-        { key: 'ptn',   label: 'PTN (0247#)',    required: false },
-        { key: 'sn',    label: 'SN',             required: false },
-        { key: 'pn',    label: 'PN (부품번호)',  required: false },
-        { key: 'price', label: '단가 (USD)',      required: true  },
-        { key: 'qty',   label: '수량',           required: true  },
+        { key: 'po',    label: 'PO 번호',             required: true  },
+        { key: 'sn',    label: 'SN (SS S/N)',          required: true  },
+        { key: 'price', label: 'Total KRW Price (₩)',  required: true  },
+        { key: 'pn',    label: 'PN (부품번호, 선택)',  required: false },
       ];
 
       document.getElementById('sht-col-map').innerHTML = fields.map(f => `
@@ -1066,14 +1072,14 @@
     }
 
     function applyShtColMapping() {
-      ['po','ptn','sn','pn','price','qty'].forEach(k => {
+      ['po','sn','pn','price'].forEach(k => {
         const el = document.getElementById(`scm-${k}`);
         if (el) _shtColMap[k] = parseInt(el.value);
       });
 
       if (_shtColMap.po < 0)    { alert('PO 번호 컬럼을 선택해주세요.'); return; }
-      if (_shtColMap.price < 0) { alert('단가 컬럼을 선택해주세요.'); return; }
-      if (_shtColMap.qty < 0)   { alert('수량 컬럼을 선택해주세요.'); return; }
+      if (_shtColMap.sn < 0)    { alert('SN 컬럼을 선택해주세요.'); return; }
+      if (_shtColMap.price < 0) { alert('Total KRW Price 컬럼을 선택해주세요.'); return; }
 
       const get = (row, key) => {
         const idx = _shtColMap[key];
@@ -1083,14 +1089,12 @@
       _shtMapped = _shtRawRows
         .map(row => {
           const po    = get(row, 'po');
-          const ptn   = get(row, 'ptn');
           const sn    = get(row, 'sn');
           const pn    = get(row, 'pn');
-          const price = parseFloat(String(get(row, 'price')).replace(/[^0-9.]/g, '')) || 0;
-          const qty   = parseInt(String(get(row, 'qty')).replace(/[^0-9]/g, ''))     || 0;
-          if (!po && !ptn && !sn) return null;
-          const order_no = shtLookupOrderNo(po, ptn, sn, pn);
-          return { po, ptn, sn, pn, price, qty, order_no };
+          const krw   = parseFloat(String(get(row, 'price')).replace(/[^0-9.]/g, '')) || 0;
+          if (!po && !sn) return null;
+          const order_no = shtLookupOrderNo(po, '', sn, pn);
+          return { po, sn, pn, krw, order_no };
         })
         .filter(Boolean);
 
@@ -1132,12 +1136,9 @@
         return `<tr>
           <td style="color:#6c757d">${i+1}</td>
           <td style="font-family:monospace">${r.po||'—'}</td>
-          <td style="font-family:monospace">${r.ptn||'—'}</td>
           <td style="font-family:monospace">${r.sn||'—'}</td>
           <td style="font-family:monospace">${r.pn||'—'}</td>
-          <td style="text-align:right">$${r.price.toFixed(2)}</td>
-          <td style="text-align:right">${r.qty}</td>
-          <td style="text-align:right">$${(r.price*r.qty).toFixed(2)}</td>
+          <td style="text-align:right">₩${r.krw.toLocaleString()}</td>
           <td class="${mCls}">${mTxt}</td>
         </tr>`;
       }).join('');
@@ -1158,7 +1159,7 @@
       try {
         const vsRows = _shtMapped
           .filter(r => r.order_no)
-          .map(r => ({ order_no: r.order_no, batch_date: today, po: r.po, sn: r.sn||'', ptn_no: r.ptn||'' }));
+          .map(r => ({ order_no: r.order_no, batch_date: today, po: r.po, sn: r.sn||'', ptn_no: '' }));
 
         if (vsRows.length) {
           const { error } = await sb.from('verification_sets')
@@ -1168,19 +1169,21 @@
         }
         vsSkip = _shtMapped.length - vsRows.length;
 
-        const priceMap = JSON.parse(localStorage.getItem('ext_quote_prices') || '{}');
+        // quotation_amounts_cache: 거래명세서가 읽는 KRW 금액 캐시
+        const amtCache = JSON.parse(localStorage.getItem('quotation_amounts_cache') || '{}');
         _shtMapped.forEach(r => {
-          const key = `${r.po}|${r.ptn||r.sn||r.pn}`;
-          priceMap[key] = { unit_price: r.price, qty: r.qty, order_no: r.order_no||'', pn: r.pn||'', batch_date: today };
+          const entry = { usd: 0, krw: r.krw };
+          if (r.sn) amtCache[r.sn] = entry;
+          if (r.po) amtCache[r.po] = entry;
         });
-        localStorage.setItem('ext_quote_prices', JSON.stringify(priceMap));
+        localStorage.setItem('quotation_amounts_cache', JSON.stringify(amtCache));
         priceOk = _shtMapped.length;
 
         try {
           const extRows = _shtMapped.map(r => ({
-            batch_date: today, po: r.po, ptn_no: r.ptn||'', sn: r.sn||'', pn: r.pn||'',
-            order_no: r.order_no||'', unit_price: r.price, qty: r.qty,
-            total_price: +(r.price * r.qty).toFixed(4), source_file: _shtSrcFile,
+            batch_date: today, po: r.po, ptn_no: '', sn: r.sn||'', pn: r.pn||'',
+            order_no: r.order_no||'', unit_price: r.krw, qty: 1,
+            total_price: r.krw, source_file: _shtSrcFile,
           }));
           const { error } = await sb.from('ext_quote_lines').insert(extRows);
           if (!error) extOk = extRows.length;
@@ -1191,11 +1194,11 @@
         document.getElementById('sht-result-body').innerHTML = `
           <div style="display:flex;flex-direction:column;gap:8px;font-size:13px">
             <div>✅ <b>바코드 검증 데이터</b> (verification_sets): ${vsOk}건 저장${vsSkip ? ` · ${vsSkip}건 미매칭 제외` : ''}</div>
-            <div>✅ <b>단가 데이터</b> (localStorage): ${priceOk}건 저장 — 거래명세서 생성 시 자동 참조</div>
+            <div>✅ <b>KRW 금액</b> (quotation_amounts_cache): ${priceOk}건 저장 — 출하관리 거래명세서 생성 시 자동 참조</div>
             ${extOk ? `<div>✅ <b>ext_quote_lines 테이블</b>: ${extOk}건 저장</div>` : ''}
             ${extErr && !extOk ? `<div style="color:#e8710a">⚠ ext_quote_lines 미저장 (테이블 없음) — localStorage로 대체 완료</div>` : ''}
             <div style="margin-top:4px">
-              <button class="btn btn-sm btn-outline-primary" onclick="switchQTab('self')">자체 견적으로 이동</button>
+              <b>다음 단계:</b> 출하관리 탭에서 해당 PO를 선택 후 거래명세서 생성
             </div>
           </div>`;
         document.getElementById('sht-result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
