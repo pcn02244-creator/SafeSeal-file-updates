@@ -713,6 +713,7 @@
     let verifyCamStream = null;
     let verifyTargetField = null;
     let barcodeStream = null;
+    let _scannerOpen  = false;
     let poGroups     = [];   // { po, tkmNos[], pns[], orders[], shipment }
     let filteredGrps = [];
     let selectedPos  = new Set();
@@ -728,6 +729,19 @@
         barcodeModal = new bootstrap.Modal(document.getElementById('barcodeModal'));
         verifyModal  = new bootstrap.Modal(document.getElementById('verifyModal'));
         setupPtnDropzone();
+
+        // 바코드 모달 닫힐 때 스캐너 정리
+        document.getElementById('barcodeModal').addEventListener('hidden.bs.modal', () => {
+          _scannerOpen = false;
+          stopBarcodeScanner();
+        });
+        // 화면 복귀(앱 전환 후 돌아올 때) → 모달 열려있으면 카메라 자동 재시작
+        document.addEventListener('visibilitychange', () => {
+          if (!document.hidden && _scannerOpen) {
+            stopBarcodeScanner();
+            startBarcodeScanner();
+          }
+        });
       } catch(e) { console.warn('초기화 오류:', e); }
       try { await initData(); } catch(e) { console.warn('initData 오류:', e); }
       await loadData();
@@ -1752,6 +1766,7 @@
 
     /* ════ 모바일 바코드 스캐너 ════ */
     function openBarcodeScanner() {
+      _scannerOpen = true;
       if (barcodeModal) barcodeModal.show();
       startBarcodeScanner();
     }
@@ -1796,7 +1811,7 @@
             status.textContent = '인식 완료! 검색 중...';
             document.getElementById('search-input').value = val;
             renderList();
-            setTimeout(() => { stopBarcodeScanner(); if (barcodeModal) barcodeModal.hide(); }, 1800);
+            setTimeout(() => { _scannerOpen = false; stopBarcodeScanner(); if (barcodeModal) barcodeModal.hide(); }, 1800);
             return;
           }
         } catch {}
@@ -2001,6 +2016,7 @@
       if (!val) return;
       document.getElementById('search-input').value = val;
       renderList();
+      _scannerOpen = false;
       stopBarcodeScanner();
       if (barcodeModal) barcodeModal.hide();
     }
