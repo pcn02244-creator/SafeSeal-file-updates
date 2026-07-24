@@ -1100,8 +1100,8 @@
           const pn    = get(row, 'pn');
           const krw   = parseFloat(String(get(row, 'price')).replace(/[^0-9.]/g, '')) || 0;
           if (!po && !sn) return null;
-          const order_no = shtLookupOrderNo(po, '', sn, pn);
-          return { po, sn, pn, krw, order_no };
+          const { order_no, reason } = shtLookupResult(po, '', sn, pn);
+          return { po, sn, pn, krw, order_no, reason };
         })
         .filter(Boolean);
 
@@ -1111,25 +1111,47 @@
     }
 
     function shtLookupOrderNo(po, ptn, sn, pn) {
+      const r = shtLookupResult(po, ptn, sn, pn);
+      return r.order_no;
+    }
+
+    function shtLookupResult(po, ptn, sn, pn) {
       const n = v => String(v || '').trim().toUpperCase().replace(/\s+/g, '');
       const nPo = n(po), nSn = n(sn), nPn = n(pn);
 
-      // SN 우선 매칭: PO+SN → SN만
-      if (nSn) {
-        const hit = _shtMasterJobs.find(j => n(j.sn) === nSn && (!nPo || n(j.po) === nPo));
-        if (hit) return hit.order_no;
+      if (_shtMasterJobs.length === 0) {
+        return { order_no: null, reason: '마스터 0건 — Supabase 연결 확인 필요' };
       }
-      // PO+PN 매칭
+
+      // ① SN+PO 매칭
+      if (nSn && nPo) {
+        const hit = _shtMasterJobs.find(j => n(j.sn) === nSn && n(j.po) === nPo);
+        if (hit) return { order_no: hit.order_no, reason: null };
+      }
+      // ② SN만 매칭
+      if (nSn) {
+        const snHits = _shtMasterJobs.filter(j => n(j.sn) === nSn);
+        if (snHits.length > 0) {
+          // SN은 있으나 PO가 다름
+          const poList = [...new Set(snHits.map(j => j.po))].join(', ');
+          return { order_no: null, reason: `SN "${sn}" 마스터에 있음 → PO 불일치 (마스터 PO: ${poList})` };
+        }
+        // SN 자체가 없음
+        return { order_no: null, reason: `SN "${sn}" 마스터에 없음` };
+      }
+      // ③ PO+PN 매칭
       if (nPo && nPn) {
         const hit = _shtMasterJobs.find(j => n(j.po) === nPo && n(j.pn) === nPn);
-        if (hit) return hit.order_no;
+        if (hit) return { order_no: hit.order_no, reason: null };
       }
-      // PO만으로 단독 매칭 (해당 PO에 job이 1건뿐일 때)
+      // ④ PO 단독 (1건)
       if (nPo) {
         const hits = _shtMasterJobs.filter(j => n(j.po) === nPo);
-        if (hits.length === 1) return hits[0].order_no;
+        if (hits.length === 1) return { order_no: hits[0].order_no, reason: null };
+        if (hits.length > 1)  return { order_no: null, reason: `PO "${po}" 마스터에 ${hits.length}건 — SN으로 특정 필요` };
+        return { order_no: null, reason: `PO "${po}" 마스터에 없음` };
       }
-      return null;
+      return { order_no: null, reason: 'SN/PO 값 없음' };
     }
 
     function renderShtPreview() {
@@ -1145,14 +1167,16 @@
 
       document.getElementById('sht-preview-tbody').innerHTML = _shtMapped.map((r, i) => {
         const mCls = r.order_no ? 'sht-match-ok' : 'sht-match-warn';
-        const mTxt = r.order_no ? `✅ ${r.order_no}` : '⚠ 미매칭';
+        const mTxt = r.order_no
+          ? `✅ ${r.order_no}`
+          : `⚠ ${r.reason || '미매칭'}`;
         return `<tr>
           <td style="color:#6c757d">${i+1}</td>
           <td style="font-family:monospace">${r.po||'—'}</td>
           <td style="font-family:monospace">${r.sn||'—'}</td>
           <td style="font-family:monospace">${r.pn||'—'}</td>
           <td style="text-align:right">₩${r.krw.toLocaleString()}</td>
-          <td class="${mCls}">${mTxt}</td>
+          <td class="${mCls}" style="font-size:11px;max-width:260px;white-space:normal">${mTxt}</td>
         </tr>`;
       }).join('');
 
