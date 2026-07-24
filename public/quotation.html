@@ -993,43 +993,41 @@
       });
     })();
 
-    function handleShtFile(file) {
+    async function handleShtFile(file) {
       if (!file) return;
       _shtSrcFile = file.name;
       const dz = document.getElementById('sht-dropzone');
       dz.classList.add('has-file');
       document.getElementById('sht-file-info').style.display = 'block';
       document.getElementById('sht-file-info').textContent = `📄 ${file.name} (${(file.size/1024).toFixed(1)} KB)`;
+      document.getElementById('sht-result').style.display = 'none';
 
-      const reader = new FileReader();
-      reader.onload = ev => {
-        const wb = XLSX.read(ev.target.result, { type: 'array' });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const all = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      // 마스터 로드 완료 보장 (파일 파싱 전에 반드시 완료)
+      if (!_shtLoaded) await loadShtMasterJobs();
 
-        let hdrIdx = 0;
-        for (let i = 0; i < Math.min(10, all.length); i++) {
-          if (all[i].filter(c => String(c).trim()).length >= 3) { hdrIdx = i; break; }
-        }
-        _shtHeaders = all[hdrIdx].map(c => String(c).trim());
-        _shtRawRows = all.slice(hdrIdx + 1).filter(r => r.some(c => String(c).trim()));
-        _shtColMap  = shtAutoDetectCols(_shtHeaders);
-        document.getElementById('sht-result').style.display = 'none';
+      const buf = await file.arrayBuffer();
+      const wb  = XLSX.read(buf, { type: 'array' });
+      const ws  = wb.Sheets[wb.SheetNames[0]];
+      const all = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
-        const autoOk = _shtColMap.po >= 0 && _shtColMap.sn >= 0 && _shtColMap.price >= 0;
-        if (autoOk) {
-          // 필수 컬럼 모두 자동 감지 → 컬럼 매핑 화면 생략하고 바로 미리보기
-          document.getElementById('sht-step2').style.display = 'none';
-          applyShtColMapping();
-        } else {
-          // 자동 감지 실패 → 수동 매핑 화면 표시
-          renderShtColMapper();
-          document.getElementById('sht-step2').style.display = 'block';
-          document.getElementById('sht-step3').style.display = 'none';
-          document.getElementById('sht-step2').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        }
-      };
-      reader.readAsArrayBuffer(file);
+      let hdrIdx = 0;
+      for (let i = 0; i < Math.min(10, all.length); i++) {
+        if (all[i].filter(c => String(c).trim()).length >= 3) { hdrIdx = i; break; }
+      }
+      _shtHeaders = all[hdrIdx].map(c => String(c).trim());
+      _shtRawRows = all.slice(hdrIdx + 1).filter(r => r.some(c => String(c).trim()));
+      _shtColMap  = shtAutoDetectCols(_shtHeaders);
+
+      const autoOk = _shtColMap.po >= 0 && _shtColMap.sn >= 0 && _shtColMap.price >= 0;
+      if (autoOk) {
+        document.getElementById('sht-step2').style.display = 'none';
+        applyShtColMapping();
+      } else {
+        renderShtColMapper();
+        document.getElementById('sht-step2').style.display = 'block';
+        document.getElementById('sht-step3').style.display = 'none';
+        document.getElementById('sht-step2').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
     }
 
     function shtAutoDetectCols(headers) {
@@ -1113,17 +1111,23 @@
     }
 
     function shtLookupOrderNo(po, ptn, sn, pn) {
-      if (ptn) {
-        const hit = _shtMasterJobs.find(j => j.po === po && j.tkm_no === ptn);
+      const n = v => String(v || '').trim().toUpperCase().replace(/\s+/g, '');
+      const nPo = n(po), nSn = n(sn), nPn = n(pn);
+
+      // SN 우선 매칭: PO+SN → SN만
+      if (nSn) {
+        const hit = _shtMasterJobs.find(j => n(j.sn) === nSn && (!nPo || n(j.po) === nPo));
         if (hit) return hit.order_no;
       }
-      if (sn) {
-        const hit = _shtMasterJobs.find(j => j.po === po && j.sn === sn);
+      // PO+PN 매칭
+      if (nPo && nPn) {
+        const hit = _shtMasterJobs.find(j => n(j.po) === nPo && n(j.pn) === nPn);
         if (hit) return hit.order_no;
       }
-      if (pn) {
-        const hit = _shtMasterJobs.find(j => j.po === po && j.pn === pn);
-        if (hit) return hit.order_no;
+      // PO만으로 단독 매칭 (해당 PO에 job이 1건뿐일 때)
+      if (nPo) {
+        const hits = _shtMasterJobs.filter(j => n(j.po) === nPo);
+        if (hits.length === 1) return hits[0].order_no;
       }
       return null;
     }
