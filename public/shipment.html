@@ -393,8 +393,9 @@
       <select class="form-select form-select-sm" id="date-filter" onchange="renderList()" style="width:140px">
         <option value="">전체 출하일</option>
       </select>
-      <select class="form-select form-select-sm" id="ptn-filter" onchange="renderList()" style="width:150px">
+      <select class="form-select form-select-sm" id="ptn-filter" onchange="renderList()" style="width:160px">
         <option value="">전체 상태</option>
+        <option value="today">📌 오늘 업로드됨</option>
         <option value="uploaded">PTN 업로드됨</option>
         <option value="missing">PTN 미업로드</option>
       </select>
@@ -851,7 +852,9 @@
         const matchSearch = !search
           || g.po.toLowerCase().includes(search)
           || g.tkmNos.some(t => t.toLowerCase().includes(search));
+        const today = new Date().toISOString().slice(0, 10);
         const matchPtn = !ptnFilter
+          || (ptnFilter === 'today'    &&  g.shipment?.ptn_uploaded_at === today)
           || (ptnFilter === 'uploaded' &&  g.shipment?.ptn_no)
           || (ptnFilter === 'missing'  && !g.shipment?.ptn_no);
         const matchDate = !dateFilter
