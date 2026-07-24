@@ -1161,22 +1161,34 @@
       document.getElementById('sht-preview-cnt').textContent =
         `총 ${_shtMapped.length}건 · 매칭 ${matched}건 · 미매칭 ${unmatched}건`;
 
+      const masterSample = _shtMasterJobs.slice(0, 3).map(j => `SN:${j.sn||'—'} PO:${j.po||'—'}`).join(' / ');
+      const debugLine = `<div style="font-size:10px;color:#6c757d;margin-top:4px">마스터 로드: ${_shtMasterJobs.length}건 | 샘플 → ${masterSample || '없음'}</div>`;
+
       document.getElementById('sht-match-summary').innerHTML = unmatched
-        ? `<span style="color:#e8710a">⚠ ${unmatched}건은 마스터에서 수주번호를 찾지 못했습니다. 해당 행은 바코드 검증 대상에서 제외되며, 단가 데이터는 저장됩니다.</span>`
+        ? `<span style="color:#e8710a">⚠ ${unmatched}건 미매칭</span>${debugLine}`
         : `<span style="color:#28a745;font-weight:700">✅ 전체 ${matched}건 수주번호 매칭 완료</span>`;
 
       document.getElementById('sht-preview-tbody').innerHTML = _shtMapped.map((r, i) => {
         const mCls = r.order_no ? 'sht-match-ok' : 'sht-match-warn';
-        const mTxt = r.order_no
-          ? `✅ ${r.order_no}`
-          : `⚠ ${r.reason || '미매칭'}`;
+        let mTxt;
+        if (r.order_no) {
+          mTxt = `✅ ${r.order_no}`;
+        } else {
+          const nSn = String(r.sn||'').trim().toUpperCase();
+          const similar = _shtMasterJobs.filter(j =>
+            nSn && (String(j.sn||'').toUpperCase().includes(nSn) || nSn.includes(String(j.sn||'').toUpperCase()))
+          ).slice(0, 2).map(j => `${j.sn}(PO:${j.po})`).join(', ');
+          const reasonTxt = r.reason || '미매칭';
+          const similarTxt = similar ? `<br><span style="color:#888;font-size:10px">마스터 유사: ${similar}</span>` : '';
+          mTxt = `⚠ ${reasonTxt}${similarTxt}`;
+        }
         return `<tr>
           <td style="color:#6c757d">${i+1}</td>
           <td style="font-family:monospace">${r.po||'—'}</td>
           <td style="font-family:monospace">${r.sn||'—'}</td>
           <td style="font-family:monospace">${r.pn||'—'}</td>
           <td style="text-align:right">₩${r.krw.toLocaleString()}</td>
-          <td class="${mCls}" style="font-size:11px;max-width:260px;white-space:normal">${mTxt}</td>
+          <td class="${mCls}" style="font-size:11px;max-width:280px;white-space:normal">${mTxt}</td>
         </tr>`;
       }).join('');
 
