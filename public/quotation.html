@@ -971,11 +971,28 @@
       try {
         const sb = getSB();
         if (!sb) throw new Error('Supabase 연결 없음');
-        const { data, error } = await sb.from('master_jobs').select('order_no,po,tkm_no,sn,pn');
-        if (error) throw error;
-        _shtMasterJobs = data || [];
+
+        // master_jobs + verification_sets 동시 로드
+        const [mjRes, vsRes] = await Promise.all([
+          sb.from('master_jobs').select('order_no,po,tkm_no,sn,pn'),
+          sb.from('verification_sets').select('order_no,po,sn,ptn_no'),
+        ]);
+
+        const mjRows = mjRes.error ? [] : (mjRes.data || []);
+        const vsRows = vsRes.error ? [] : (vsRes.data || []);
+
+        // verification_sets 행을 master_jobs 형식으로 변환 후 합치기 (중복 order_no 제거)
+        const merged = [...mjRows];
+        const mjOrderNos = new Set(mjRows.map(r => r.order_no));
+        for (const v of vsRows) {
+          if (v.order_no && !mjOrderNos.has(v.order_no)) {
+            merged.push({ order_no: v.order_no, po: v.po, tkm_no: v.ptn_no || '', sn: v.sn, pn: '' });
+          }
+        }
+
+        _shtMasterJobs = merged;
         _shtLoaded = true;
-        if (el) el.textContent = `마스터 ${_shtMasterJobs.length}건 로드 완료`;
+        if (el) el.textContent = `마스터 ${mjRows.length}건 + verification_sets ${vsRows.length}건 = 총 ${merged.length}건 로드`;
       } catch(e) {
         if (el) el.textContent = `마스터 로드 실패: ${e.message}`;
       }
