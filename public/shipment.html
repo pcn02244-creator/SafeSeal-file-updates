@@ -797,6 +797,14 @@
         const shipMap = {};
         ships.forEach(s => { shipMap[s.po] = s; });
 
+        // shipments에만 있는 PO(PTN 업로드된 것)도 jobs에 추가
+        const masterPoSet = new Set(jobs.map(j => j.po).filter(Boolean));
+        ships.forEach(s => {
+          if (s.po && !masterPoSet.has(s.po)) {
+            jobs.push({ order_no: '', pn: '', sn: '', po: s.po, tkm_no: '' });
+          }
+        });
+
         // master_jobs → po 기준 그룹
         const grpMap = {};
         jobs.forEach(j => {
@@ -1065,13 +1073,20 @@
 
     /* PDF에서 (3S) PKG ID + (K) AMAT ORDER NO 쌍 추출 */
     function parsePTNPairs(text) {
-      const pkgMatches   = [...text.matchAll(/\(3S\)\s*PKG ID:\s*([A-Z0-9]+)/gi)].map(m => m[1]);
-      const poMatches    = [...text.matchAll(/\(K\)\s*AMAT ORDER NO:\s*(\d+)/gi)].map(m => m[1]);
+      // 1차: 원본 패턴
+      let pkgMatches = [...text.matchAll(/\(3S\)\s*PKG\s*ID\s*[:：]?\s*([A-Z0-9\-]+)/gi)].map(m => m[1].trim());
+      let poMatches  = [...text.matchAll(/\(K\)\s*AMAT\s*ORDER\s*NO\s*[:：]?\s*(\d+)/gi)].map(m => m[1].trim());
+
+      // 2차 fallback: (3S) 기호 없이 키워드만
+      if (!pkgMatches.length) pkgMatches = [...text.matchAll(/PKG\s*ID\s*[:：]\s*([A-Z0-9\-]+)/gi)].map(m => m[1].trim());
+      if (!poMatches.length)  poMatches  = [...text.matchAll(/AMAT\s*ORDER\s*NO\s*[:：]?\s*(\d{9,})/gi)].map(m => m[1].trim());
+
+      // 3차 fallback: PO 숫자 패턴 (10자리 이상 숫자)
+      if (!poMatches.length)  poMatches  = [...text.matchAll(/\b(45\d{8,})\b/g)].map(m => m[1]);
+
+      console.log('[PTN파싱] PKG:', pkgMatches, 'PO:', poMatches);
       if (pkgMatches.length !== poMatches.length) {
-        console.warn(
-          `PTN 파싱: PKG ID(${pkgMatches.length}건)와 PO 번호(${poMatches.length}건) 개수가 다릅니다. ` +
-          `더 적은 쪽 개수만큼만 짝지어 반환합니다.`
-        );
+        console.warn(`PTN 파싱: PKG ID(${pkgMatches.length})와 PO(${poMatches.length}) 개수 불일치 — 적은 쪽으로 매칭`);
       }
       const count = Math.min(pkgMatches.length, poMatches.length);
       const results = [];
@@ -1115,9 +1130,11 @@
         const tbody    = document.getElementById('ptn-pairs-tbody');
 
         if (pairs.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="4" class="text-center text-muted py-3 small">
-            PO / PKG ID를 찾을 수 없습니다. (총 ${pdfDoc.numPages}페이지 분석)<br>
-            <span class="text-danger">RepairsLabels 형식의 PDF가 맞는지 확인하세요.</span>
+          const sample = text.replace(/\s+/g, ' ').trim().slice(0, 400).replace(/</g, '&lt;');
+          tbody.innerHTML = `<tr><td colspan="4" class="py-3 small">
+            <div class="text-danger fw-semibold mb-1">⚠ PO / PKG ID를 찾을 수 없습니다 (${pdfDoc.numPages}페이지 분석)</div>
+            <div class="text-muted mb-1">추출된 텍스트 샘플 (개발자 도구 Console에서 전체 확인 가능):</div>
+            <code style="font-size:10px;word-break:break-all;white-space:pre-wrap;display:block;background:#f8f9fa;padding:6px;border-radius:4px;max-height:120px;overflow-y:auto">${sample}</code>
           </td></tr>`;
         } else {
           tbody.innerHTML = pairs.map((p, i) => {
