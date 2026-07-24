@@ -969,30 +969,50 @@
       const el = document.getElementById('sht-load-status');
       if (el) el.textContent = '마스터 데이터 로드 중…';
       try {
-        const sb = getSB();
-        if (!sb) throw new Error('Supabase 연결 없음');
-
-        // master_jobs + verification_sets 동시 로드
-        const [mjRes, vsRes] = await Promise.all([
-          sb.from('master_jobs').select('order_no,po,tkm_no,sn,pn'),
-          sb.from('verification_sets').select('order_no,po,sn,ptn_no'),
-        ]);
-
-        const mjRows = mjRes.error ? [] : (mjRes.data || []);
-        const vsRows = vsRes.error ? [] : (vsRes.data || []);
-
-        // verification_sets 행을 master_jobs 형식으로 변환 후 합치기 (중복 order_no 제거)
-        const merged = [...mjRows];
-        const mjOrderNos = new Set(mjRows.map(r => r.order_no));
-        for (const v of vsRows) {
-          if (v.order_no && !mjOrderNos.has(v.order_no)) {
-            merged.push({ order_no: v.order_no, po: v.po, tkm_no: v.ptn_no || '', sn: v.sn, pn: '' });
+        const merged = [];
+        const seenKey = new Set();
+        const add = row => {
+          // order_no+sn 조합으로 중복 체크 (같은 수주에 여러 SN 허용)
+          const key = `${row.order_no||''}|${row.sn||''}|${row.po||''}`;
+          if (!seenKey.has(key)) {
+            seenKey.add(key);
+            merged.push(row);
           }
+        };
+
+        // ① master_rows_cache (localStorage) — 마스터파일 전체 행 (조건 무관)
+        let cacheHit = 0;
+        try {
+          const cached = JSON.parse(localStorage.getItem('master_rows_cache') || 'null');
+          if (Array.isArray(cached) && cached.length > 2) {
+            for (let i = 2; i < cached.length; i++) {
+              const r = cached[i];
+              const sn       = String(r[7]  || '').trim();
+              const po       = String(r[8]  || '').trim();
+              const tkm_no   = String(r[9]  || '').trim();
+              const order_no = String(r[10] || '').trim();
+              const pn       = String(r[6]  || '').trim();
+              if (!sn && !po && !order_no) continue;
+              add({ order_no, po, tkm_no, sn, pn });
+              cacheHit++;
+            }
+          }
+        } catch {}
+
+        // ② Supabase master_jobs — 캐시 없거나 보완용
+        const sb = getSB();
+        if (sb) {
+          const [mjRes, vsRes] = await Promise.all([
+            sb.from('master_jobs').select('order_no,po,tkm_no,sn,pn'),
+            sb.from('verification_sets').select('order_no,po,sn,ptn_no'),
+          ]);
+          (mjRes.data || []).forEach(r => add({ order_no: r.order_no, po: r.po, tkm_no: r.tkm_no||'', sn: r.sn, pn: r.pn||'' }));
+          (vsRes.data || []).forEach(r => add({ order_no: r.order_no, po: r.po, tkm_no: r.ptn_no||'', sn: r.sn, pn: '' }));
         }
 
         _shtMasterJobs = merged;
         _shtLoaded = true;
-        if (el) el.textContent = `마스터 ${mjRows.length}건 + verification_sets ${vsRows.length}건 = 총 ${merged.length}건 로드`;
+        if (el) el.textContent = `마스터 캐시 ${cacheHit}건 + DB 보완 = 총 ${merged.length}건 로드`;
       } catch(e) {
         if (el) el.textContent = `마스터 로드 실패: ${e.message}`;
       }
