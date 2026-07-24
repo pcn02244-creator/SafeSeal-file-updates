@@ -390,7 +390,7 @@
           placeholder="PO번호 / 0247# 검색" oninput="renderList()"
           style="width:224px;padding-left:30px">
       </div>
-      <select class="form-select form-select-sm" id="source-filter" onchange="renderList()" style="width:130px">
+      <select class="form-select form-select-sm" id="source-filter" onchange="onSourceFilterChange()" style="width:130px">
         <option value="">전체 견적유형</option>
         <option value="sht">🔵 SHT</option>
         <option value="auto">🟢 국내</option>
@@ -1020,6 +1020,19 @@
     }
 
     function clearSelection() { selectedPos.clear(); renderList(); }
+
+    function onSourceFilterChange() {
+      const val = document.getElementById('source-filter').value;
+      selectedPos.clear();
+      if (val) {
+        poGroups.filter(g =>
+          (val === 'sht'  && g.quotSource === 'sht')  ||
+          (val === 'auto' && g.quotSource === 'auto') ||
+          (val === 'none' && !g.quotSource)
+        ).forEach(g => selectedPos.add(g.po));
+      }
+      renderList();
+    }
 
     function requireSelectionThen(fn) {
       if (!selectedPos.size) {
