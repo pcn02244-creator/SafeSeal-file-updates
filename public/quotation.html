@@ -1014,11 +1014,20 @@
         _shtHeaders = all[hdrIdx].map(c => String(c).trim());
         _shtRawRows = all.slice(hdrIdx + 1).filter(r => r.some(c => String(c).trim()));
         _shtColMap  = shtAutoDetectCols(_shtHeaders);
-        renderShtColMapper();
-        document.getElementById('sht-step2').style.display = 'block';
-        document.getElementById('sht-step3').style.display = 'none';
         document.getElementById('sht-result').style.display = 'none';
-        document.getElementById('sht-step2').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+        const autoOk = _shtColMap.po >= 0 && _shtColMap.sn >= 0 && _shtColMap.price >= 0;
+        if (autoOk) {
+          // 필수 컬럼 모두 자동 감지 → 컬럼 매핑 화면 생략하고 바로 미리보기
+          document.getElementById('sht-step2').style.display = 'none';
+          applyShtColMapping();
+        } else {
+          // 자동 감지 실패 → 수동 매핑 화면 표시
+          renderShtColMapper();
+          document.getElementById('sht-step2').style.display = 'block';
+          document.getElementById('sht-step3').style.display = 'none';
+          document.getElementById('sht-step2').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
       };
       reader.readAsArrayBuffer(file);
     }
