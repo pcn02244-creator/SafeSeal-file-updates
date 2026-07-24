@@ -1286,11 +1286,13 @@
         const cnt = Object.keys(cached).length;
         const status = document.getElementById('stmt-quot-status');
         if (cnt > 0) {
-          status.textContent = `✅ 견적 금액 ${cnt}건 자동 로드됨`;
-          status.className   = 'small text-success fw-semibold';
+          const pos = [...selectedPos];
+          const hit = pos.filter(p => cached[p]).length;
+          status.textContent = `✅ 캐시 ${cnt}건 | 선택 PO ${hit}/${pos.length}건 금액 확인`;
+          status.className   = hit > 0 ? 'small text-success fw-semibold' : 'small text-warning fw-semibold';
         } else {
-          status.textContent = '견적 생성 후 자동 로드됩니다';
-          status.className   = 'small text-muted';
+          status.textContent = '❌ 견적 금액 없음 — 아래 파일 업로드로 직접 입력하세요 (SHT 견적 엑셀 가능)';
+          status.className   = 'small text-danger fw-semibold';
           quotAmounts = {};
         }
       } catch { quotAmounts = {}; }
@@ -1345,32 +1347,48 @@
         const ws   = wb.Sheets[wb.SheetNames[0]];
         const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
+        // 헤더 행 탐색 (SS S/N 또는 S/N 포함)
         let hdrIdx = rows.findIndex(r =>
-          r.some(c => typeof c === 'string' && c.includes('S/N'))
+          r.some(c => typeof c === 'string' && (c.includes('S/N') || c.includes('SN')))
         );
         if (hdrIdx < 0) hdrIdx = 1;
         const hdr = rows[hdrIdx];
 
-        const snIdx  = hdr.findIndex(h => typeof h === 'string' && h.includes('S/N'));
-        const usdIdx = hdr.findIndex(h => typeof h === 'string' && h.includes('Total') && h.includes('USD'));
-        const krwIdx = hdr.findIndex(h => typeof h === 'string' && h.includes('Total') && h.includes('KRW'));
+        const n = h => typeof h === 'string' ? h.toLowerCase() : '';
+        const snIdx  = hdr.findIndex(h => n(h).includes('s/n') || n(h) === 'ss sn');
+        const poIdx  = hdr.findIndex(h => /^PO$/i.test(String(h).trim()));  // 정확히 "PO" 컬럼
+        const poIdx2 = poIdx >= 0 ? poIdx : hdr.findIndex(h => n(h).includes('po') && !n(h).includes('price'));
+        const krwIdx = hdr.findIndex(h => n(h).includes('krw'));
+        const usdIdx = hdr.findIndex(h => n(h).includes('usd') && n(h).includes('total'));
 
-        if (snIdx < 0) throw new Error('SS S/N 열을 찾을 수 없습니다.');
+        if (snIdx < 0 && poIdx2 < 0) throw new Error('SN 또는 PO 열을 찾을 수 없습니다.');
 
-        quotAmounts = {};
+        // 기존 캐시와 병합 (덮어쓰지 않음)
+        const amtCache = JSON.parse(localStorage.getItem('quotation_amounts_cache') || '{}');
+        quotAmounts = { ...amtCache };
         let matched = 0;
         for (let i = hdrIdx + 1; i < rows.length; i++) {
-          const r  = rows[i];
-          const sn = String(r[snIdx] || '').trim();
-          if (!sn) continue;
-          quotAmounts[sn] = {
-            usd: usdIdx >= 0 ? (r[usdIdx] || '') : '',
-            krw: krwIdx >= 0 ? (r[krwIdx] || '') : '',
-          };
+          const r   = rows[i];
+          const sn  = snIdx  >= 0 ? String(r[snIdx]  || '').trim() : '';
+          const po  = poIdx2 >= 0 ? String(r[poIdx2] || '').trim() : '';
+          if (!sn && !po) continue;
+
+          const krwRaw = krwIdx >= 0 ? r[krwIdx] : '';
+          const krw = typeof krwRaw === 'number' ? krwRaw
+            : parseFloat(String(krwRaw).replace(/[^0-9.]/g, '')) || 0;
+          const usd = usdIdx >= 0 ? (r[usdIdx] || 0) : 0;
+          const entry = { usd, krw };
+          if (sn) quotAmounts[sn] = entry;
+          if (po) quotAmounts[po] = entry;
           matched++;
         }
 
-        status.textContent = `✅ ${matched}건 금액 로드`;
+        // localStorage에도 저장 (페이지 이동 후에도 유지)
+        try { localStorage.setItem('quotation_amounts_cache', JSON.stringify(quotAmounts)); } catch {}
+
+        const pos = [...selectedPos];
+        const hit = pos.filter(po => quotAmounts[po]).length;
+        status.textContent = `✅ ${matched}건 로드 | 선택 PO ${hit}/${pos.length}건 금액 확인`;
         status.className   = 'small text-success fw-semibold';
         buildPreview();
       } catch (e) {
