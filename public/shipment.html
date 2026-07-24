@@ -390,12 +390,18 @@
           placeholder="PO번호 / 0247# 검색" oninput="renderList()"
           style="width:224px;padding-left:30px">
       </div>
-      <select class="form-select form-select-sm" id="upload-filter" onchange="renderList()" style="width:160px">
+      <select class="form-select form-select-sm" id="source-filter" onchange="renderList()" style="width:130px">
+        <option value="">전체 견적유형</option>
+        <option value="sht">🔵 SHT</option>
+        <option value="auto">🟢 국내</option>
+        <option value="none">⬜ 견적없음</option>
+      </select>
+      <select class="form-select form-select-sm" id="upload-filter" onchange="renderList()" style="width:155px">
         <option value="">전체 업로드일</option>
         <option value="today">📌 오늘 업로드</option>
         <option value="week">📅 이번 주 업로드</option>
       </select>
-      <select class="form-select form-select-sm" id="ship-filter" onchange="renderList()" style="width:155px">
+      <select class="form-select form-select-sm" id="ship-filter" onchange="renderList()" style="width:145px">
         <option value="">전체 출하일</option>
         <option value="has">✅ 출하일 확정</option>
         <option value="none">⏳ 출하일 미정</option>
@@ -820,12 +826,15 @@
           if (j.pn)     grpMap[po].pns.add(j.pn);
         });
 
+        const amtCache = (() => { try { return JSON.parse(localStorage.getItem('quotation_amounts_cache') || '{}'); } catch { return {}; } })();
+
         poGroups = Object.values(grpMap).map(g => ({
-          po:       g.po,
-          tkmNos:   [...g.tkmNos],
-          pns:      [...g.pns],
-          orders:   g.orders,
-          shipment: shipMap[g.po] || null,
+          po:         g.po,
+          tkmNos:     [...g.tkmNos],
+          pns:        [...g.pns],
+          orders:     g.orders,
+          shipment:   shipMap[g.po] || null,
+          quotSource: amtCache[g.po]?.source || '',  // 'sht' | 'auto' | ''
         })).sort((a, b) => a.po.localeCompare(b.po));
       } catch (e) { poGroups = []; }
       finally {
@@ -865,6 +874,7 @@
 
     function renderList() {
       const search       = document.getElementById('search-input').value.trim().toLowerCase();
+      const sourceFilter = document.getElementById('source-filter').value;
       const uploadFilter = document.getElementById('upload-filter').value;
       const shipFilter   = document.getElementById('ship-filter').value;
 
@@ -872,6 +882,11 @@
         const matchSearch = !search
           || g.po.toLowerCase().includes(search)
           || g.tkmNos.some(t => t.toLowerCase().includes(search));
+
+        const matchSource = !sourceFilter
+          || (sourceFilter === 'sht'  && g.quotSource === 'sht')
+          || (sourceFilter === 'auto' && g.quotSource === 'auto')
+          || (sourceFilter === 'none' && !g.quotSource);
 
         const today   = new Date().toISOString().slice(0, 10);
         const weekAgo = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -887,7 +902,7 @@
           || (shipFilter === 'none' && !sDate)
           || sDate === shipFilter;
 
-        return matchSearch && matchUpload && matchShip;
+        return matchSearch && matchSource && matchUpload && matchShip;
       });
 
       const total = filteredGrps.length;
@@ -925,7 +940,12 @@
             <span class="small flex-shrink-0" style="min-width:100px">
               ${shipDate ? `<span class="badge bg-info text-dark">📅 ${shipDate}</span>` : '<span class="text-muted small">출하일 미등록</span>'}
             </span>
-            <span class="flex-shrink-0" style="min-width:110px">
+            <span class="flex-shrink-0" style="min-width:60px">
+              ${g.quotSource === 'sht'  ? `<span class="badge bg-info text-dark">SHT</span>`
+              : g.quotSource === 'auto' ? `<span class="badge bg-success">국내</span>`
+              :                           `<span class="badge bg-light text-secondary border" style="font-size:10px">견적없음</span>`}
+            </span>
+            <span class="flex-shrink-0" style="min-width:100px">
               ${hasPtn
                 ? `<span class="badge bg-success">✅ PTN 등록됨</span>`
                 : `<span class="badge bg-light text-secondary border">PTN 없음</span>`}
