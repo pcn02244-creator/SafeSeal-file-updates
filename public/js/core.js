@@ -383,9 +383,9 @@ async function generateQuotation(mesFile, masterFile) {
     });
   }
 
-  // quotation_amounts_cache save for shipment auto-load
+  // quotation_amounts_cache save for shipment auto-load (기존 캐시에 병합)
   try {
-    const amtCache = {};
+    const amtCache = JSON.parse(localStorage.getItem('quotation_amounts_cache') || '{}');
     for (const q of quotation) {
       amtCache[q.sn] = { usd: q.totalUSD, krw: q.totalKRW };
       if (q.po) amtCache[q.po] = { usd: q.totalUSD, krw: q.totalKRW };

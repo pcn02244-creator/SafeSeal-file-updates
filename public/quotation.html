@@ -1142,6 +1142,17 @@
         })
         .filter(Boolean);
 
+      // 미리보기 생성 즉시 quotation_amounts_cache 저장 (임포트 버튼 없이도 거래명세서에서 사용 가능)
+      try {
+        const amtCache = JSON.parse(localStorage.getItem('quotation_amounts_cache') || '{}');
+        _shtMapped.forEach(r => {
+          const entry = { usd: 0, krw: r.krw };
+          if (r.sn) amtCache[r.sn] = entry;
+          if (r.po) amtCache[r.po] = entry;
+        });
+        localStorage.setItem('quotation_amounts_cache', JSON.stringify(amtCache));
+      } catch {}
+
       renderShtPreview();
       document.getElementById('sht-step3').style.display = 'block';
       document.getElementById('sht-step3').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
