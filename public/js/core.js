@@ -387,8 +387,9 @@ async function generateQuotation(mesFile, masterFile) {
   try {
     const amtCache = JSON.parse(localStorage.getItem('quotation_amounts_cache') || '{}');
     for (const q of quotation) {
-      amtCache[q.sn] = { usd: q.totalUSD, krw: q.totalKRW };
-      if (q.po) amtCache[q.po] = { usd: q.totalUSD, krw: q.totalKRW };
+      const entry = { usd: q.totalUSD, krw: q.totalKRW, source: 'auto' };
+      amtCache[q.sn] = entry;
+      if (q.po) amtCache[q.po] = entry;
     }
     localStorage.setItem('quotation_amounts_cache', JSON.stringify(amtCache));
   } catch (e) {}

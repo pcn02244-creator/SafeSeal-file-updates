@@ -1146,7 +1146,7 @@
       try {
         const amtCache = JSON.parse(localStorage.getItem('quotation_amounts_cache') || '{}');
         _shtMapped.forEach(r => {
-          const entry = { usd: 0, krw: r.krw };
+          const entry = { usd: 0, krw: r.krw, source: 'sht' };
           if (r.sn) amtCache[r.sn] = entry;
           if (r.po) amtCache[r.po] = entry;
         });
@@ -1269,7 +1269,7 @@
         // quotation_amounts_cache: 거래명세서가 읽는 KRW 금액 캐시
         const amtCache = JSON.parse(localStorage.getItem('quotation_amounts_cache') || '{}');
         _shtMapped.forEach(r => {
-          const entry = { usd: 0, krw: r.krw };
+          const entry = { usd: 0, krw: r.krw, source: 'sht' };
           if (r.sn) amtCache[r.sn] = entry;
           if (r.po) amtCache[r.po] = entry;
         });

@@ -475,14 +475,17 @@
             <div class="card border-0 shadow-sm mb-3">
               <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
                 <span class="fw-semibold">데이터 미리보기</span>
-                <button class="btn btn-sm btn-outline-secondary" onclick="buildPreview()">🔄 새로고침</button>
+                <div class="d-flex align-items-center gap-2">
+                  <span id="stmt-type-summary" class="small text-muted"></span>
+                  <button class="btn btn-sm btn-outline-secondary" onclick="buildPreview()">🔄 새로고침</button>
+                </div>
               </div>
               <div class="card-body p-0">
                 <div id="stmt-preview-wrap" style="overflow-x:auto;max-height:220px">
                   <div class="text-center text-muted py-4 small" id="stmt-no-preview">PO를 선택하면 자동으로 미리보기가 표시됩니다.</div>
                   <table class="table table-sm table-bordered mb-0 d-none" id="stmt-preview-table" style="font-size:.75rem;white-space:nowrap">
                     <thead class="table-dark">
-                      <tr><th>No.</th><th>Customer</th><th>Fab</th><th>Tool</th><th>SS P/N</th><th>SS S/N</th><th>PO</th><th>0247#</th><th>Amount(USD)</th><th>AD(KRW)</th></tr>
+                      <tr><th>유형</th><th>No.</th><th>Customer</th><th>Fab</th><th>Tool</th><th>SS P/N</th><th>SS S/N</th><th>PO</th><th>0247#</th><th>Amount(USD)</th><th>AD(KRW)</th></tr>
                     </thead>
                     <tbody id="stmt-preview-tbody"></tbody>
                   </table>
@@ -1416,7 +1419,7 @@
         const po = String(r[CI.po] || '').trim();
         if (!selectedPos.has(po)) continue;
         const sn = String(r[CI.sn] || '').trim();
-        const a  = quotAmounts[po] || quotAmounts[sn] || { usd: '', krw: '' };
+        const a  = quotAmounts[po] || quotAmounts[sn] || { usd: '', krw: '', source: '' };
         yjleeRows.push({
           no:       r[CI.no]   || '',
           customer: r[CI.cust] || '',
@@ -1428,18 +1431,21 @@
           tkm_no:   r[CI.tkm]  || '',
           usd:      a.usd,
           krw:      a.krw,
+          source:   a.source   || '',
         });
       }
 
       if (!yjleeRows.length) {
         const allJobs = (poGroups || []).flatMap(g =>
           g.orders.filter(o => selectedPos.has(o.po || ''))
-            .map(o => ({
-              no: o.order_no || '', customer: '', fab: '', tool: '',
-              pn: o.pn || '', sn: o.sn || '', po: o.po || '', tkm_no: o.tkm_no || '',
-              usd: quotAmounts[o.po]?.usd || quotAmounts[o.sn]?.usd || '',
-              krw: quotAmounts[o.po]?.krw || quotAmounts[o.sn]?.krw || '',
-            }))
+            .map(o => {
+              const a = quotAmounts[o.po] || quotAmounts[o.sn] || { usd: '', krw: '', source: '' };
+              return {
+                no: o.order_no || '', customer: '', fab: '', tool: '',
+                pn: o.pn || '', sn: o.sn || '', po: o.po || '', tkm_no: o.tkm_no || '',
+                usd: a.usd, krw: a.krw, source: a.source || '',
+              };
+            })
         );
         yjleeRows = allJobs;
       }
@@ -1452,7 +1458,12 @@
         return;
       }
 
+      const srcBadge = s => s === 'sht'  ? '<span class="badge bg-info text-dark" style="font-size:10px">SHT</span>'
+                          : s === 'auto' ? '<span class="badge bg-success"        style="font-size:10px">자체</span>'
+                          :                '<span class="badge bg-secondary"       style="font-size:10px">-</span>';
+
       tbody.innerHTML = yjleeRows.map(r => `<tr>
+        <td>${srcBadge(r.source)}</td>
         <td>${r.no}</td><td>${r.customer}</td><td>${r.fab}</td><td>${r.tool}</td>
         <td>${r.pn}</td><td>${r.sn}</td>
         <td class="font-monospace">${r.po}</td>
@@ -1462,6 +1473,17 @@
       </tr>`).join('');
       document.getElementById('stmt-no-preview').classList.add('d-none');
       document.getElementById('stmt-preview-table').classList.remove('d-none');
+
+      // 견적 유형별 현황 표시
+      const shtCnt  = yjleeRows.filter(r => r.source === 'sht').length;
+      const autoCnt = yjleeRows.filter(r => r.source === 'auto').length;
+      const noneCnt = yjleeRows.filter(r => !r.source).length;
+      const parts = [];
+      if (shtCnt)  parts.push(`SHT ${shtCnt}건`);
+      if (autoCnt) parts.push(`자체 ${autoCnt}건`);
+      if (noneCnt) parts.push(`미분류 ${noneCnt}건`);
+      document.getElementById('stmt-type-summary').textContent = parts.length ? `견적유형: ${parts.join(' / ')}` : '';
+
       renderBarcodes();
     }
 
@@ -1517,7 +1539,6 @@
         btn.disabled = true;
 
         if (!yjleeRows.length) {
-          statusEl.textContent = '⏳ 데이터 준비 중...';
           buildPreview();
         }
         if (!yjleeRows.length) {
@@ -1527,27 +1548,35 @@
           return;
         }
 
-        statusEl.textContent = `⏳ Excel 파일 생성 중... (${yjleeRows.length}행)`;
+        const today = new Date().toISOString().slice(0, 10);
 
-        const headers = ['No.','Customer','Fab','Tool','SS P/N','SS S/N','PO','0247#','Amount(USD)','','','','','','','','','','','','','','','','','','','','','AD(KRW)'];
-        const dataRows = yjleeRows.map(r => [
-          r.no, r.customer, r.fab, r.tool, r.pn, r.sn, r.po, r.tkm_no,
-          r.usd || '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', r.krw || '',
-        ]);
+        const _dlRows = (rows, label) => {
+          const headers = ['유형','No.','Customer','Fab','Tool','SS P/N','SS S/N','PO','0247#','Amount(USD)','','','','','','','','','','','','','','','','','','','','AD(KRW)'];
+          const dataRows = rows.map(r => [
+            r.source === 'sht' ? 'SHT' : r.source === 'auto' ? '자체' : '-',
+            r.no, r.customer, r.fab, r.tool, r.pn, r.sn, r.po, r.tkm_no,
+            r.usd || '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', r.krw || '',
+          ]);
+          const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
+          const wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, 'YJLEE');
+          const poLabel = [...new Set(rows.map(r => r.po))].join('_').slice(0, 25);
+          XLSX.writeFile(wb, `YJLEE_${label}_${poLabel}_${today}.xlsx`);
+        };
 
-        const ws   = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
-        const wb   = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'YJLEE');
+        // source별 분리 다운로드
+        const shtRows  = yjleeRows.filter(r => r.source === 'sht');
+        const autoRows = yjleeRows.filter(r => r.source === 'auto');
+        const noneRows = yjleeRows.filter(r => !r.source);
 
-        const today   = new Date().toISOString().slice(0, 10);
-        const poLabel = [...selectedPos].join('_').slice(0, 30);
-        const fname   = `YJLEE_데이터_${poLabel}_${today}.xlsx`;
-
-        statusEl.textContent = `⏳ 다운로드 시작 중...`;
-        XLSX.writeFile(wb, fname);
+        let fileCount = 0;
+        if (shtRows.length)  { _dlRows(shtRows,  'SHT견적');  fileCount++; }
+        if (autoRows.length) { _dlRows(autoRows, '자체견적'); fileCount++; }
+        if (noneRows.length) { _dlRows(noneRows, '견적');      fileCount++; }
+        if (!fileCount)       { _dlRows(yjleeRows, '견적'); fileCount++; }
 
         statusEl.className = 'small mb-2 text-success fw-semibold';
-        statusEl.textContent = `✅ 완료: ${fname} (${yjleeRows.length}행)`;
+        statusEl.textContent = `✅ 완료: 파일 ${fileCount}개 다운로드 (SHT ${shtRows.length}건 / 자체 ${autoRows.length}건)`;
       } catch(e) {
         statusEl.className = 'small mb-2 text-danger fw-semibold';
         statusEl.textContent = `❌ 오류: ${e.message}`;
