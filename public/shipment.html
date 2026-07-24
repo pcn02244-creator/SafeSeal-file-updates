@@ -390,14 +390,15 @@
           placeholder="PO번호 / 0247# 검색" oninput="renderList()"
           style="width:224px;padding-left:30px">
       </div>
-      <select class="form-select form-select-sm" id="date-filter" onchange="renderList()" style="width:140px">
-        <option value="">전체 출하일</option>
+      <select class="form-select form-select-sm" id="upload-filter" onchange="renderList()" style="width:160px">
+        <option value="">전체 업로드일</option>
+        <option value="today">📌 오늘 업로드</option>
+        <option value="week">📅 이번 주 업로드</option>
       </select>
-      <select class="form-select form-select-sm" id="ptn-filter" onchange="renderList()" style="width:160px">
-        <option value="">전체 상태</option>
-        <option value="today">📌 오늘 업로드됨</option>
-        <option value="uploaded">PTN 업로드됨</option>
-        <option value="missing">PTN 미업로드</option>
+      <select class="form-select form-select-sm" id="ship-filter" onchange="renderList()" style="width:155px">
+        <option value="">전체 출하일</option>
+        <option value="has">✅ 출하일 확정</option>
+        <option value="none">⏳ 출하일 미정</option>
       </select>
       <span id="po-count-label" class="ms-auto"
         style="font-size:12px;font-weight:700;color:var(--mut);font-family:monospace"></span>
@@ -834,32 +835,56 @@
 
     /* ════ 리스트 렌더 ════ */
     function populateDateFilter() {
-      const sel = document.getElementById('date-filter');
-      const cur = sel.value;
-      const dates = [...new Set(
+      // 업로드 날짜 목록 (오늘/이번 주 고정 옵션 + 실제 날짜 목록)
+      const uploadSel = document.getElementById('upload-filter');
+      const uploadCur = uploadSel.value;
+      const uploadDates = [...new Set(
+        poGroups.map(g => g.shipment?.ptn_uploaded_at).filter(Boolean)
+      )].sort((a, b) => b.localeCompare(a));
+      uploadSel.innerHTML =
+        '<option value="">전체 업로드일</option>' +
+        '<option value="today">📌 오늘 업로드</option>' +
+        '<option value="week">📅 이번 주 업로드</option>' +
+        uploadDates.map(d => `<option value="${d}"${d === uploadCur ? ' selected' : ''}>${d}</option>`).join('');
+
+      // 출하일 목록 (확정/미정 고정 옵션 + 실제 날짜 목록)
+      const shipSel = document.getElementById('ship-filter');
+      const shipCur = shipSel.value;
+      const shipDates = [...new Set(
         poGroups.map(g => g.shipment?.ship_date).filter(Boolean)
       )].sort((a, b) => b.localeCompare(a));
-      sel.innerHTML = '<option value="">전체 출하일</option>'
-        + dates.map(d => `<option value="${d}"${d === cur ? ' selected' : ''}>${d}</option>`).join('');
+      shipSel.innerHTML =
+        '<option value="">전체 출하일</option>' +
+        '<option value="has">✅ 출하일 확정</option>' +
+        '<option value="none">⏳ 출하일 미정</option>' +
+        shipDates.map(d => `<option value="${d}"${d === shipCur ? ' selected' : ''}>${d}</option>`).join('');
     }
 
     function renderList() {
-      const search     = document.getElementById('search-input').value.trim().toLowerCase();
-      const ptnFilter  = document.getElementById('ptn-filter').value;
-      const dateFilter = document.getElementById('date-filter').value;
+      const search       = document.getElementById('search-input').value.trim().toLowerCase();
+      const uploadFilter = document.getElementById('upload-filter').value;
+      const shipFilter   = document.getElementById('ship-filter').value;
 
       filteredGrps = poGroups.filter(g => {
         const matchSearch = !search
           || g.po.toLowerCase().includes(search)
           || g.tkmNos.some(t => t.toLowerCase().includes(search));
-        const today = new Date().toISOString().slice(0, 10);
-        const matchPtn = !ptnFilter
-          || (ptnFilter === 'today'    &&  g.shipment?.ptn_uploaded_at === today)
-          || (ptnFilter === 'uploaded' &&  g.shipment?.ptn_no)
-          || (ptnFilter === 'missing'  && !g.shipment?.ptn_no);
-        const matchDate = !dateFilter
-          || g.shipment?.ship_date === dateFilter;
-        return matchSearch && matchPtn && matchDate;
+
+        const today   = new Date().toISOString().slice(0, 10);
+        const weekAgo = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+        const uDate   = g.shipment?.ptn_uploaded_at || '';
+        const matchUpload = !uploadFilter
+          || (uploadFilter === 'today' && uDate === today)
+          || (uploadFilter === 'week'  && uDate >= weekAgo && uDate <= today)
+          || uDate === uploadFilter;
+
+        const sDate = g.shipment?.ship_date || '';
+        const matchShip = !shipFilter
+          || (shipFilter === 'has'  &&  sDate)
+          || (shipFilter === 'none' && !sDate)
+          || sDate === shipFilter;
+
+        return matchSearch && matchUpload && matchShip;
       });
 
       const total = filteredGrps.length;
