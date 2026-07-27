@@ -272,12 +272,22 @@ async function generateQuotation(mesFile, masterFile) {
       } catch(e) { console.warn('master_jobs 동기화 오류:', e.message); }
     })();
   } else {
-    // 마스터파일 없음 → Supabase + 로컬 캐시에서 로드
+    // 마스터파일 없음 → Supabase 전체 페이지네이션 + 로컬 캐시에서 로드
     const sb = getSB();
     if (sb) {
-      const { data, error } = await sb.from('master_jobs').select('*');
-      if (!error && data && data.length > 0) {
-        masterTargets = data.map(r => ({
+      const PAGE_MJ = 1000;
+      let allMj = [];
+      for (let from = 0; ; from += PAGE_MJ) {
+        const { data, error } = await sb
+          .from('master_jobs').select('*')
+          .range(from, from + PAGE_MJ - 1);
+        if (error) break;
+        if (!data || data.length === 0) break;
+        allMj.push(...data);
+        if (data.length < PAGE_MJ) break;
+      }
+      if (allMj.length > 0) {
+        masterTargets = allMj.map(r => ({
           orderNo: r.order_no, pn: r.pn || '', sn: r.sn || '',
           po: r.po || '', tkmNo: r.tkm_no || '',
         }));
