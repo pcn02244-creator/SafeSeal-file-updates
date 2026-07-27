@@ -724,6 +724,7 @@ async function loadHistory() {
    디버그 로그 출력 (화면 하단 패널)
 ══════════════════════════════════════════ */
 const dbgLines = [];
+const seenLogRaws = new Set(); // 로그 중복 방지 전용
 function dbgLog(raw, norm, type) {
   const tag  = type ? `[${type}]` : '[무시]';
   const line = `${tag} raw="${raw}" → "${norm}"`;
@@ -751,8 +752,11 @@ function onScan(raw) {
   const norm = normalizeBarcode(raw);
   const res  = classifyBarcode(norm);
 
-  /* 항상 로그 출력 (null 포함) */
-  dbgLog(raw, norm, res ? res.type : null);
+  /* 처음 본 값만 로그 출력 — 중복 바코드 연속 인식 시 로그 억제 */
+  if (!seenLogRaws.has(norm)) {
+    seenLogRaws.add(norm);
+    dbgLog(raw, norm, res ? res.type : null);
+  }
 
   /* 판별 불가 바코드 무시 */
   if (!res) return;
@@ -951,6 +955,7 @@ function resetScanner() {
   scanned      = { PO: null, PKG: null, SN: null };
   lastScanType = null;
   seenRaws.clear();
+  seenLogRaws.clear();
 
   /* 칩 초기화 */
   BARCODE_TYPES.forEach(t => {
