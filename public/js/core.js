@@ -491,36 +491,44 @@ async function syncVerificationSets() {
   const sb = getSB();
   if (!sb) throw new Error('Supabase 미연결');
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today    = new Date().toISOString().slice(0, 10);
+  const PAGE     = 1000; // PostgREST 기본 상한
+  const UPSERT_BATCH = 500;
 
-  // 1+2. master_jobs · shipments 병렬 조회 (순차 대기 제거)
-  const [jobsRes, shipRes] = await Promise.all([
-    sb.from('master_jobs').select('order_no, po, sn, batch_date'),
-    sb.from('shipments').select('po, ptn_no'),
-  ]);
-  if (jobsRes.error) throw new Error('master_jobs 조회 오류: ' + jobsRes.error.message);
-  if (shipRes.error)  throw new Error('shipments 조회 오류: '  + shipRes.error.message);
+  // 1. master_jobs 전체 페이지네이션 조회 (기본 1000건 제한 우회)
+  let allJobs = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await sb
+      .from('master_jobs')
+      .select('order_no, po, sn, batch_date')
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error('master_jobs 조회 오류: ' + error.message);
+    if (!data || data.length === 0) break;
+    allJobs.push(...data);
+    if (data.length < PAGE) break; // 마지막 페이지
+  }
 
-  // DB 최신 batch_date → active batch 결정 (없으면 today)
-  const jobs = jobsRes.data || [];
-  const latestBatchDate = jobs
+  // 2. shipments 조회 (건수 적어 단순 조회)
+  const { data: shipData, error: shipErr } = await sb.from('shipments').select('po, ptn_no');
+  if (shipErr) throw new Error('shipments 조회 오류: ' + shipErr.message);
+
+  const latestBatchDate = allJobs
     .map(j => j.batch_date).filter(Boolean)
     .sort().reverse()[0] || today;
 
-  const filtered    = jobs.filter(j => j.order_no && j.po);
+  const filtered    = allJobs.filter(j => j.order_no && j.po);
   const masterPoSet = new Set(filtered.map(j => j.po.trim().toUpperCase()));
 
-  // shipments: PO → ptn_no 매핑 (같은 PO 복수 행이면 마지막 값)
   const pkgByPO  = {};
   const shipPoSet = new Set();
-  (shipRes.data || []).forEach(s => {
+  (shipData || []).forEach(s => {
     const poKey = (s.po || '').trim().toUpperCase();
     if (!poKey) return;
     shipPoSet.add(poKey);
     if (s.ptn_no) pkgByPO[poKey] = s.ptn_no.trim().toUpperCase();
   });
 
-  // 3. master_jobs 기반 rows
+  // 3. master_jobs 기반 rows 생성
   const rows = filtered.map(j => {
     const poKey = j.po.trim().toUpperCase();
     return {
@@ -533,22 +541,22 @@ async function syncVerificationSets() {
     };
   });
 
-  if (rows.length) {
+  // 4. 500건씩 배치 upsert (한 번에 전송 시 요청 크기 초과 방지)
+  for (let i = 0; i < rows.length; i += UPSERT_BATCH) {
+    const chunk = rows.slice(i, i + UPSERT_BATCH);
     const { error: upsertErr } = await sb
       .from('verification_sets')
-      .upsert(rows, { onConflict: 'order_no,batch_date' });
+      .upsert(chunk, { onConflict: 'order_no,batch_date' });
     if (upsertErr) throw new Error('verification_sets upsert 오류: ' + upsertErr.message);
   }
 
-  // 4. shipments에만 있는 PO (SHT 등 master_jobs 미등록)
-  //    batch_date = latestBatchDate 로 통일 → 1차 검색에서 바로 히트
-  //    order_no   = "po:<PO번호>"   → upsert conflict 키 분리
+  // 5. shipments에만 있는 PO (SHT 등 master_jobs 미등록)
   const extraRows = [];
   shipPoSet.forEach(poKey => {
     if (!masterPoSet.has(poKey)) {
       extraRows.push({
         order_no:   `po:${poKey}`,
-        batch_date: latestBatchDate,   // ← today 아님, active batch와 동일
+        batch_date: latestBatchDate,
         po:         poKey,
         sn:         null,
         ptn_no:     pkgByPO[poKey] || null,
