@@ -586,30 +586,91 @@ async function syncVerificationSets() {
   return { synced: rows.length + extraRows.length, latestBatchDate };
 }
 
-// ── 바코드 3종 검증 ──────────────────────────────────────────────────
-// input : { po, sn, ptn_no }  (각각 스캔된 원시값 — 정규화는 내부에서 처리)
-// output: { pass, order_no, batch_date, mismatch_field?, error? }
-async function verifyBarcodeSet({ po, sn, ptn_no }) {
+// ── 스캐너용 마스터 데이터 메모리 로드 ──────────────────────────────
+// master_jobs + shipments를 직접 읽어 Map<PO, {order_no,sn,ptn_no,batch_date}> 반환
+// verification_sets 테이블 불필요 — 스캐너는 이 Map으로 직접 조회
+async function loadMasterMap() {
   const sb = getSB();
-  if (!sb) return { pass: false, order_no: null, error: 'Supabase 미연결' };
+  if (!sb) throw new Error('Supabase 미연결');
 
+  const PAGE = 1000;
+  let allJobs = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await sb
+      .from('master_jobs')
+      .select('order_no, po, sn, batch_date')
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error('master_jobs 조회 오류: ' + error.message);
+    if (!data || data.length === 0) break;
+    allJobs.push(...data);
+    if (data.length < PAGE) break;
+  }
+
+  const { data: shipData, error: shipErr } = await sb.from('shipments').select('po, ptn_no');
+  if (shipErr) throw new Error('shipments 조회 오류: ' + shipErr.message);
+
+  const pkgByPO = {};
+  (shipData || []).forEach(s => {
+    const poKey = (s.po || '').trim().toUpperCase();
+    if (poKey && s.ptn_no) pkgByPO[poKey] = s.ptn_no.trim().toUpperCase();
+  });
+
+  const map = new Map();
+  allJobs.forEach(j => {
+    if (!j.order_no || !j.po) return;
+    const poKey = j.po.trim().toUpperCase();
+    map.set(poKey, {
+      order_no:   j.order_no.trim(),
+      batch_date: j.batch_date || '',
+      sn:         (j.sn || '').trim().replace(/\s/g, '').toUpperCase(),
+      ptn_no:     pkgByPO[poKey] || null,
+    });
+  });
+
+  // shipments에만 있는 PO (SHT 등 master_jobs 미등록)
+  Object.keys(pkgByPO).forEach(poKey => {
+    if (!map.has(poKey)) {
+      map.set(poKey, {
+        order_no:   `po:${poKey}`,
+        batch_date: '',
+        sn:         null,
+        ptn_no:     pkgByPO[poKey],
+      });
+    }
+  });
+
+  return { map, count: map.size };
+}
+
+// ── 바코드 3종 검증 ──────────────────────────────────────────────────
+// input : { po, sn, ptn_no }, masterMap (선택 — 스캐너는 메모리 Map 전달)
+// output: { pass, order_no, batch_date, mismatch_field?, error? }
+async function verifyBarcodeSet({ po, sn, ptn_no }, masterMap) {
   const poKey  = (po     || '').trim().toUpperCase();
   const snKey  = (sn     || '').trim().replace(/\s/g, '').toUpperCase();
   const ptnKey = (ptn_no || '').trim().toUpperCase();
 
   if (!poKey) return { pass: false, order_no: null, mismatch_field: 'po', error: 'PO 값 없음' };
 
-  // 배치 필터 없이 최신 행 검색 — 누적 방식 운용 (중복 시 PGRST116 방지: limit(1))
-  const { data: rows, error } = await sb
-    .from('verification_sets')
-    .select('order_no, batch_date, po, sn, ptn_no')
-    .eq('po', poKey)
-    .order('batch_date', { ascending: false })
-    .limit(1);
-  if (error) return { pass: false, order_no: null, error: error.message };
-  const data = rows?.[0] || null;
+  let data;
+  if (masterMap) {
+    // 스캐너: 앱 로드 시 구성한 메모리 Map 사용 (Supabase 호출 없음)
+    data = masterMap.get(poKey) || null;
+  } else {
+    // PC 도구 호환 경로: verification_sets 직접 조회
+    const sb = getSB();
+    if (!sb) return { pass: false, order_no: null, error: 'Supabase 미연결' };
+    const { data: rows, error } = await sb
+      .from('verification_sets')
+      .select('order_no, batch_date, po, sn, ptn_no')
+      .eq('po', poKey)
+      .order('batch_date', { ascending: false })
+      .limit(1);
+    if (error) return { pass: false, order_no: null, error: error.message };
+    data = rows?.[0] || null;
+  }
 
-  if (!data) return { pass: false, order_no: null, mismatch_field: 'po', error: `PO "${poKey}" 미등록 — 재동기화(↻) 후 재시도` };
+  if (!data) return { pass: false, order_no: null, mismatch_field: 'po', error: `PO "${poKey}" 미등록 — 재로드(↻) 후 재시도` };
 
   if (snKey  && data.sn     && data.sn     !== snKey)  return { pass: false, order_no: data.order_no, batch_date: data.batch_date, mismatch_field: 'sn' };
   if (ptnKey && data.ptn_no && data.ptn_no !== ptnKey) return { pass: false, order_no: data.order_no, batch_date: data.batch_date, mismatch_field: 'ptn_no' };

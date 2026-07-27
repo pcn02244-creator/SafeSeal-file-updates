@@ -383,7 +383,7 @@
     <h1>바코드 검증</h1>
     <div id="batch-badge" style="font-size:10px;font-weight:700;color:rgba(255,255,255,.5);letter-spacing:.04em;margin-right:2px" title="활성 배치 날짜"></div>
     <div id="master-badge">로드 중...</div>
-    <span class="mi" id="sync-btn" title="재동기화" onclick="doSync().then(()=>scanMsg.textContent='')">sync</span>
+    <span class="mi" id="sync-btn" title="데이터 재로드" onclick="loadMasterData().then(()=>scanMsg.textContent='')">sync</span>
     <span class="mi" id="hist-btn" title="스캔 이력" onclick="toggleHistory()" style="margin-left:4px">history</span>
   </div>
 
@@ -522,28 +522,29 @@ $('back-btn').addEventListener('click', () => {
 });
 
 /* ══════════════════════════════════════════
-   verification_sets 동기화 (core.js의 syncVerificationSets 래퍼)
+   마스터 데이터 로드 (Supabase → 메모리 Map)
+   verification_sets 동기화 불필요 — master_jobs + shipments 직접 읽기
 ══════════════════════════════════════════ */
-async function doSync() {
-  const batchBadge = $('batch-badge');
-  masterBadge.textContent = '동기화 중...';
+let masterMap = null;
+
+async function loadMasterData() {
+  masterBadge.textContent = '데이터 로딩 중...';
   masterBadge.className   = '';
   try {
-    const { synced, latestBatchDate } = await syncVerificationSets();
-    // 배지는 synced 값 무관하게 항상 최신 날짜로 갱신
-    if (batchBadge) batchBadge.textContent = latestBatchDate || '';
-    if (synced > 0) {
-      masterBadge.textContent = `${synced}건 준비`;
+    const { map, count } = await loadMasterMap();
+    masterMap = map;
+    if (count > 0) {
+      masterBadge.textContent = `${count}건 로드`;
       masterBadge.classList.add('loaded');
     } else {
       masterBadge.textContent = '데이터 없음';
       masterBadge.classList.add('error');
-      scanMsg.textContent = '⚠ PC에서 견적 생성 후 재접속';
+      scanMsg.textContent = '⚠ PC에서 마스터파일 업로드 후 재로드';
     }
   } catch (e) {
-    masterBadge.textContent = '동기화 오류';
+    masterBadge.textContent = '로드 오류';
     masterBadge.classList.add('error');
-    console.warn('syncVerificationSets 오류:', e.message);
+    console.warn('loadMasterMap 오류:', e.message);
     scanMsg.textContent = '⚠ ' + e.message;
   }
 }
@@ -612,7 +613,7 @@ async function runVerify() {
     po:     scanned.PO  || '',
     sn:     scanned.SN  || '',
     ptn_no: scanned.PKG || '',
-  });
+  }, masterMap);
 
   showResult(result);
 }
@@ -998,8 +999,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   /* PC면 app 숨긴 상태이므로 로직 중단 */
   if (!$('app') || $('app').style.display === 'none') return;
 
-  /* 1. verification_sets 동기화 (master_jobs + shipments 조인) */
-  await doSync();
+  /* 1. master_jobs + shipments → 메모리 Map 로드 */
+  await loadMasterData();
 
   /* 2. 카메라 시작 */
   await startCamera();
