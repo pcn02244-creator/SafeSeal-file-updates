@@ -956,6 +956,9 @@ function resetScanner() {
   lastScanType = null;
   seenRaws.clear();
   seenLogRaws.clear();
+  dbgLines.length = 0;
+  const dbgEl = document.getElementById('dbg-log');
+  if (dbgEl) dbgEl.innerHTML = '';
 
   /* 칩 초기화 */
   BARCODE_TYPES.forEach(t => {
