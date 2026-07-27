@@ -271,6 +271,33 @@ async function generateQuotation(mesFile, masterFile) {
         console.log(`✅ master_jobs 동기화 완료: ${rows.length}건 (배치: ${batchDate})`);
       } catch(e) { console.warn('master_jobs 동기화 오류:', e.message); }
     })();
+
+    // 검증 전용 전체 PO/SN 누적 — 비즈니스 필터 없이, 기존 행 보존(ignoreDuplicates)
+    (async () => {
+      const sb = getSB();
+      if (!sb) return;
+      const batchDate = now.slice(0, 10);
+      const seen = new Set();
+      const verRows = [];
+      for (let i = 2; i < msRows.length; i++) {
+        const r   = msRows[i];
+        const po  = String(r[8]  || '').trim().toUpperCase();
+        const sn  = String(r[7]  || '').trim().replace(/\s/g, '').toUpperCase();
+        const ono = String(r[10] || '').trim();
+        const pn  = String(r[6]  || '').trim();
+        const tkm = String(r[9]  || '').trim();
+        if (!po && !ono) continue;
+        const key = ono || `po:${po}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        verRows.push({ order_no: key, pn: pn||null, sn: sn||null, po: po||null, tkm_no: tkm||null, batch_date: batchDate, synced_at: now });
+      }
+      if (!verRows.length) return;
+      try {
+        await sb.from('master_jobs').upsert(verRows, { onConflict: 'order_no', ignoreDuplicates: true });
+        console.log(`✅ 검증용 전체 PO 누적: ${verRows.length}건`);
+      } catch(e) { console.warn('검증용 PO 누적 오류:', e.message); }
+    })();
   } else {
     // 마스터파일 없음 → Supabase에서 자동 로드
     const sb = getSB();
@@ -538,39 +565,21 @@ async function verifyBarcodeSet({ po, sn, ptn_no }) {
   const sb = getSB();
   if (!sb) return { pass: false, order_no: null, error: 'Supabase 미연결' };
 
-  const poKey     = (po     || '').trim().toUpperCase();
-  const snKey     = (sn     || '').trim().replace(/\s/g, '').toUpperCase();
-  const ptnKey    = (ptn_no || '').trim().toUpperCase();
-  const batchDate = getActiveBatch();
+  const poKey  = (po     || '').trim().toUpperCase();
+  const snKey  = (sn     || '').trim().replace(/\s/g, '').toUpperCase();
+  const ptnKey = (ptn_no || '').trim().toUpperCase();
 
   if (!poKey) return { pass: false, order_no: null, mismatch_field: 'po', error: 'PO 값 없음' };
 
-  // 1차: 활성 배치 기준 검색
-  // maybeSingle() 대신 limit(1)+배열 사용 — 동일 PO 복수 행 시 PGRST116 에러 방지
-  let data = null;
-  {
-    let q = sb.from('verification_sets')
-      .select('order_no, batch_date, po, sn, ptn_no')
-      .eq('po', poKey)
-      .order('batch_date', { ascending: false })
-      .limit(1);
-    if (batchDate) q = q.eq('batch_date', batchDate);
-    const { data: rows, error } = await q;
-    if (error) return { pass: false, order_no: null, error: error.message };
-    data = rows?.[0] || null;
-  }
-
-  // 2차: 활성 배치에 없으면 전체 배치에서 최신 행 폴백 (batch_date 필터 없이)
-  if (!data && batchDate) {
-    const { data: rows2, error: e2 } = await sb
-      .from('verification_sets')
-      .select('order_no, batch_date, po, sn, ptn_no')
-      .eq('po', poKey)
-      .order('batch_date', { ascending: false })
-      .limit(1);
-    if (e2) return { pass: false, order_no: null, error: e2.message };
-    data = rows2?.[0] || null;
-  }
+  // 배치 필터 없이 최신 행 검색 — 누적 방식 운용 (중복 시 PGRST116 방지: limit(1))
+  const { data: rows, error } = await sb
+    .from('verification_sets')
+    .select('order_no, batch_date, po, sn, ptn_no')
+    .eq('po', poKey)
+    .order('batch_date', { ascending: false })
+    .limit(1);
+  if (error) return { pass: false, order_no: null, error: error.message };
+  const data = rows?.[0] || null;
 
   if (!data) return { pass: false, order_no: null, mismatch_field: 'po', error: `PO "${poKey}" 미등록 — 재동기화(↻) 후 재시도` };
 
@@ -731,6 +740,33 @@ async function buildMasterFillResult(mesFile, masterFile) {
       setActiveBatch(batchDate);
       console.log('master_jobs sync:', rowsWithBatch.length, '배치:', batchDate);
     } catch(e) { console.warn('master_jobs sync error:', e.message); }
+  })();
+
+  // 검증 전용 전체 PO/SN 누적 — 비즈니스 필터 없이, 기존 행 보존
+  (async () => {
+    const sb = getSB();
+    if (!sb) return;
+    const now2 = new Date().toISOString();
+    const bd2  = now2.slice(0, 10);
+    const seen = new Set();
+    const verRows = [];
+    for (let i = 2; i < masterRows.length; i++) {
+      const r   = masterRows[i];
+      const po  = String(r[8]  || '').trim().toUpperCase();
+      const sn  = String(r[7]  || '').trim().replace(/\s/g, '').toUpperCase();
+      const ono = String(r[10] || '').trim();
+      const pn  = String(r[6]  || '').trim();
+      const tkm = String(r[9]  || '').trim();
+      if (!po && !ono) continue;
+      const key = ono || `po:${po}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      verRows.push({ order_no: key, pn: pn||null, sn: sn||null, po: po||null, tkm_no: tkm||null, batch_date: bd2, synced_at: now2 });
+    }
+    if (!verRows.length) return;
+    try {
+      await sb.from('master_jobs').upsert(verRows, { onConflict: 'order_no', ignoreDuplicates: true });
+    } catch(e) { console.warn('검증용 PO 누적 오류:', e.message); }
   })();
 
   return {
