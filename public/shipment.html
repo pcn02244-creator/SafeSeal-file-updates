@@ -1421,15 +1421,35 @@
     }
 
     function buildPreview() {
-      // Supabase(poGroups)에서 직접 구성 — localStorage 캐시 미참조
+      // master_rows_cache: 마스터 Excel 전체 행 (UI 표시 보완용 — PC 전용 페이지에서만 사용)
+      // Supabase(poGroups)가 PRIMARY, localStorage는 pn/sn/tkm_no/customer/fab/tool 누락 시 보완
+      let masterCache = [];
+      try { masterCache = JSON.parse(localStorage.getItem('master_rows_cache') || '[]'); } catch {}
+
+      // Excel 캐시에서 PO → 행 맵 구성 (col 8 = PO)
+      const cacheByPO = {};
+      for (let i = 2; i < masterCache.length; i++) {
+        const r  = masterCache[i];
+        const po = String(r[8] || '').trim().toUpperCase();
+        if (po) cacheByPO[po] = r;
+      }
+
       yjleeRows = (poGroups || []).flatMap(g =>
         g.orders.filter(o => selectedPos.has(o.po || ''))
           .map(o => {
-            const a = quotAmounts[o.po] || quotAmounts[o.sn] || { usd: '', krw: '', source: '' };
+            const po  = o.po || '';
+            const cr  = cacheByPO[po] || [];        // Excel 보완 행
+            const a   = quotAmounts[po] || quotAmounts[o.sn] || { usd: '', krw: '', source: '' };
             return {
-              no: o.order_no || '', customer: '', fab: '', tool: '',
-              pn: o.pn || '', sn: o.sn || '', po: o.po || '', tkm_no: o.tkm_no || '',
-              usd: a.usd, krw: a.krw, source: a.source || '',
+              no:       o.order_no   || String(cr[0]  || ''),
+              customer: String(cr[3] || ''),
+              fab:      String(cr[4] || ''),
+              tool:     String(cr[5] || ''),
+              pn:       o.pn         || String(cr[6]  || ''),
+              sn:       o.sn         || String(cr[7]  || ''),
+              po,
+              tkm_no:   o.tkm_no     || String(cr[9]  || ''),
+              usd:      a.usd, krw: a.krw, source: a.source || '',
             };
           })
       );
