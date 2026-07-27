@@ -454,40 +454,41 @@ async function syncVerificationSets() {
   const sb = getSB();
   if (!sb) throw new Error('Supabase 미연결');
 
-  // 1. master_jobs 전체 조회 (배치 필터 없음 — 모든 PO 검증 가능)
-  const { data: jobs, error: e1 } = await sb
-    .from('master_jobs').select('order_no, po, sn, batch_date');
-  if (e1) throw new Error('master_jobs 조회 오류: ' + e1.message);
-
-  // DB의 최신 batch_date를 활성 배치 날짜로 채택 (stale localStorage 덮어쓰기)
   const today = new Date().toISOString().slice(0, 10);
-  const latestBatchDate = (jobs || [])
+
+  // 1+2. master_jobs · shipments 병렬 조회 (순차 대기 제거)
+  const [jobsRes, shipRes] = await Promise.all([
+    sb.from('master_jobs').select('order_no, po, sn, batch_date'),
+    sb.from('shipments').select('po, ptn_no'),
+  ]);
+  if (jobsRes.error) throw new Error('master_jobs 조회 오류: ' + jobsRes.error.message);
+  if (shipRes.error)  throw new Error('shipments 조회 오류: '  + shipRes.error.message);
+
+  // DB 최신 batch_date → active batch 결정 (없으면 today)
+  const jobs = jobsRes.data || [];
+  const latestBatchDate = jobs
     .map(j => j.batch_date).filter(Boolean)
     .sort().reverse()[0] || today;
 
-  const filtered = (jobs || []).filter(j => j.order_no && j.po);
+  const filtered    = jobs.filter(j => j.order_no && j.po);
   const masterPoSet = new Set(filtered.map(j => j.po.trim().toUpperCase()));
 
-  // 2. shipments 전체 조회 (master_jobs 미등록 SHT PO 포함)
-  const { data: shipRows, error: e2 } = await sb
-    .from('shipments').select('po, ptn_no');
-  if (e2) throw new Error('shipments 조회 오류: ' + e2.message);
-
-  const pkgByPO = {};
+  // shipments: PO → ptn_no 매핑 (같은 PO 복수 행이면 마지막 값)
+  const pkgByPO  = {};
   const shipPoSet = new Set();
-  (shipRows || []).forEach(s => {
+  (shipRes.data || []).forEach(s => {
     const poKey = (s.po || '').trim().toUpperCase();
     if (!poKey) return;
     shipPoSet.add(poKey);
     if (s.ptn_no) pkgByPO[poKey] = s.ptn_no.trim().toUpperCase();
   });
 
-  // 3. master_jobs 기반 rows 생성
+  // 3. master_jobs 기반 rows
   const rows = filtered.map(j => {
     const poKey = j.po.trim().toUpperCase();
     return {
       order_no:   j.order_no.trim(),
-      batch_date: j.batch_date || today,
+      batch_date: j.batch_date || latestBatchDate,
       po:         poKey,
       sn:         (j.sn || '').trim().replace(/\s/g, '').toUpperCase(),
       ptn_no:     pkgByPO[poKey] || null,
@@ -502,14 +503,15 @@ async function syncVerificationSets() {
     if (upsertErr) throw new Error('verification_sets upsert 오류: ' + upsertErr.message);
   }
 
-  // 4. shipments에만 있는 PO (SHT 등 master_jobs 미등록) → 합성 키로 추가
-  //    order_no = "po:<PO번호>" 형태로 중복 방지
+  // 4. shipments에만 있는 PO (SHT 등 master_jobs 미등록)
+  //    batch_date = latestBatchDate 로 통일 → 1차 검색에서 바로 히트
+  //    order_no   = "po:<PO번호>"   → upsert conflict 키 분리
   const extraRows = [];
   shipPoSet.forEach(poKey => {
     if (!masterPoSet.has(poKey)) {
       extraRows.push({
         order_no:   `po:${poKey}`,
-        batch_date: today,
+        batch_date: latestBatchDate,   // ← today 아님, active batch와 동일
         po:         poKey,
         sn:         null,
         ptn_no:     pkgByPO[poKey] || null,
@@ -544,26 +546,30 @@ async function verifyBarcodeSet({ po, sn, ptn_no }) {
   if (!poKey) return { pass: false, order_no: null, mismatch_field: 'po', error: 'PO 값 없음' };
 
   // 1차: 활성 배치 기준 검색
+  // maybeSingle() 대신 limit(1)+배열 사용 — 동일 PO 복수 행 시 PGRST116 에러 방지
   let data = null;
   {
-    let q = sb.from('verification_sets').select('order_no, batch_date, po, sn, ptn_no').eq('po', poKey);
+    let q = sb.from('verification_sets')
+      .select('order_no, batch_date, po, sn, ptn_no')
+      .eq('po', poKey)
+      .order('batch_date', { ascending: false })
+      .limit(1);
     if (batchDate) q = q.eq('batch_date', batchDate);
-    const { data: d, error } = await q.maybeSingle();
+    const { data: rows, error } = await q;
     if (error) return { pass: false, order_no: null, error: error.message };
-    data = d;
+    data = rows?.[0] || null;
   }
 
-  // 2차: 활성 배치에 없으면 전체 배치에서 폴백 검색
+  // 2차: 활성 배치에 없으면 전체 배치에서 최신 행 폴백 (batch_date 필터 없이)
   if (!data && batchDate) {
-    const { data: d2, error: e2 } = await sb
+    const { data: rows2, error: e2 } = await sb
       .from('verification_sets')
       .select('order_no, batch_date, po, sn, ptn_no')
       .eq('po', poKey)
       .order('batch_date', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .limit(1);
     if (e2) return { pass: false, order_no: null, error: e2.message };
-    data = d2;
+    data = rows2?.[0] || null;
   }
 
   if (!data) return { pass: false, order_no: null, mismatch_field: 'po', error: `PO "${poKey}" 미등록 — 재동기화(↻) 후 재시도` };
