@@ -568,19 +568,24 @@ function normalizeBarcode(raw) {
    바코드 종류 분류 (정규화된 값을 받음)
    반환: { type, value } | null
    - PO:  순수 숫자 10~13자리
-   - PKG: 문자열 안 어디서든 \d[A-Z]\d{5,} 패턴 추출
-          예) "3S4A7617246" → value:"4A7617246"
-              "(3S)4A7617246" → normalizeBarcode 후 → "4A7617246"
-   - SN:  그 외 영숫자 4자 이상
-   - null: 판별 불가
+   - PKG: \d[A-Z]\d{5,} 패턴 (예: 4A7729833)
+   - SN:  순수 숫자 6~9자리 (예: 230351016)
+          OR 단일 대문자 + 숫자 6~9자리 (예: S230351016 → 230351016)
+   - null: PN 등 나머지 — 무시
 ══════════════════════════════════════════ */
 function classifyBarcode(v) {
   if (v.length < 4) return null;
+  // PO: 순수 숫자 10~13자리
   if (/^\d{10,13}$/.test(v)) return { type: 'PO', value: v };
-  // PKG ID: 전체 매치 대신 패턴 서치 — GS1 AI 접두어가 붙어도 추출
+  // PKG ID: 패턴 서치 — GS1 AI 접두어 포함 가능
   const pkgM = v.match(/\d[A-Z]\d{5,}/);
   if (pkgM) return { type: 'PKG', value: pkgM[0] };
-  if (/^[A-Z0-9]{4,}$/.test(v)) return { type: 'SN', value: v };
+  // SN: 순수 숫자 6~9자리
+  if (/^\d{6,9}$/.test(v)) return { type: 'SN', value: v };
+  // SN: 단일 대문자 접두어 + 숫자 6~9자리 (예: S230351016 → 230351016)
+  const snPfx = v.match(/^[A-Z](\d{6,9})$/);
+  if (snPfx) return { type: 'SN', value: snPfx[1] };
+  // PN 등 나머지: 무시
   return null;
 }
 
