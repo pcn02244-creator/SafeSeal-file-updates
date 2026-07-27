@@ -272,13 +272,17 @@ async function generateQuotation(mesFile, masterFile) {
       } catch(e) { console.warn('master_jobs 동기화 오류:', e.message); }
     })();
 
-    // 검증 전용 전체 PO/SN 누적 — 비즈니스 필터 없이, 기존 행 보존(ignoreDuplicates)
+    // 검증 전용 전체 PO/SN 누적 — 비즈니스 필터 없이, SN 갱신 허용
     (async () => {
       const sb = getSB();
       if (!sb) return;
       const batchDate = now.slice(0, 10);
-      const seen = new Set();
-      const verRows = [];
+
+      // strict sync(cln_date 포함)가 이미 처리한 key는 제외 — cln_date 덮어쓰기 방지
+      const strictKeys = new Set(masterTargets.map(t => t.orderNo));
+
+      // 동일 key 여러 행 → SN이 있는 행 우선 선택
+      const keyMap = {};
       for (let i = 2; i < msRows.length; i++) {
         const r   = msRows[i];
         const po  = String(r[8]  || '').trim().toUpperCase();
@@ -288,13 +292,18 @@ async function generateQuotation(mesFile, masterFile) {
         const tkm = String(r[9]  || '').trim();
         if (!po && !ono) continue;
         const key = ono || `po:${po}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        verRows.push({ order_no: key, pn: pn||null, sn: sn||null, po: po||null, tkm_no: tkm||null, batch_date: batchDate, synced_at: now });
+        if (strictKeys.has(key)) continue;
+        const prev = keyMap[key];
+        if (!prev || (!prev.sn && sn)) {                 // SN 없는 기존 항목을 SN 있는 행으로 교체
+          keyMap[key] = { order_no: key, pn: pn||null, sn: sn||null, po: po||null,
+                          tkm_no: tkm||null, batch_date: batchDate, synced_at: now };
+        }
       }
+      const verRows = Object.values(keyMap);
       if (!verRows.length) return;
       try {
-        await sb.from('master_jobs').upsert(verRows, { onConflict: 'order_no', ignoreDuplicates: true });
+        // ignoreDuplicates 제거 → 마스터 파일에 SN이 새로 추가되면 DB도 업데이트
+        await sb.from('master_jobs').upsert(verRows, { onConflict: 'order_no' });
         console.log(`✅ 검증용 전체 PO 누적: ${verRows.length}건`);
       } catch(e) { console.warn('검증용 PO 누적 오류:', e.message); }
     })();
@@ -742,14 +751,21 @@ async function buildMasterFillResult(mesFile, masterFile) {
     } catch(e) { console.warn('master_jobs sync error:', e.message); }
   })();
 
-  // 검증 전용 전체 PO/SN 누적 — 비즈니스 필터 없이, 기존 행 보존
+  // 검증 전용 전체 PO/SN 누적 — 비즈니스 필터 없이, SN 갱신 허용
   (async () => {
     const sb = getSB();
     if (!sb) return;
     const now2 = new Date().toISOString();
     const bd2  = now2.slice(0, 10);
-    const seen = new Set();
-    const verRows = [];
+
+    // strict sync(cln_date 포함)가 이미 처리한 key는 제외 — cln_date 덮어쓰기 방지
+    const strictKeys = new Set(
+      [...updates, ...alreadyFilled, ...noMesMatch]
+        .map(u => u.orderNo).filter(Boolean)
+    );
+
+    // 동일 key 여러 행 → SN이 있는 행 우선 선택
+    const keyMap = {};
     for (let i = 2; i < masterRows.length; i++) {
       const r   = masterRows[i];
       const po  = String(r[8]  || '').trim().toUpperCase();
@@ -759,13 +775,19 @@ async function buildMasterFillResult(mesFile, masterFile) {
       const tkm = String(r[9]  || '').trim();
       if (!po && !ono) continue;
       const key = ono || `po:${po}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      verRows.push({ order_no: key, pn: pn||null, sn: sn||null, po: po||null, tkm_no: tkm||null, batch_date: bd2, synced_at: now2 });
+      if (strictKeys.has(key)) continue;
+      const prev = keyMap[key];
+      if (!prev || (!prev.sn && sn)) {                   // SN 없는 기존 항목을 SN 있는 행으로 교체
+        keyMap[key] = { order_no: key, pn: pn||null, sn: sn||null, po: po||null,
+                        tkm_no: tkm||null, batch_date: bd2, synced_at: now2 };
+      }
     }
+    const verRows = Object.values(keyMap);
     if (!verRows.length) return;
     try {
-      await sb.from('master_jobs').upsert(verRows, { onConflict: 'order_no', ignoreDuplicates: true });
+      // ignoreDuplicates 제거 → 마스터 파일에 SN이 새로 추가되면 DB도 업데이트
+      await sb.from('master_jobs').upsert(verRows, { onConflict: 'order_no' });
+      console.log(`✅ 검증용 전체 PO 누적(buildMaster): ${verRows.length}건`);
     } catch(e) { console.warn('검증용 PO 누적 오류:', e.message); }
   })();
 
