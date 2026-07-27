@@ -1599,6 +1599,21 @@
         new RegExp(`<c r="${ref}" s="(\\d+)"[^>]*>[^<]*(?:<[^/][^>]*>[^<]*<\\/[^>]+>)*<\\/c>`),
         `<c r="${ref}" s="$1" t="inlineStr"><is><t>${escXml(val)}</t></is></c>`
       );
+      // 셀 포맷 무관 강제 교체 — numCell 실패 시(인라인 문자열, 공유 문자열 등) 대응
+      const forceCell = (ref, val) => {
+        const before = xml;
+        numCell(ref, val);
+        if (xml !== before) return; // numCell 성공
+        // 인라인 문자열/기타 포맷: 셀 전체를 교체
+        xml = xml.replace(
+          new RegExp(`<c r="${ref}"((?:\\s+[^>]*)?)>[\\s\\S]*?<\\/c>`),
+          (_, attrs) => {
+            const sMatch = attrs.match(/s="(\d+)"/);
+            const sAttr  = sMatch ? ` s="${sMatch[1]}"` : '';
+            return `<c r="${ref}"${sAttr} t="inlineStr"><is><t>${escXml(String(val))}</t></is></c>`;
+          }
+        );
+      };
 
       numCell('B5', date);
       fmlaCell('N5', date);
@@ -1616,9 +1631,9 @@
       fmlaCell('F20', total);
       fmlaCell('R19', supply); fmlaCell('S19', supply); fmlaCell('U19', tax);
       fmlaCell('R20', total);
-      numCell('C22', po);
+      forceCell('C22', po);   // numCell 실패 시 포맷 무관 강제 교체
       fmlaCell('O22', po);
-      numCell('G22', sn);
+      forceCell('G22', sn);   // SN도 동일하게 강제 교체
       fmlaCell('S22', sn);
       fmlaCell('G9', total);
       fmlaCell('S9', total);
