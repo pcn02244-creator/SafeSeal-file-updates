@@ -593,7 +593,13 @@ async function verifyBarcodeSet({ po, sn, ptn_no }) {
 
   if (!data) return { pass: false, order_no: null, mismatch_field: 'po', error: `PO "${poKey}" 미등록 — 재동기화(↻) 후 재시도` };
 
-  if (snKey  && data.sn     && data.sn     !== snKey)  return { pass: false, order_no: data.order_no, batch_date: data.batch_date, mismatch_field: 'sn' };
+  // SN 비교: 바코드에 단일 문자 접두어(예: "S230351016" → "230351016") 제거 후 재비교
+  if (snKey && data.sn && data.sn !== snKey) {
+    const snStripped = snKey.match(/^[A-Z](\d{6,})$/) ? snKey.slice(1) : null;
+    if (!snStripped || data.sn !== snStripped) {
+      return { pass: false, order_no: data.order_no, batch_date: data.batch_date, mismatch_field: 'sn' };
+    }
+  }
   if (ptnKey && data.ptn_no && data.ptn_no !== ptnKey) return { pass: false, order_no: data.order_no, batch_date: data.batch_date, mismatch_field: 'ptn_no' };
 
   return { pass: true, order_no: data.order_no, batch_date: data.batch_date };
