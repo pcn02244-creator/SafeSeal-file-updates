@@ -783,25 +783,8 @@
         }
       } catch (e) { console.warn('Supabase 로드 실패:', e.message); }
 
-      // Supabase에 데이터 없으면 마스터 캐시에서 PO 목록 로드
-      if (!jobs.length) {
-        try {
-          const CI    = { no:0, pn:6, sn:7, po:8, tkm:9 };
-          const cache = JSON.parse(localStorage.getItem('master_rows_cache') || '[]');
-          const start = cache.findIndex(r => r[CI.po] && /^[A-Z0-9]/.test(String(r[CI.po])));
-          for (let i = (start < 0 ? 2 : start); i < cache.length; i++) {
-            const r  = cache[i];
-            const po = String(r[CI.po] || '').trim();
-            if (!po || po.toLowerCase() === 'po') continue;
-            jobs.push({ order_no: String(r[CI.no]||''), pn: String(r[CI.pn]||''), sn: String(r[CI.sn]||''), po, tkm_no: String(r[CI.tkm]||'') });
-          }
-          // localStorage 폴백에서만 mes_order_nos_cache 필터 적용
-          try {
-            const mesNos = JSON.parse(localStorage.getItem('mes_order_nos_cache') || '[]');
-            if (mesNos.length > 0) { const ms = new Set(mesNos); jobs = jobs.filter(j => ms.has(j.order_no)); }
-          } catch {}
-        } catch {}
-      }
+      // Supabase에 데이터 없으면 master-fill.html 또는 quotation.html에서 마스터파일 업로드 필요
+      // (localStorage 폴백 제거 — 다른 기기에서 접근 시 캐시 없음)
 
       try {
         // shipments → po 기준 Map
@@ -1434,58 +1417,22 @@
     }
 
     function buildPreview() {
-      const masterCache = (() => {
-        try { return JSON.parse(localStorage.getItem('master_rows_cache') || '[]'); } catch { return []; }
-      })();
-
-      let hdrIdx = masterCache.findIndex(r =>
-        String(r[6] || '').toLowerCase().includes('p/n') &&
-        String(r[7] || '').toLowerCase().includes('s/n')
+      // Supabase(poGroups)에서 직접 구성 — localStorage 캐시 미참조
+      yjleeRows = (poGroups || []).flatMap(g =>
+        g.orders.filter(o => selectedPos.has(o.po || ''))
+          .map(o => {
+            const a = quotAmounts[o.po] || quotAmounts[o.sn] || { usd: '', krw: '', source: '' };
+            return {
+              no: o.order_no || '', customer: '', fab: '', tool: '',
+              pn: o.pn || '', sn: o.sn || '', po: o.po || '', tkm_no: o.tkm_no || '',
+              usd: a.usd, krw: a.krw, source: a.source || '',
+            };
+          })
       );
-      if (hdrIdx < 0) hdrIdx = 2;
-
-      const CI = { no:0, cust:3, fab:4, tool:5, pn:6, sn:7, po:8, tkm:9 };
-
-      yjleeRows = [];
-      for (let i = hdrIdx + 1; i < masterCache.length; i++) {
-        const r  = masterCache[i];
-        const po = String(r[CI.po] || '').trim();
-        if (!selectedPos.has(po)) continue;
-        const sn = String(r[CI.sn] || '').trim();
-        const a  = quotAmounts[po] || quotAmounts[sn] || { usd: '', krw: '', source: '' };
-        yjleeRows.push({
-          no:       r[CI.no]   || '',
-          customer: r[CI.cust] || '',
-          fab:      r[CI.fab]  || '',
-          tool:     r[CI.tool] || '',
-          pn:       r[CI.pn]   || '',
-          sn,
-          po,
-          tkm_no:   r[CI.tkm]  || '',
-          usd:      a.usd,
-          krw:      a.krw,
-          source:   a.source   || '',
-        });
-      }
-
-      if (!yjleeRows.length) {
-        const allJobs = (poGroups || []).flatMap(g =>
-          g.orders.filter(o => selectedPos.has(o.po || ''))
-            .map(o => {
-              const a = quotAmounts[o.po] || quotAmounts[o.sn] || { usd: '', krw: '', source: '' };
-              return {
-                no: o.order_no || '', customer: '', fab: '', tool: '',
-                pn: o.pn || '', sn: o.sn || '', po: o.po || '', tkm_no: o.tkm_no || '',
-                usd: a.usd, krw: a.krw, source: a.source || '',
-              };
-            })
-        );
-        yjleeRows = allJobs;
-      }
 
       const tbody = document.getElementById('stmt-preview-tbody');
       if (!yjleeRows.length) {
-        document.getElementById('stmt-no-preview').textContent = '해당 PO 데이터가 마스터 캐시에 없습니다. 먼저 견적 생성을 실행해 캐시를 만들어 주세요.';
+        document.getElementById('stmt-no-preview').textContent = '해당 PO 데이터가 없습니다. 관리자가 마스터파일을 업로드해야 합니다.';
         document.getElementById('stmt-no-preview').classList.remove('d-none');
         document.getElementById('stmt-preview-table').classList.add('d-none');
         return;

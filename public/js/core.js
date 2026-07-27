@@ -256,9 +256,8 @@ async function generateQuotation(mesFile, masterFile) {
       });
     }
     // Supabase 동기화 — strict 필터 통과 행만 (cln_date 포함)
-    (async () => {
-      const sb = getSB();
-      if (!sb || !masterTargets.length) return;
+    const sb = getSB();
+    if (sb && masterTargets.length) {
       try {
         const batchDate = now.slice(0, 10);
         const rows = masterTargets.map(t => ({
@@ -268,11 +267,41 @@ async function generateQuotation(mesFile, masterFile) {
         }));
         await sb.from('master_jobs').upsert(rows, { onConflict: 'order_no' });
         setActiveBatch(batchDate);
-        console.log(`✅ master_jobs 동기화 완료: ${rows.length}건 (배치: ${batchDate})`);
+        console.log(`✅ master_jobs strict 동기화: ${rows.length}건 (배치: ${batchDate})`);
       } catch(e) { console.warn('master_jobs 동기화 오류:', e.message); }
-    })();
+    }
+
+    // 검증 전용 전체 PO/SN 누적 — strict 필터 미통과 행도 포함 (파일 업로드 시에만 실행)
+    if (sb && msRows.length >= 3) {
+      const batchDate = now.slice(0, 10);
+      const strictKeys = new Set(masterTargets.map(t => t.orderNo));
+      const keyMap = {};
+      for (let i = 2; i < msRows.length; i++) {
+        const r   = msRows[i];
+        const po  = String(r[8]  || '').trim().toUpperCase();
+        const sn  = String(r[7]  || '').trim().replace(/\s/g, '').toUpperCase();
+        const ono = String(r[10] || '').trim();
+        const pn  = String(r[6]  || '').trim();
+        const tkm = String(r[9]  || '').trim();
+        if (!po && !ono) continue;
+        const key = ono || `po:${po}`;
+        if (strictKeys.has(key)) continue;
+        const prev = keyMap[key];
+        if (!prev || (!prev.sn && sn)) {
+          keyMap[key] = { order_no: key, pn: pn||null, sn: sn||null, po: po||null,
+                          tkm_no: tkm||null, batch_date: batchDate, synced_at: now };
+        }
+      }
+      const verRows = Object.values(keyMap);
+      if (verRows.length) {
+        try {
+          await sb.from('master_jobs').upsert(verRows, { onConflict: 'order_no' });
+          console.log(`✅ 검증용 전체 PO 누적: ${verRows.length}건`);
+        } catch(e) { console.warn('검증용 PO 누적 오류:', e.message); }
+      }
+    }
   } else {
-    // 마스터파일 없음 → Supabase 전체 페이지네이션 + 로컬 캐시에서 로드
+    // 마스터파일 없음 → Supabase master_jobs에서 직접 로드
     const sb = getSB();
     if (sb) {
       const PAGE_MJ = 1000;
@@ -294,44 +323,8 @@ async function generateQuotation(mesFile, masterFile) {
       }
     }
     if (!masterTargets.length) throw new Error('마스터 데이터가 없습니다. 관리자가 마스터파일을 한 번 업로드해야 합니다.');
-    // 캐시에서 msRows 로드 — 파일 업로드 없이도 broad sync 실행 가능
-    try { msRows = JSON.parse(localStorage.getItem('master_rows_cache') || '[]'); } catch {}
+    // 파일 없이는 broad sync 불가 — msRows는 빈 배열 유지
   }
-
-  // 검증 전용 전체 PO/SN 누적 — 파일 업로드 여부 무관, 캐시 데이터 활용
-  (async () => {
-    const sb = getSB();
-    if (!sb || msRows.length < 3) return;
-    const batchDate = now.slice(0, 10);
-
-    // strict sync(cln_date 포함)가 이미 처리한 key는 제외 — cln_date 덮어쓰기 방지
-    const strictKeys = new Set(masterTargets.map(t => t.orderNo));
-
-    // 동일 key 여러 행 → SN이 있는 행 우선 선택
-    const keyMap = {};
-    for (let i = 2; i < msRows.length; i++) {
-      const r   = msRows[i];
-      const po  = String(r[8]  || '').trim().toUpperCase();
-      const sn  = String(r[7]  || '').trim().replace(/\s/g, '').toUpperCase();
-      const ono = String(r[10] || '').trim();
-      const pn  = String(r[6]  || '').trim();
-      const tkm = String(r[9]  || '').trim();
-      if (!po && !ono) continue;
-      const key = ono || `po:${po}`;
-      if (strictKeys.has(key)) continue;
-      const prev = keyMap[key];
-      if (!prev || (!prev.sn && sn)) {
-        keyMap[key] = { order_no: key, pn: pn||null, sn: sn||null, po: po||null,
-                        tkm_no: tkm||null, batch_date: batchDate, synced_at: now };
-      }
-    }
-    const verRows = Object.values(keyMap);
-    if (!verRows.length) return;
-    try {
-      await sb.from('master_jobs').upsert(verRows, { onConflict: 'order_no' });
-      console.log(`✅ 검증용 전체 PO 누적: ${verRows.length}건`);
-    } catch(e) { console.warn('검증용 PO 누적 오류:', e.message); }
-  })();
 
   const parts = DB.parts.get();
   const usage = DB.usage.get();
@@ -756,11 +749,8 @@ async function buildMasterFillResult(mesFile, masterFile) {
     const msName   = masterWb.SheetNames.find(n => /safeseal master/i.test(n))
                      || masterWb.SheetNames[1] || masterWb.SheetNames[0];
     masterRows = XLSX.utils.sheet_to_json(masterWb.Sheets[msName], { header: 1, defval: '' });
-    try { localStorage.setItem('master_rows_cache', JSON.stringify(masterRows)); } catch {}
   } else {
-    const cached = localStorage.getItem('master_rows_cache');
-    if (!cached) throw new Error('마스터파일을 업로드해 주세요.');
-    masterRows = JSON.parse(cached);
+    throw new Error('마스터파일을 업로드해 주세요.');
   }
 
   const mesByOrder = {};
@@ -811,40 +801,31 @@ async function buildMasterFillResult(mesFile, masterFile) {
   }
 
   // master_jobs sync: updates + alreadyFilled + noMesMatch (PO/SN 있는 마스터 전체)
-  (async () => {
-    const sb = getSB();
-    if (!sb) return;
+  const sbFill = getSB();
+  if (sbFill) {
     const now = new Date().toISOString();
+    const batchDate = now.slice(0, 10);
+
+    // strict sync — cln_date 포함 행
     const syncRows = [...updates, ...alreadyFilled, ...noMesMatch]
       .filter(u => u.orderNo && u.po)
       .map(u => ({
         order_no: u.orderNo, pn: u.pn, sn: u.sn,
         po: u.po, tkm_no: u.tkmNo, cln_date: u.clnDate, synced_at: now,
+        batch_date: batchDate,
       }));
-    if (!syncRows.length) return;
-    const batchDate = now.slice(0, 10);
-    const rowsWithBatch = syncRows.map(r => ({ ...r, batch_date: batchDate }));
-    try {
-      await sb.from('master_jobs').upsert(rowsWithBatch, { onConflict: 'order_no' });
-      setActiveBatch(batchDate);
-      console.log('master_jobs sync:', rowsWithBatch.length, '배치:', batchDate);
-    } catch(e) { console.warn('master_jobs sync error:', e.message); }
-  })();
+    if (syncRows.length) {
+      try {
+        await sbFill.from('master_jobs').upsert(syncRows, { onConflict: 'order_no' });
+        setActiveBatch(batchDate);
+        console.log('master_jobs strict sync:', syncRows.length, '배치:', batchDate);
+      } catch(e) { console.warn('master_jobs sync error:', e.message); }
+    }
 
-  // 검증 전용 전체 PO/SN 누적 — 비즈니스 필터 없이, SN 갱신 허용
-  (async () => {
-    const sb = getSB();
-    if (!sb) return;
-    const now2 = new Date().toISOString();
-    const bd2  = now2.slice(0, 10);
-
-    // strict sync(cln_date 포함)가 이미 처리한 key는 제외 — cln_date 덮어쓰기 방지
+    // broad sync — strict 미통과 행 (비즈니스 필터 없이 전체 PO/SN 누적)
     const strictKeys = new Set(
-      [...updates, ...alreadyFilled, ...noMesMatch]
-        .map(u => u.orderNo).filter(Boolean)
+      [...updates, ...alreadyFilled, ...noMesMatch].map(u => u.orderNo).filter(Boolean)
     );
-
-    // 동일 key 여러 행 → SN이 있는 행 우선 선택
     const keyMap = {};
     for (let i = 2; i < masterRows.length; i++) {
       const r   = masterRows[i];
@@ -857,19 +838,19 @@ async function buildMasterFillResult(mesFile, masterFile) {
       const key = ono || `po:${po}`;
       if (strictKeys.has(key)) continue;
       const prev = keyMap[key];
-      if (!prev || (!prev.sn && sn)) {                   // SN 없는 기존 항목을 SN 있는 행으로 교체
+      if (!prev || (!prev.sn && sn)) {
         keyMap[key] = { order_no: key, pn: pn||null, sn: sn||null, po: po||null,
-                        tkm_no: tkm||null, batch_date: bd2, synced_at: now2 };
+                        tkm_no: tkm||null, batch_date: batchDate, synced_at: now };
       }
     }
     const verRows = Object.values(keyMap);
-    if (!verRows.length) return;
-    try {
-      // ignoreDuplicates 제거 → 마스터 파일에 SN이 새로 추가되면 DB도 업데이트
-      await sb.from('master_jobs').upsert(verRows, { onConflict: 'order_no' });
-      console.log(`✅ 검증용 전체 PO 누적(buildMaster): ${verRows.length}건`);
-    } catch(e) { console.warn('검증용 PO 누적 오류:', e.message); }
-  })();
+    if (verRows.length) {
+      try {
+        await sbFill.from('master_jobs').upsert(verRows, { onConflict: 'order_no' });
+        console.log(`✅ 검증용 전체 PO 누적(buildMaster): ${verRows.length}건`);
+      } catch(e) { console.warn('검증용 PO 누적 오류:', e.message); }
+    }
+  }
 
   return {
     stats: {
