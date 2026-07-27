@@ -466,21 +466,23 @@ async function syncVerificationSets() {
     .sort().reverse()[0] || today;
 
   const filtered = (jobs || []).filter(j => j.order_no && j.po);
-  if (!filtered.length) return { synced: 0, latestBatchDate };
+  const masterPoSet = new Set(filtered.map(j => j.po.trim().toUpperCase()));
 
-  // 2. shipments에서 PKG ID(ptn_no) 조회 — PO → ptn_no 매핑
-  const poList = [...new Set(filtered.map(j => j.po.trim().toUpperCase()))];
+  // 2. shipments 전체 조회 (master_jobs 미등록 SHT PO 포함)
   const { data: shipRows, error: e2 } = await sb
-    .from('shipments').select('po, ptn_no').in('po', poList);
+    .from('shipments').select('po, ptn_no');
   if (e2) throw new Error('shipments 조회 오류: ' + e2.message);
 
   const pkgByPO = {};
+  const shipPoSet = new Set();
   (shipRows || []).forEach(s => {
-    if (s.ptn_no) pkgByPO[s.po.trim().toUpperCase()] = s.ptn_no.trim().toUpperCase();
+    const poKey = (s.po || '').trim().toUpperCase();
+    if (!poKey) return;
+    shipPoSet.add(poKey);
+    if (s.ptn_no) pkgByPO[poKey] = s.ptn_no.trim().toUpperCase();
   });
 
-  // 3. verification_sets rows 생성
-  //    batch_date: 각 master_jobs row의 동기화 날짜를 그대로 사용 (없으면 today 폴백)
+  // 3. master_jobs 기반 rows 생성
   const rows = filtered.map(j => {
     const poKey = j.po.trim().toUpperCase();
     return {
@@ -493,13 +495,38 @@ async function syncVerificationSets() {
     };
   });
 
-  const { error: upsertErr } = await sb
-    .from('verification_sets')
-    .upsert(rows, { onConflict: 'order_no,batch_date' });
+  if (rows.length) {
+    const { error: upsertErr } = await sb
+      .from('verification_sets')
+      .upsert(rows, { onConflict: 'order_no,batch_date' });
+    if (upsertErr) throw new Error('verification_sets upsert 오류: ' + upsertErr.message);
+  }
 
-  if (upsertErr) throw new Error('verification_sets upsert 오류: ' + upsertErr.message);
+  // 4. shipments에만 있는 PO (SHT 등 master_jobs 미등록) → 합성 키로 추가
+  //    order_no = "po:<PO번호>" 형태로 중복 방지
+  const extraRows = [];
+  shipPoSet.forEach(poKey => {
+    if (!masterPoSet.has(poKey)) {
+      extraRows.push({
+        order_no:   `po:${poKey}`,
+        batch_date: today,
+        po:         poKey,
+        sn:         null,
+        ptn_no:     pkgByPO[poKey] || null,
+        created_at: new Date().toISOString(),
+      });
+    }
+  });
+
+  if (extraRows.length) {
+    const { error: extraErr } = await sb
+      .from('verification_sets')
+      .upsert(extraRows, { onConflict: 'order_no,batch_date' });
+    if (extraErr) console.warn('shipments-only verification_sets upsert 오류:', extraErr.message);
+  }
+
   setActiveBatch(latestBatchDate);
-  return { synced: rows.length, latestBatchDate };
+  return { synced: rows.length + extraRows.length, latestBatchDate };
 }
 
 // ── 바코드 3종 검증 ──────────────────────────────────────────────────

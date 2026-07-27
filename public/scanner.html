@@ -626,8 +626,9 @@ function showResult(result) {
   $('res-title').textContent = ok ? 'PASS' : 'FAIL';
 
   if (ok) {
+    const displayOrderNo = (result.order_no || '').startsWith('po:') ? '—' : (result.order_no || '—');
     $('res-detail').textContent =
-      `주문번호: ${result.order_no}\nPO: ${scanned.PO}\nPKG ID: ${scanned.PKG || '—'}\nSN: ${scanned.SN}`;
+      `주문번호: ${displayOrderNo}\nPO: ${scanned.PO}\nPKG ID: ${scanned.PKG || '—'}\nSN: ${scanned.SN}`;
     rescanBtn.classList.remove('show');
     saveScanLog(result);
     autoResetTimer = setTimeout(resetScanner, 1500);
