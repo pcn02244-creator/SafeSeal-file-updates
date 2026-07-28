@@ -1114,8 +1114,8 @@
           const pn    = get(row, 'pn');
           const krw   = parseFloat(String(get(row, 'price')).replace(/[^0-9.]/g, '')) || 0;
           if (!po && !sn) return null;
-          const { order_no, reason } = shtLookupResult(po, '', sn, pn);
-          return { po, sn, pn, krw, order_no, reason };
+          const { order_no, reason, warning } = shtLookupResult(po, '', sn, pn);
+          return { po, sn, pn, krw, order_no, reason, warning };
         })
         .filter(Boolean);
 
@@ -1153,13 +1153,20 @@
         const hit = _shtMasterJobs.find(j => n(j.sn) === nSn && n(j.po) === nPo);
         if (hit) return { order_no: hit.order_no, reason: null };
       }
-      // ② SN만 매칭
+      // ② SN만 매칭 (PO 불일치 허용 — SN이 물리 식별자이므로)
       if (nSn) {
         const snHits = _shtMasterJobs.filter(j => n(j.sn) === nSn);
         if (snHits.length > 0) {
-          // SN은 있으나 PO가 다름
-          const poList = [...new Set(snHits.map(j => j.po))].join(', ');
-          return { order_no: null, reason: `SN "${sn}" 마스터에 있음 → PO 불일치 (마스터 PO: ${poList})` };
+          // 가장 최근 order_no 선택 (order_no 내림차순)
+          const best = snHits
+            .filter(j => j.order_no)
+            .sort((a, b) => String(b.order_no).localeCompare(String(a.order_no)))[0];
+          const poList = [...new Set(snHits.map(j => j.po).filter(Boolean))].join(', ');
+          if (best) {
+            return { order_no: best.order_no, reason: null,
+              warning: `SN 매칭 · PO 불일치 참고 (마스터 PO: ${poList})` };
+          }
+          return { order_no: null, reason: `SN "${sn}" 마스터에 있음 → order_no 없음 (마스터 PO: ${poList})` };
         }
         // SN 자체가 없음
         return { order_no: null, reason: `SN "${sn}" 마스터에 없음` };
@@ -1180,8 +1187,10 @@
     }
 
     function renderShtPreview() {
-      const matched   = _shtMapped.filter(r => r.order_no).length;
-      const unmatched = _shtMapped.length - matched;
+      const exactMatched   = _shtMapped.filter(r => r.order_no && !r.warning).length;
+      const warnMatched    = _shtMapped.filter(r => r.order_no && r.warning).length;
+      const matched        = exactMatched + warnMatched;
+      const unmatched      = _shtMapped.length - matched;
 
       document.getElementById('sht-preview-cnt').textContent =
         `총 ${_shtMapped.length}건 · 매칭 ${matched}건 · 미매칭 ${unmatched}건`;
@@ -1189,16 +1198,26 @@
       const masterSample = _shtMasterJobs.slice(0, 3).map(j => `SN:${j.sn||'—'} PO:${j.po||'—'}`).join(' / ');
       const debugLine = `<div style="font-size:10px;color:#6c757d;margin-top:4px">마스터 로드: ${_shtMasterJobs.length}건 | 샘플 → ${masterSample || '없음'}</div>`;
 
-      document.getElementById('sht-match-summary').innerHTML = unmatched
-        ? `<span style="color:#e8710a">⚠ ${unmatched}건 미매칭</span>${debugLine}`
-        : `<span style="color:#28a745;font-weight:700">✅ 전체 ${matched}건 수주번호 매칭 완료</span>`;
+      let summaryHtml;
+      if (unmatched === 0 && warnMatched === 0) {
+        summaryHtml = `<span style="color:#28a745;font-weight:700">✅ 전체 ${matched}건 수주번호 매칭 완료</span>`;
+      } else if (unmatched === 0) {
+        summaryHtml = `<span style="color:#e8710a">⚡ ${warnMatched}건 PO불일치 SN매칭 (수주번호 참조 사용)</span>${debugLine}`;
+      } else {
+        summaryHtml = `<span style="color:#e8710a">⚠ ${unmatched}건 미매칭${warnMatched ? ` · ${warnMatched}건 SN매칭(경고)` : ''}</span>${debugLine}`;
+      }
+      document.getElementById('sht-match-summary').innerHTML = summaryHtml;
 
       document.getElementById('sht-preview-tbody').innerHTML = _shtMapped.map((r, i) => {
-        const mCls = r.order_no ? 'sht-match-ok' : 'sht-match-warn';
-        let mTxt;
-        if (r.order_no) {
+        let mCls, mTxt;
+        if (r.order_no && !r.warning) {
+          mCls = 'sht-match-ok';
           mTxt = `✅ ${r.order_no}`;
+        } else if (r.order_no && r.warning) {
+          mCls = 'sht-match-warn';
+          mTxt = `⚡ ${r.order_no}<br><span style="color:#888;font-size:10px">${r.warning}</span>`;
         } else {
+          mCls = 'sht-match-warn';
           const nSn = String(r.sn||'').trim().toUpperCase();
           const similar = _shtMasterJobs.filter(j =>
             nSn && (String(j.sn||'').toUpperCase().includes(nSn) || nSn.includes(String(j.sn||'').toUpperCase()))
