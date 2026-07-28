@@ -368,39 +368,32 @@
     .cal-wd:last-child  { color: #7ec8ff; }
     #cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
     .cal-cell {
-      aspect-ratio: 1; border-radius: 8px; display: flex; flex-direction: column;
-      align-items: center; justify-content: center; font-size: 12px;
-      color: rgba(255,255,255,.25); position: relative;
+      aspect-ratio: 1; border-radius: 8px; display: flex; align-items: center;
+      justify-content: center; font-size: 13px; color: rgba(255,255,255,.22);
     }
-    .cal-cell.in-month { color: rgba(255,255,255,.7); }
+    .cal-cell.in-month { color: rgba(255,255,255,.6); }
     .cal-cell.has-scan {
-      background: rgba(79,140,255,.15); color: #7ec8ff; cursor: pointer; font-weight: 700;
+      background: rgba(79,140,255,.18); color: #7ec8ff;
+      cursor: pointer; font-weight: 700;
     }
-    .cal-cell.has-scan:active { background: rgba(79,140,255,.35); }
+    .cal-cell.has-scan:active { opacity: .7; }
     .cal-cell.selected { background: #4f8cff !important; color: #fff !important; }
-    .cal-cell.today.in-month { box-shadow: inset 0 0 0 1px rgba(79,140,255,.6); color: #fff; }
-    .cal-dot {
-      width: 5px; height: 5px; border-radius: 50%; background: #4f8cff;
-      margin-top: 2px;
-    }
-    .cal-cnt {
-      font-size: 9px; color: rgba(126,200,255,.8); position: absolute;
-      bottom: 3px; right: 5px; font-weight: 700;
-    }
+    .cal-cell.today.in-month { box-shadow: inset 0 0 0 1.5px rgba(79,140,255,.5); color: #fff; }
     #cal-day-summary {
-      margin-top: 12px; background: rgba(255,255,255,.04);
-      border-radius: 10px; padding: 12px; min-height: 48px;
+      margin-top: 14px; padding: 10px 2px;
+      border-top: 1px solid rgba(255,255,255,.07);
     }
     #cal-day-summary .cds-title {
-      font-size: 12px; color: rgba(255,255,255,.5); margin-bottom: 8px;
+      font-size: 11px; color: rgba(255,255,255,.4); margin-bottom: 8px;
     }
     #cal-day-summary .cds-row {
-      font-size: 11px; font-family: monospace; color: #e0e0e0;
-      padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,.06);
-      display: grid; grid-template-columns: 90px 1fr; gap: 4px;
+      font-size: 11px; color: #e0e0e0;
+      padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,.05);
+      display: flex; gap: 8px; align-items: center;
     }
-    #cal-day-summary .cds-ts { color: rgba(255,255,255,.45); font-size: 10px; }
-    #cal-day-summary .cds-po { color: #7ec8ff; }
+    #cal-day-summary .cds-ts  { color: rgba(255,255,255,.4); font-size: 10px; min-width: 36px; }
+    #cal-day-summary .cds-po  { color: #7ec8ff; font-family: monospace; }
+    #cal-day-summary .cds-sn  { color: rgba(255,255,255,.5); font-family: monospace; font-size: 10px; }
 
     /* ── 목록 뷰 ── */
     #hview-list { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
@@ -433,25 +426,28 @@
     .hist-empty { color: rgba(255,255,255,.3); text-align: center; padding: 40px 0; font-size: 14px; }
 
     table.hist-tbl {
-      width: 100%; border-collapse: collapse; font-size: 11px;
+      width: 100%; border-collapse: collapse;
       font-family: var(--fn); table-layout: fixed;
     }
     table.hist-tbl th {
       background: #0e1a2b; color: rgba(255,255,255,.5); font-weight: 600;
       padding: 8px 6px; text-align: left; position: sticky; top: 0; z-index: 1;
-      border-bottom: 1px solid rgba(255,255,255,.1); font-size: 10px; white-space: nowrap;
+      border-bottom: 1px solid rgba(255,255,255,.1); font-size: 11px; white-space: nowrap;
     }
     table.hist-tbl th:first-child { width: 28px; }
     table.hist-tbl td {
       padding: 7px 6px; border-bottom: 1px solid rgba(255,255,255,.05);
-      color: #e0e0e0; font-size: 11px; font-family: monospace; overflow: hidden;
+      color: #e0e0e0; font-size: 11px; font-family: var(--fn); overflow: hidden;
       text-overflow: ellipsis; white-space: nowrap;
     }
-    table.hist-tbl td:first-child { font-family: var(--fn); }
     table.hist-tbl tr:last-child td { border-bottom: none; }
     table.hist-tbl tr.row-sel td { background: rgba(79,140,255,.12); }
-    table.hist-tbl td.td-ts   { color: rgba(255,255,255,.45); font-size: 10px; font-family: var(--fn); }
-    table.hist-tbl td.td-bd   { color: rgba(255,255,255,.45); font-size: 10px; font-family: var(--fn); }
+    table.hist-tbl td.td-ts   { color: rgba(255,255,255,.45); }
+    table.hist-tbl td.td-bd   { color: rgba(255,255,255,.45); }
+    table.hist-tbl td.td-ono,
+    table.hist-tbl td.td-po,
+    table.hist-tbl td.td-pkg,
+    table.hist-tbl td.td-sn   { font-family: 'SF Mono','Fira Code',monospace; }
     table.hist-tbl td.td-ono  { color: #b0d0ff; }
     table.hist-tbl td.td-po   { color: #7ec8ff; }
     table.hist-tbl td.td-pkg  { color: #a0f0c0; }
@@ -919,8 +915,8 @@ function renderCal() {
       ds === todayStr ? 'today' : '',
       ds === _calSelDate ? 'selected' : '',
     ].filter(Boolean).join(' ');
-    const cntBadge = cnt ? `<span class="cal-cnt">${cnt}</span>` : '';
-    html += `<div class="${cls}" onclick="calSelectDay('${ds}')">${d}${cntBadge}</div>`;
+    const onclick = cnt ? `onclick="calSelectDay('${ds}')"` : '';
+    html += `<div class="${cls}" ${onclick}>${d}</div>`;
   }
   grid.innerHTML = html;
   if (_calSelDate) renderCalDaySummary(_calSelDate);
@@ -954,8 +950,9 @@ function renderCalDaySummary(ds) {
     rows.map(r => {
       const ts = r.scanned_at ? r.scanned_at.slice(11,16) : '';
       return `<div class="cds-row">
-        <span class="cds-ts">${ts} <span class="cds-po">${r.po||'—'}</span></span>
-        <span>${r.sn||r.pkg_id||'—'}</span>
+        <span class="cds-ts">${ts}</span>
+        <span class="cds-po">${r.po||'—'}</span>
+        <span class="cds-sn">${r.sn||'—'}</span>
       </div>`;
     }).join('');
 }

@@ -1866,6 +1866,24 @@
 
         statusEl.className   = 'small mb-2 text-success fw-semibold';
         statusEl.textContent = `✅ 거래명세서 ${pos.length}건 생성 완료`;
+
+        // 거래명세서 생성 이력 → shipments.ship_date 자동 저장 (미설정 PO 한정)
+        try {
+          const sbS = getSB();
+          if (sbS) {
+            const { data: ex } = await sbS.from('shipments').select('id,po,ship_date').in('po', pos);
+            const exMap = {};
+            (ex||[]).forEach(r => { exMap[r.po] = r; });
+            const { data: maxRow } = await sbS.from('shipments').select('id').order('id',{ascending:false}).limit(1);
+            let nextId = (maxRow?.[0]?.id || 0) + 1;
+            const updates = pos.filter(po => exMap[po] && !exMap[po].ship_date)
+              .map(po => sbS.from('shipments').update({ ship_date: dateStr }).eq('po', po));
+            const inserts = pos.filter(po => !exMap[po])
+              .map(po => sbS.from('shipments').insert({ id: nextId++, po, ship_date: dateStr, created_at: new Date().toISOString().slice(0,10) }));
+            if (updates.length || inserts.length) await Promise.all([...updates, ...inserts]);
+          }
+        } catch(se) { console.warn('거래명세서 이력 저장 오류:', se.message); }
+
       } catch(e) {
         statusEl.className   = 'small mb-2 text-danger fw-semibold';
         statusEl.textContent = '❌ 오류: ' + e.message;
