@@ -750,7 +750,10 @@ async function buildMasterFillResult(mesFile, masterFile) {
                      || masterWb.SheetNames[1] || masterWb.SheetNames[0];
     masterRows = XLSX.utils.sheet_to_json(masterWb.Sheets[msName], { header: 1, defval: '' });
   } else {
-    throw new Error('마스터파일을 업로드해 주세요.');
+    // 같은 PC에서 견적 생성 시 저장된 캐시 사용 (크로스 기기 아님)
+    const cached = localStorage.getItem('master_rows_cache');
+    if (!cached) throw new Error('마스터파일을 업로드해 주세요. (캐시 없음 — 먼저 견적 생성 실행)');
+    masterRows = JSON.parse(cached);
   }
 
   const mesByOrder = {};
