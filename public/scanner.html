@@ -814,9 +814,9 @@ function classifyBarcode(v) {
   if (v.length < 4) return null;
   // PO: 순수 숫자 10~13자리
   if (/^\d{10,13}$/.test(v)) return { type: 'PO', value: v };
-  // PKG ID: 영숫자 1자 + 'A' + 5자리 이상 숫자 (예: 4A7729833, PA0506293)
-  const pkgM = v.match(/^([0-9A-Z]A\d{5,})$/);
-  if (pkgM) return { type: 'PKG', value: pkgM[1] };
+  // PKG ID: "4A"로 시작하는 숫자열 (예: 4A7729833)
+  const pkgM = v.match(/4A\d{5,}/);
+  if (pkgM) return { type: 'PKG', value: pkgM[0] };
   // SN: 순수 숫자 6~9자리
   if (/^\d{6,9}$/.test(v)) return { type: 'SN', value: v };
   // SN: 단일 대문자 접두어 + 숫자 6~9자리 (예: S230351016 → 230351016)
