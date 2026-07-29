@@ -9,8 +9,18 @@ const SB_URL         = 'https://ydekxlonxjwfhdhhbpdc.supabase.co';
 const SB_KEY         = 'sb_publishable_aCdcvXkU_hz35DpyrmSCkw_F8TYKZUJ';
 
 let _sb = null;
+let _sbFailed = false;
 function getSB() {
-  if (!_sb && window.supabase) _sb = window.supabase.createClient(SB_URL, SB_KEY);
+  if (_sbFailed) return null;
+  if (!_sb && window.supabase) {
+    try {
+      _sb = window.supabase.createClient(SB_URL, SB_KEY);
+    } catch(e) {
+      _sbFailed = true;
+      console.error('Supabase createClient 실패:', e.message);
+      return null;
+    }
+  }
   return _sb;
 }
 
