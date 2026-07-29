@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -30,7 +30,7 @@
   </script>
 
   <style>
-    /* ── Design tokens (shipment.html 동일) ─────── */
+    /* ── Design tokens ─────────────────────────── */
     :root {
       --p:   #004E89;
       --s:   #38AECC;
@@ -39,23 +39,41 @@
       --fn:  'Hanken Grotesk', -apple-system, sans-serif;
       --safe-top:    env(safe-area-inset-top,    0px);
       --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --app-h: 100vh; /* JS로 덮어씀 — 구형 Android 100vh 버그 대응 */
     }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    html, body {
+    html {
+      height: 100%; overflow: hidden;
+    }
+    body {
       height: 100%; overflow: hidden;
       font-family: var(--fn);
       background: #0a0a0a; color: #fff;
       -webkit-text-size-adjust: 100%;
+      overscroll-behavior: none;        /* 바운스 스크롤 방지 */
+      -webkit-tap-highlight-color: transparent;
     }
 
     /* ── App shell ───────────────────────────────── */
     #app {
       display: flex; flex-direction: column;
-      height: 100dvh;
+      /* 높이 fallback 계층: 구형 Android Chrome 대응
+         1) 100vh (최소 보장)
+         2) --app-h (JS window.innerHeight 주입)
+         3) 100dvh (Chrome 108+ 동적 뷰포트) */
+      height: 100vh;
+      height: var(--app-h, 100vh);
+      max-height: 100vh;
+      max-height: var(--app-h, 100vh);
       padding-top: var(--safe-top);
       padding-bottom: var(--safe-bottom);
+      overflow: hidden;
+      position: relative;
+    }
+    @supports (height: 100dvh) {
+      #app { height: 100dvh; max-height: 100dvh; }
     }
 
     /* ── Top header ──────────────────────────────── */
@@ -177,7 +195,8 @@
     /* dim surroundings */
     .scan-box::before {
       content: '';
-      position: fixed; inset: 0;
+      position: fixed; top: 0; right: 0; bottom: 0; left: 0; /* inset fallback */
+      inset: 0;
       background: rgba(0,0,0,.38);
       z-index: -1;
     }
@@ -298,7 +317,9 @@
 
     /* PC redirect notice (scanner.html이 PC에서 열렸을 때) */
     #pc-notice {
-      display: none; position: fixed; inset: 0; z-index: 9000;
+      display: none;
+      position: fixed; top: 0; right: 0; bottom: 0; left: 0; /* inset fallback */
+      inset: 0; z-index: 9000;
       background: #F8FAFC; color: #0f172a;
       flex-direction: column; align-items: center; justify-content: center;
       gap: 14px; font-family: var(--fn); text-align: center; padding: 24px;
@@ -317,7 +338,9 @@
 
     /* ── 스캔 이력 패널 (전면 재설계) ── */
     #hist-panel {
-      display: none; position: fixed; inset: 0; z-index: 8000;
+      display: none;
+      position: fixed; top: 0; right: 0; bottom: 0; left: 0; /* inset fallback */
+      inset: 0; z-index: 8000;
       background: #0a0f1e; flex-direction: column; font-family: var(--fn);
     }
     #hist-panel.show { display: flex; }
@@ -453,9 +476,25 @@
     table.hist-tbl td.td-pkg  { color: #a0f0c0; }
     table.hist-tbl td.td-sn   { color: #ffe0a0; }
 
+    /* ── 터치/스크롤 개선 (구형 Android) ─────────── */
+    button, [onclick], .htab, .cal-cell, .chip {
+      touch-action: manipulation;  /* 300ms 탭 딜레이 제거 */
+      -webkit-tap-highlight-color: transparent;
+      cursor: pointer;
+    }
+    #hview-cal, #hist-list {
+      -webkit-overflow-scrolling: touch; /* 구형 Android 모멘텀 스크롤 */
+      overflow-y: auto;
+    }
+    /* dbg-wrap flex 고정 — 레이아웃 붕괴 방지 */
+    #dbg-wrap {
+      flex-shrink: 0 !important;
+    }
+
     /* 스캔 성공 화이트 플래시 */
     #scan-flash {
-      position: fixed; inset: 0; z-index: 9999;
+      position: fixed; top: 0; right: 0; bottom: 0; left: 0; /* inset fallback */
+      inset: 0; z-index: 9999;
       background: #fff;
       opacity: 0; pointer-events: none;
     }
@@ -623,6 +662,25 @@
 <div id="scan-flash"></div>
 
 <script>
+/* ═══════════════════════════════════════════════
+   뷰포트 높이 fix — 구형 Android Chrome 대응
+   100vh = URL 바 포함 전체 높이 → 하단 패널이 밀리는 현상
+   window.innerHeight = 실제 보이는 영역 높이로 강제 설정
+═══════════════════════════════════════════════ */
+(function fixVH() {
+  function applyVH() {
+    const vh = window.innerHeight;
+    document.documentElement.style.setProperty('--app-h', vh + 'px');
+    const app = document.getElementById('app');
+    if (app) app.style.height = vh + 'px';
+  }
+  applyVH();
+  window.addEventListener('resize', applyVH);
+  window.addEventListener('orientationchange', function() {
+    setTimeout(applyVH, 150); /* 방향 전환 애니메이션 후 재계산 */
+  });
+})();
+
 /* ═══════════════════════════════════════════════
    SafeSeal Mobile Barcode Scanner
    검증: verification_sets (Supabase) 기반 3-way 교차 검증
