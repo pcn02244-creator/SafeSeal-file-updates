@@ -1687,7 +1687,12 @@
     function makeDrawingXml(origDrawingXml, po, bcRid) {
       const name = escXml(String(po));
 
-      let xml = origDrawingXml;
+      // 템플릿에 박힌 구형 바코드 이미지 앵커 제거 (pic 포함 twoCellAnchor만 삭제)
+      let xml = origDrawingXml.replace(
+        /<xdr:twoCellAnchor\b[^>]*>[\s\S]*?<\/xdr:twoCellAnchor>/g,
+        match => match.includes('<xdr:pic') ? '' : match
+      );
+
       if (!xml.includes('xmlns:r=')) {
         xml = xml.replace(
           '<xdr:wsDr ',
