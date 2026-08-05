@@ -1266,7 +1266,21 @@
         return v;
       };
 
-      // 합병셀 PO 채우기: 빈 PO는 위 행의 PO 값으로 채움
+      // 합병셀 PO 채우기
+      // ① 정방향(forward) fill-down : 위 PO → 아래 행에 전파 (기존 동작)
+      // ② 역방향(backward) fill-down : 아래 PO → 위 행에 전파
+      //    목적: 첫 번째 PO 이전에 위치한 detail row(SN/KRW/PN 있음)가
+      //           정방향 fill 실패로 breakdown 처리되는 문제 해결
+      const _bwdFillPO = new Array(_shtRawRows.length).fill('');
+      {
+        let _bwd = '';
+        for (let i = _shtRawRows.length - 1; i >= 0; i--) {
+          const v = String(_shtRawRows[i][_shtColMap.po] || '').replace(/[,\s]/g, '').trim();
+          if (v) _bwd = v;
+          _bwdFillPO[i] = _bwd;
+        }
+      }
+
       let lastPo = '';
       _nullRows = [];
       _breakdownSkip = 0;
@@ -1275,11 +1289,18 @@
         .map((row, ri) => {
           const origPo = get(row, 'po');
           let po = origPo;
-          if (po) lastPo = po; else po = lastPo;
+          if (po) lastPo = po; else po = lastPo;    // ① 정방향 fill-down
           const sn    = get(row, 'sn');
           const pn    = get(row, 'pn');
           const krw   = parseFloat(String(get(row, 'price')).replace(/[^0-9.]/g, '')) || 0;
-          const _diag = { ri, xlRow: _shtRawRowXlRow[ri] || 0, origPo, filledPo: po, sn, krw, rowLen: row.length, outcome: '?', rawRow: row.slice() };
+
+          // ② 역방향 fill-down: 정방향으로 PO가 없고 실제 데이터(SN/KRW/PN)가 있는 행에만 적용
+          //    lastPo='' 인 상태의 PO 이전 detail row를 다음 PO에 연결
+          const _poAfterFwd = po;
+          if (!po && (sn || krw > 0 || pn)) po = _bwdFillPO[ri] || '';
+          const isBwdFill = !origPo && po !== '' && po !== _poAfterFwd;
+
+          const _diag = { ri, xlRow: _shtRawRowXlRow[ri] || 0, origPo, filledPo: po, sn, krw, rowLen: row.length, outcome: '?', rawRow: row.slice(), isBwdFill };
 
           if (po && /^[a-zA-Z]/.test(po)) {
             _nullRows.push(`행${ri}: 헤더 잔여 행 제외 (PO="${po}" SN="${sn}")`);
@@ -1299,7 +1320,7 @@
           }
           const { order_no, reason } = shtLookupResult(po, '', sn, pn);
           _diag.outcome    = order_no ? `mapped(${order_no})` : `no_order`;
-          _diag.isFillDown = origPo === '' && po !== '';
+          _diag.isFillDown = !origPo && po !== '' && !isBwdFill;
           _shtRowDiag.push(_diag);
           return { po, sn, pn, krw, order_no, reason };
         })
@@ -1628,9 +1649,15 @@
             order_no: r.order_no||'', unit_price: r.krw, qty: 1,
             total_price: r.krw, source_file: _shtSrcFile,
           }));
-          const { error } = await sb.from('ext_quote_lines').insert(extRows);
-          if (!error) { extOk = extRows.length; dbgLines.push(`✅ ext_quote_lines: ${extOk}건`); }
-          else { extErr = error.message; dbgLines.push(`ℹ ext_quote_lines 없음 (무시): ${extErr}`); }
+          dbgLines.push(`④ ext_quote_lines 입력 배열: ${extRows.length}건`);
+          const { data: _extData, error } = await sb.from('ext_quote_lines').insert(extRows).select('id');
+          if (!error) {
+            extOk = (_extData && _extData.length) ? _extData.length : extRows.length;
+            dbgLines.push(`⑤ ext_quote_lines 실제 저장: ${extOk}건`);
+          } else {
+            extErr = error.message;
+            dbgLines.push(`ℹ ext_quote_lines 없음 (무시): ${extErr}`);
+          }
         } catch(e) { extErr = e.message; dbgLines.push(`ℹ ext_quote_lines 없음 (무시): ${extErr}`); }
 
         document.getElementById('sht-result').style.display = 'block';
