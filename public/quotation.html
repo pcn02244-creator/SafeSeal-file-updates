@@ -1147,7 +1147,8 @@
       const subMap = shtAutoDetectCols(sub);
       let merged = false;
       ['po', 'sn', 'pn', 'price'].forEach(k => {
-        if (_shtColMap[k] < 0 && subMap[k] >= 0) { _shtColMap[k] = subMap[k]; merged = true; }
+        // 서브헤더 키워드 감지가 더 정확 → 값 기반 감지 결과를 항상 덮어씀
+        if (subMap[k] >= 0) { _shtColMap[k] = subMap[k]; merged = true; }
       });
       if (merged) _shtRawRows = _shtRawRows.slice(1); // 서브헤더 행 제거
     }
@@ -1171,13 +1172,16 @@
       // PO: 헤더 기반
       let po = exact('po') >= 0 ? exact('po')
              : contains('p/o no', 'po no', 'po#', 'purchase order', 'po number', 'p.o.', 'customer po', 'c/po');
-      // PO: 헤더 미감지 시 값 기반 — 9~11자리 숫자 컬럼 탐색 (합병셀 대응: 1건 이상이면 채택)
+      // PO: 헤더 미감지 시 값 기반 — 10~11자리 우선, 9자리는 SN 가능성 있어 후보만
       if (po < 0 && _shtRawRows.length > 0) {
         const colCount = Math.max(headers.length, ..._shtRawRows.slice(0, 5).map(r => r.length), 20);
+        let col9 = -1;
         for (let c = 0; c < colCount; c++) {
-          const hit = _shtRawRows.some(r => /^\d{9,11}$/.test(String(r[c] || '').replace(/[,\s]/g, '')));
-          if (hit) { po = c; break; }
+          const vals = _shtRawRows.map(r => String(r[c] || '').replace(/[,\s]/g, ''));
+          if (vals.some(v => /^\d{10,11}$/.test(v))) { po = c; break; } // 10-11자리 우선 채택
+          if (col9 < 0 && vals.some(v => /^\d{9}$/.test(v))) col9 = c; // 9자리는 후보
         }
+        if (po < 0) po = col9; // 10-11자리 없을 때만 9자리 사용
       }
       // SN
       const sn = contains('ss s/n', 'ss sn', 's/n', 'serial number', 'serial no', 'sn');
