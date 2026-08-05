@@ -1397,11 +1397,11 @@
         });
         localStorage.setItem('quotation_amounts_cache', JSON.stringify(amtCache));
         priceOk = _shtMapped.length;
-        dbgLines.push(`✅ localStorage 캐시: ${priceOk}건`);
 
-        // PTN이 이미 업로드된 PO는 shipments.notes = 'SHT' 로 업데이트 (즉시 출하관리에 반영)
         const shtPos = [...new Set(_shtMapped.map(r => r.po).filter(Boolean))];
-        dbgLines.push(`🔍 SHT PO 목록: ${shtPos.join(', ')}`);
+        dbgLines.push(`✅ 저장된 고유 PO: ${shtPos.length}개`);
+        dbgLines.push(`🔑 PO 목록: ${shtPos.join(', ')}`);
+        dbgLines.push(`📋 전체 행: ${priceOk}건 | PO 없는 행: ${_shtMapped.filter(r => !r.po).length}건`);
         let shipNotesOk = 0, shipNotesErr = [];
         for (const po of shtPos) {
           const { error: ne } = await sb.from('shipments').update({ notes: 'SHT' }).eq('po', po);
