@@ -1172,38 +1172,39 @@
       // 3. 데이터 행 (헤더 다음 행부터, 빈 행 제거)
       const dataRows = all.slice(bestRowIdx + 1).filter(r => r.some(c => String(c).trim()));
 
-      // 4. 오프셋 보정: 헤더의 'po' col이 데이터 행의 실제 PO 위치와 다를 수 있음
-      //    SHT 파일은 breakdown 행 + main 행이 섞여있어 첫 행만으론 판단 불가 → 15행 스캔
-      let offset = 0;
-      if (po >= 0 && dataRows.length > 0) {
-        const scan = dataRows.slice(0, 15);
-        const has10at = col => scan.some(r => /^\d{10,11}$/.test(String(r[col] || '').replace(/[,\s]/g, '')));
-        if (!has10at(po)) {
-          for (let d = 1; d <= 5; d++) {
-            if (has10at(po + d)) { offset = d; break; }
-          }
+      // [Fix 1+3] 각 컬럼을 독립 검증 — PO offset을 SN/PN/Price에 전파하지 않음
+      // [Fix] slice(0,15) 제거 → 전체 dataRows 스캔으로 breakdown 행 이후 main 행도 도달
+      // [Fix 3] 빈도 기반: breakdown 다수여도 main 행 2건 이상이면 탐지 가능하도록 고정
+      const minCount  = 2;
+      const countAt   = (col, pat) =>
+        dataRows.filter(r => pat.test(String(r[col] || '').replace(/[,\s₩$€¥]/g, ''))).length;
+      const resolveCol = (hCol, pattern) => {
+        if (hCol < 0) return hCol;                                   // 헤더 미감지 → 그대로
+        if (countAt(hCol, pattern) >= minCount) return hCol;         // 헤더 col 정확
+        for (let d = 1; d <= 5; d++) {                               // 오프셋 후보 탐색
+          if (countAt(hCol + d, pattern) >= minCount) return hCol + d;
         }
-      }
+        return hCol;                                                  // fallback: 헤더 col
+      };
+      const origPo = po;                                              // 로그용 원본 저장
+      po    = resolveCol(po,    /^\d{10,11}$/);              // PO: 10~11자리 정수, 독립 검증
+      sn    = resolveCol(sn,    /^\d{8,10}$/);               // SN: 8~10자리 정수, 독립 검증
+      pn    = resolveCol(pn,    /^(?!\d+$)[\w\-]{5,}$/);    // PN: 혼합형 5자 이상(순수숫자 제외)
+      price = resolveCol(price, /^\d{4,}$/);                 // Price: 4자리 이상 정수(소수점 없음)
 
-      // 5. PO 헤더 미감지 시 → 데이터 값 기반으로 직접 찾기 (10자리 우선)
+      // [Fix 2] PO 헤더 미감지 시 데이터 스캔으로 직접 찾기
+      //         sn/price는 위에서 resolveCol로 이미 독립 검증됨 → 기준 불일치 없음
       if (po < 0 && dataRows.length > 0) {
-        const colCount = Math.max(...dataRows.slice(0, 10).map(r => r.length), 20);
+        const colCount = Math.max(...dataRows.map(r => r.length), 20);
         let col9 = -1;
         for (let c = 0; c < colCount; c++) {
-          const vals = dataRows.slice(0, 10).map(r => String(r[c] || '').replace(/[,\s]/g, ''));
-          if (vals.some(v => /^\d{10,11}$/.test(v))) { po = c; offset = 0; break; }
-          if (col9 < 0 && vals.some(v => /^\d{9}$/.test(v))) col9 = c;
+          if (countAt(c, /^\d{10,11}$/) >= minCount) { po = c; break; }
+          if (col9 < 0 && countAt(c, /^\d{8,10}$/) >= minCount) col9 = c;
         }
-        if (po < 0) { po = col9; offset = 0; }
+        if (po < 0) po = col9;
       }
 
-      // 6. 오프셋 적용
-      if (offset !== 0) {
-        if (po    >= 0) po    += offset;
-        if (sn    >= 0) sn    += offset;
-        if (pn    >= 0) pn    += offset;
-        if (price >= 0) price += offset;
-      }
+      const offset = origPo >= 0 ? po - origPo : 0;  // 로그/반환용
 
       console.log(`[SHT 컬럼 감지] headerRow=${bestRowIdx} offset=${offset} PO=${po} SN=${sn} PN=${pn} KRW=${price}`);
       return { po, sn, pn, price, headerRowIdx: bestRowIdx, offset };
