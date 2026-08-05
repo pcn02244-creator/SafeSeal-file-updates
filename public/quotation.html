@@ -1286,14 +1286,12 @@
             _diag.outcome = '헤더잔여행제외'; _shtRowDiag.push(_diag);
             return null;
           }
-          if (!po && !sn) {
-            if (_shtColMap.po >= 0 && row[_shtColMap.po] === undefined) {
-              _breakdownSkip++;
-              _diag.outcome = 'breakdown(col=undefined)';
-            } else {
-              _nullRows.push(`행${ri}[col${_shtColMap.po}="${row[_shtColMap.po]}" col${_shtColMap.sn}="${row[_shtColMap.sn]}"]`);
-              _diag.outcome = 'breakdown(col=빈값)';
-            }
+          if (!origPo && !sn) {
+            // fill-down 이전 origPo 기준 판별:
+            //   origPo='' + SN='' → breakdown(col없음) 또는 detail sub-row(col빈칸), 모두 제외
+            _breakdownSkip++;
+            _diag.outcome = row[_shtColMap.po] === undefined
+              ? 'breakdown(col=undefined)' : 'breakdown(origPo=빈칸+SN없음)';
             _shtRowDiag.push(_diag);
             return null;
           }
@@ -1310,8 +1308,8 @@
         const amtCache = JSON.parse(localStorage.getItem('quotation_amounts_cache') || '{}');
         _shtMapped.forEach(r => {
           const entry = { usd: 0, krw: r.krw, source: 'sht' };
-          if (r.sn) amtCache[r.sn] = entry;
-          if (r.po) amtCache[r.po] = entry;
+          if (r.sn && (!amtCache[r.sn] || r.krw > 0)) amtCache[r.sn] = entry;
+          if (r.po && (!amtCache[r.po] || r.krw > 0)) amtCache[r.po] = entry;
         });
         localStorage.setItem('quotation_amounts_cache', JSON.stringify(amtCache));
       } catch {}
@@ -1563,8 +1561,8 @@
         const amtCache = JSON.parse(localStorage.getItem('quotation_amounts_cache') || '{}');
         _shtMapped.forEach(r => {
           const entry = { usd: 0, krw: r.krw, source: 'sht' };
-          if (r.sn) amtCache[r.sn] = entry;
-          if (r.po) amtCache[r.po] = entry;
+          if (r.sn && (!amtCache[r.sn] || r.krw > 0)) amtCache[r.sn] = entry;
+          if (r.po && (!amtCache[r.po] || r.krw > 0)) amtCache[r.po] = entry;
         });
         localStorage.setItem('quotation_amounts_cache', JSON.stringify(amtCache));
         priceOk = _shtMapped.length;
