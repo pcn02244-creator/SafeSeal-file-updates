@@ -1061,17 +1061,10 @@
           <span style="color:#6c757d;font-size:10px">감지된 컬럼: ${hdrs}</span><br>
           <span style="color:#6c757d;font-size:10px">매핑: PO=[${_shtColMap.po}] SN=[${_shtColMap.sn}] KRW=[${_shtColMap.price}] PN=[${_shtColMap.pn}]</span>`;
 
-        const autoOk = _shtColMap.po >= 0 && _shtColMap.sn >= 0 && _shtColMap.price >= 0;
-        if (autoOk) {
-          document.getElementById('sht-step2').style.display = 'none';
-          applyShtColMapping();
-          await importShtQuote(); // 미리보기 없이 바로 저장
-        } else {
-          renderShtColMapper();
-          document.getElementById('sht-step2').style.display = 'block';
-          document.getElementById('sht-step3').style.display = 'none';
-          document.getElementById('sht-step2').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        }
+        document.getElementById('sht-step2').style.display = 'none';
+        document.getElementById('sht-step3').style.display = 'none';
+        applyShtColMapping();
+        await importShtQuote();
       } catch(e) {
         statusEl.innerHTML = `<span style="color:#dc3545">클립보드 읽기 실패: ${e.message}<br>브라우저 주소창 왼쪽 자물쇠 → 클립보드 권한 허용 후 재시도</span>`;
       }
