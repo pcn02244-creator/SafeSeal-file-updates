@@ -1468,6 +1468,16 @@
         }
       } catch(eqlErr) { console.warn('[buildPreview] ext_quote_lines 조회 실패:', eqlErr.message); }
 
+      // Supabase 없으면 localStorage 캐시로 대체
+      if (extQuoteLines.length === 0) {
+        try {
+          const cached = JSON.parse(localStorage.getItem('sht_quote_lines_cache') || '[]');
+          extQuoteLines = cached.filter(l => selectedPos.has(l.po) && l.unit_price > 0);
+          if (extQuoteLines.length > 0)
+            console.log('[buildPreview] localStorage sht_quote_lines_cache 사용:', extQuoteLines.length, '건');
+        } catch(le) { console.warn('[buildPreview] localStorage 캐시 읽기 실패:', le.message); }
+      }
+
       if (extQuoteLines.length > 0) {
         yjleeRows = extQuoteLines.map(line => {
           const po    = line.po || '';

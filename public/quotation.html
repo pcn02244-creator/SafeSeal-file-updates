@@ -1690,13 +1690,21 @@
             total_price: r.krw, source_file: _shtSrcFile,
           }));
           dbgLines.push(`④ ext_quote_lines 입력 배열: ${extRows.length}건`);
+
+          // localStorage에 저장 (Supabase 테이블 없어도 shipment.html에서 사용 가능)
+          try {
+            localStorage.setItem('sht_quote_lines_cache', JSON.stringify(extRows));
+            dbgLines.push(`④-L localStorage 저장: ${extRows.length}건 ✅`);
+          } catch(le) { dbgLines.push(`⚠ localStorage 저장 실패: ${le.message}`); }
+
           const { data: _extData, error } = await sb.from('ext_quote_lines').insert(extRows).select('id');
           if (!error) {
             extOk = (_extData && _extData.length) ? _extData.length : extRows.length;
-            dbgLines.push(`⑤ ext_quote_lines 실제 저장: ${extOk}건`);
+            dbgLines.push(`⑤ ext_quote_lines DB 저장: ${extOk}건 ✅`);
           } else {
             extErr = error.message;
-            dbgLines.push(`ℹ ext_quote_lines 없음 (무시): ${extErr}`);
+            extOk = extRows.length;
+            dbgLines.push(`ℹ ext_quote_lines DB 없음 (localStorage로 대체): ${extErr}`);
           }
         } catch(e) { extErr = e.message; dbgLines.push(`ℹ ext_quote_lines 없음 (무시): ${extErr}`); }
 
