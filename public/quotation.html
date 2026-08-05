@@ -1266,11 +1266,28 @@
         return v;
       };
 
-      // 합병셀 PO 채우기
-      // ① 정방향(forward) fill-down : 위 PO → 아래 행에 전파 (기존 동작)
-      // ② 역방향(backward) fill-down : 아래 PO → 위 행에 전파
-      //    목적: 첫 번째 PO 이전에 위치한 detail row(SN/KRW/PN 있음)가
-      //           정방향 fill 실패로 breakdown 처리되는 문제 해결
+      // ──────────────────────────────────────────────────────────
+      // SHT quotation line 판별 기준
+      // ──────────────────────────────────────────────────────────
+      // SHT 파일에는 세 가지 row 타입이 섞여 있음:
+      //
+      //  [B류 - quotation line]  sn 없음, KRW = 소액 단가 (< 1,000,000)
+      //                          예: KRW=494.43 → 서비스 단가 행 → 포함
+      //
+      //  [A류 - 설명 텍스트]     sn 없음, KRW = 0
+      //                          예: "Clip V1 *15" 텍스트 행 → 제외
+      //
+      //  [C류 - 부품 상세 행]    sn 없음, KRW col에 SN-like 큰 수 (≥ 1,000,000)
+      //                          예: KRW=220511515 (SN번호가 KRW 컬럼에 기재) → 제외
+      //
+      // PO fill-down 전략:
+      //  ① 정방향(forward): 위 행의 PO → 아래 행으로 전파 (기존)
+      //  ② 역방향(backward): B류 행이 PO 대표행 앞에 위치한 경우
+      //     (KRW > 0 AND < 1,000,000 이면서 forward fill 실패 시)
+      //     다음에 나오는 PO를 미리 채워 연결
+      // ──────────────────────────────────────────────────────────
+
+      // 역방향 fill-down 배열 사전 계산
       const _bwdFillPO = new Array(_shtRawRows.length).fill('');
       {
         let _bwd = '';
@@ -1294,30 +1311,45 @@
           const pn    = get(row, 'pn');
           const krw   = parseFloat(String(get(row, 'price')).replace(/[^0-9.]/g, '')) || 0;
 
-          // ② 역방향 fill-down: 정방향으로 PO가 없고 실제 데이터(SN/KRW/PN)가 있는 행에만 적용
-          //    lastPo='' 인 상태의 PO 이전 detail row를 다음 PO에 연결
+          // ② 역방향 fill-down: B류(소액 단가) 행만 대상
+          //    KRW > 0 AND < 1,000,000 → 서비스 단가 행으로 판단
+          //    이 조건으로 A류(KRW=0)와 C류(KRW=SN-like 큰 수)는 제외됨
           const _poAfterFwd = po;
-          if (!po && (sn || krw > 0 || pn)) po = _bwdFillPO[ri] || '';
+          if (!po && krw > 0 && krw < 1_000_000) po = _bwdFillPO[ri] || '';
           const isBwdFill = !origPo && po !== '' && po !== _poAfterFwd;
 
           const _diag = { ri, xlRow: _shtRawRowXlRow[ri] || 0, origPo, filledPo: po, sn, krw, rowLen: row.length, outcome: '?', rawRow: row.slice(), isBwdFill };
 
+          // 헤더 잔여행 제외
           if (po && /^[a-zA-Z]/.test(po)) {
             _nullRows.push(`행${ri}: 헤더 잔여 행 제외 (PO="${po}" SN="${sn}")`);
             _diag.outcome = '헤더잔여행제외'; _shtRowDiag.push(_diag);
             return null;
           }
-          if (!po && !sn) {
+
+          // PO가 없는 행 → quotation line 아님
+          if (!po) {
             if (_shtColMap.po >= 0 && row[_shtColMap.po] === undefined) {
               _breakdownSkip++;
               _diag.outcome = 'breakdown(col=undefined)';
             } else {
-              _nullRows.push(`행${ri}[col${_shtColMap.po}="${row[_shtColMap.po]}" col${_shtColMap.sn}="${row[_shtColMap.sn]}"]`);
-              _diag.outcome = 'breakdown(col=빈값)';
+              _nullRows.push(`행${ri}: po없음(krw=${krw})`);
+              _diag.outcome = 'breakdown(po없음)';
             }
             _shtRowDiag.push(_diag);
             return null;
           }
+
+          // PO는 있지만 비-quotation row 제외
+          //  A류: sn 없음 + KRW=0   → 설명 텍스트 행
+          //  C류: sn 없음 + KRW≥1M  → KRW 컬럼에 SN번호가 기재된 부품 상세 행
+          if (!sn && (krw === 0 || krw >= 1_000_000)) {
+            _nullRows.push(`행${ri}: 비quotation(po=${po} sn=(없음) krw=${krw})`);
+            _diag.outcome = krw === 0 ? 'non-quotation(KRW=0)' : 'non-quotation(KRW=SN-like)';
+            _shtRowDiag.push(_diag);
+            return null;
+          }
+
           const { order_no, reason } = shtLookupResult(po, '', sn, pn);
           _diag.outcome    = order_no ? `mapped(${order_no})` : `no_order`;
           _diag.isFillDown = !origPo && po !== '' && !isBwdFill;
@@ -1435,18 +1467,21 @@
       const sb = getSB();
       if (!sb) { alert('Supabase 연결 없음'); btn.disabled = false; btn.innerHTML = '☁️ Supabase에 저장 (최종 확정)'; return; }
       const today = new Date().toISOString().slice(0, 10);
-      let vsOk = 0, vsSkip = 0, priceOk = 0, extOk = 0, extErr = '';
+      let vsOk = 0, vsSkip = 0, priceOk = 0, extOk = 0, extErr = '', shipNotesOk = 0;
       const dbgLines = [];
 
       try {
         dbgLines.push(`🔍 컬럼 인덱스: PO=[${_shtColMap.po}] SN=[${_shtColMap.sn}] KRW=[${_shtColMap.price}]`);
 
         // ── 단계별 건수 추적 ──────────────────────────────────────
-        dbgLines.push(`\n── 단계별 건수 추적 ──`);
-        dbgLines.push(`① 원본 raw rows    : ${_shtRawRows.length}건`);
-        dbgLines.push(`   breakdown 제외  : -${_breakdownSkip}건 (정상 SHT 구조)`);
-        dbgLines.push(`   매핑오류 제외   : -${_nullRows.filter(s => !s.includes('헤더 잔여')).length}건`);
-        dbgLines.push(`② _shtMapped       : ${_shtMapped.length}건 (KRW 캐시 저장 대상)`);
+        const _nqRows = _shtRowDiag.filter(d => d.outcome && d.outcome.startsWith('non-quotation'));
+        const _bdRows2 = _shtRowDiag.filter(d => d.outcome && d.outcome.startsWith('breakdown'));
+        dbgLines.push(`\n── SHT quotation line 파싱 결과 ──`);
+        dbgLines.push(`① 원본 raw rows           : ${_shtRawRows.length}건`);
+        dbgLines.push(`   breakdown(텍스트/빈행)  : -${_bdRows2.length}건`);
+        dbgLines.push(`   비-quotation(A/C류)     : -${_nqRows.length}건 (KRW=0 또는 KRW=SN-like)`);
+        dbgLines.push(`② quotation lines(파싱)   : ${_shtMapped.length}건  ← 원본 견적 line 수`);
+        dbgLines.push(`   역방향fill-down 적용    : ${_shtRowDiag.filter(d => d.isBwdFill).length}건 (PO대표행 앞 B류 서비스행)`);
 
         const _diag_noKrw   = _shtMapped.filter(r => !r.krw);
         const _diag_noSn    = _shtMapped.filter(r => !r.sn);
@@ -1633,7 +1668,7 @@
         dbgLines.push(`✅ 저장된 고유 PO: ${shtPos.length}개`);
         dbgLines.push(`🔑 PO 목록: ${shtPos.join(', ')}`);
         dbgLines.push(`📋 전체 행: ${priceOk}건 | PO 없는 행: ${_shtMapped.filter(r => !r.po).length}건`);
-        let shipNotesOk = 0, shipNotesErr = [];
+        const shipNotesErr = [];
         for (const po of shtPos) {
           const { error: ne } = await sb.from('shipments').update({ notes: 'SHT' }).eq('po', po);
           if (ne) shipNotesErr.push(`${po}: ${ne.message}`);
@@ -1660,14 +1695,18 @@
           }
         } catch(e) { extErr = e.message; dbgLines.push(`ℹ ext_quote_lines 없음 (무시): ${extErr}`); }
 
+        const _qlOk  = extOk || _shtMapped.length;   // ext_quote_lines 저장 건수 (실패 시 파싱 건수)
+        const _qlSrc = extErr ? '(캐시 저장)' : '(DB 저장)';
         document.getElementById('sht-result').style.display = 'block';
         document.getElementById('sht-result-body').innerHTML = `
           <div style="display:flex;flex-direction:column;gap:8px;font-size:13px">
-            <div>✅ <b>KRW 금액</b>: ${priceOk}건 저장 · 컬럼[PO=${_shtColMap.po} SN=${_shtColMap.sn} KRW=${_shtColMap.price}]</div>
-            ${_breakdownSkip ? `<div style="color:#6c757d;font-size:12px">ℹ ${_breakdownSkip}행 SHT breakdown 제외 (정상 — col 0~6만 있는 행)</div>` : ''}
-            ${_nullRows.length ? `<div style="color:#dc3545">⚠ <b>매핑 오류 ${_nullRows.length}행</b> (컬럼은 있으나 PO+SN 값 없음 — 컬럼 매핑 확인 필요):<br><pre style="font-size:10px;margin:4px 0 0">${_nullRows.join('\n')}</pre></div>` : '<div style="color:#28a745">✅ 컬럼 매핑 오류 없음</div>'}
+            <div style="font-size:14px;font-weight:600;color:#0d6efd">
+              📋 SHT quotation lines: ${_shtMapped.length}건 파싱 완료
+            </div>
+            <div>✅ <b>KRW 금액</b>: ${priceOk}건 캐시 저장 · 컬럼[PO=${_shtColMap.po} SN=${_shtColMap.sn} KRW=${_shtColMap.price}]</div>
+            <div>✅ <b>quotation_lines DB</b>: ${_qlOk}건 ${_qlSrc}${extErr ? ` — <span style="color:#dc3545">${extErr.substring(0,60)}</span>` : ''}</div>
             <div>✅ <b>바코드 검증 데이터</b> (verification_sets): ${vsOk}건 저장${vsSkip ? ` · ${vsSkip}건 미매칭 제외` : ''}</div>
-            <div>✅ <b>SHT 견적 마킹</b>: PTN 등록된 PO ${extOk}건 → 출하관리 즉시 SHT로 인식</div>
+            <div>✅ <b>SHT 견적 마킹</b>: ${shipNotesOk}개 PO → 출하관리 즉시 SHT로 인식</div>
             <details style="margin-top:8px"><summary style="cursor:pointer;font-size:11px;color:#6c757d">▶ 상세 로그</summary>
               <pre style="font-size:10px;background:#f8f9fa;padding:8px;border-radius:4px;margin-top:4px;white-space:pre-wrap">${dbgLines.join('\n')}</pre>
             </details>
