@@ -980,7 +980,8 @@
     let _shtSrcFile    = '';
     let _shtMasterJobs = [];
     let _shtLoaded     = false;
-    let _nullRows      = [];
+    let _nullRows      = [];   // 실제 매핑 오류 행 (컬럼은 있으나 PO+SN 값 없음)
+    let _breakdownSkip = 0;   // SHT breakdown 행 (col 자체 없음, 정상 제외)
 
     async function loadShtMasterJobs() {
       const el = document.getElementById('sht-load-status');
@@ -1261,6 +1262,7 @@
       // 합병셀 PO 채우기: 빈 PO는 위 행의 PO 값으로 채움
       let lastPo = '';
       _nullRows = [];
+      _breakdownSkip = 0;
       _shtMapped = _shtRawRows
         .map((row, ri) => {
           let po = get(row, 'po');
@@ -1275,7 +1277,12 @@
             return null;
           }
           if (!po && !sn) {
-            _nullRows.push(`행${ri}[col${_shtColMap.po}="${row[_shtColMap.po]}" col${_shtColMap.sn}="${row[_shtColMap.sn]}"]`);
+            // breakdown row: PO 컬럼 위치에 셀 자체가 없는 짧은 행 → 정상 제외
+            if (_shtColMap.po >= 0 && row[_shtColMap.po] === undefined) {
+              _breakdownSkip++;
+            } else {
+              _nullRows.push(`행${ri}[col${_shtColMap.po}="${row[_shtColMap.po]}" col${_shtColMap.sn}="${row[_shtColMap.sn]}"]`);
+            }
             return null;
           }
           const { order_no, reason } = shtLookupResult(po, '', sn, pn);
@@ -1465,7 +1472,8 @@
         document.getElementById('sht-result-body').innerHTML = `
           <div style="display:flex;flex-direction:column;gap:8px;font-size:13px">
             <div>✅ <b>KRW 금액</b>: ${priceOk}건 저장 · 컬럼[PO=${_shtColMap.po} SN=${_shtColMap.sn} KRW=${_shtColMap.price}]</div>
-            ${_nullRows.length ? `<div style="color:#dc3545">⚠ <b>누락 ${_nullRows.length}행</b> (PO+SN 모두 빈 행 — 파일 구조 불일치):<br><pre style="font-size:10px;margin:4px 0 0">${_nullRows.join('\n')}</pre></div>` : '<div style="color:#28a745">✅ 누락 행 없음</div>'}
+            ${_breakdownSkip ? `<div style="color:#6c757d;font-size:12px">ℹ ${_breakdownSkip}행 SHT breakdown 제외 (정상 — col 0~6만 있는 행)</div>` : ''}
+            ${_nullRows.length ? `<div style="color:#dc3545">⚠ <b>매핑 오류 ${_nullRows.length}행</b> (컬럼은 있으나 PO+SN 값 없음 — 컬럼 매핑 확인 필요):<br><pre style="font-size:10px;margin:4px 0 0">${_nullRows.join('\n')}</pre></div>` : '<div style="color:#28a745">✅ 컬럼 매핑 오류 없음</div>'}
             <div>✅ <b>바코드 검증 데이터</b> (verification_sets): ${vsOk}건 저장${vsSkip ? ` · ${vsSkip}건 미매칭 제외` : ''}</div>
             <div>✅ <b>SHT 견적 마킹</b>: PTN 등록된 PO ${extOk}건 → 출하관리 즉시 SHT로 인식</div>
             <details style="margin-top:8px"><summary style="cursor:pointer;font-size:11px;color:#6c757d">▶ 상세 로그</summary>
