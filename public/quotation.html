@@ -1049,8 +1049,10 @@
       const ws  = wb.Sheets[wb.SheetNames[0]];
       const all = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
+      const isDrmRow = row => row.some(c => /drm|fasoo|encrypted|protected/i.test(String(c)));
       let hdrIdx = 0;
-      for (let i = 0; i < Math.min(10, all.length); i++) {
+      for (let i = 0; i < Math.min(15, all.length); i++) {
+        if (isDrmRow(all[i])) continue;
         if (all[i].filter(c => String(c).trim()).length >= 3) { hdrIdx = i; break; }
       }
       _shtHeaders = all[hdrIdx].map(c => String(c).trim());
