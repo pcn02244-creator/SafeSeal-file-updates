@@ -307,12 +307,9 @@
       <div class="sht-card" id="sht-step3" style="display:none">
         <div class="sht-card-title" style="justify-content:space-between">
           <div style="display:flex;align-items:center;gap:8px">
-            📋 STEP 3 — 미리보기
+            📋 STEP 3 — 미리보기 후 아래 버튼으로 저장
             <span id="sht-preview-cnt" style="font-size:11px;color:#6c757d;text-transform:none;letter-spacing:0;font-weight:400"></span>
           </div>
-          <button class="btn-sht-import" id="sht-import-btn" onclick="importShtQuote()">
-            ☁️ Supabase에 임포트
-          </button>
         </div>
         <div id="sht-match-summary" style="margin-bottom:12px;font-size:12px"></div>
         <div style="overflow-x:auto">
@@ -325,6 +322,15 @@
             </thead>
             <tbody id="sht-preview-tbody"></tbody>
           </table>
+        </div>
+        <!-- 임포트 버튼: 미리보기 아래에 크게 배치 -->
+        <div style="margin-top:20px;padding:16px;background:#fff8e1;border:2px solid #ffc107;border-radius:10px;text-align:center">
+          <div style="font-size:13px;font-weight:700;color:#856404;margin-bottom:12px">
+            ⚠️ 아직 저장 안 됨 — 아래 버튼을 눌러야 실제로 저장됩니다
+          </div>
+          <button class="btn-sht-import" id="sht-import-btn" onclick="importShtQuote()" style="margin:0 auto;font-size:15px;padding:12px 32px">
+            ☁️ Supabase에 저장 (최종 확정)
+          </button>
         </div>
       </div>
 
@@ -1272,6 +1278,15 @@
         localStorage.setItem('quotation_amounts_cache', JSON.stringify(amtCache));
         priceOk = _shtMapped.length;
 
+        // PTN이 이미 업로드된 PO는 shipments.notes = 'SHT' 로 업데이트 (즉시 출하관리에 반영)
+        const shtPos = [...new Set(_shtMapped.map(r => r.po).filter(Boolean))];
+        let shipNotesOk = 0;
+        for (const po of shtPos) {
+          const { error: ne } = await sb.from('shipments').update({ notes: 'SHT' }).eq('po', po);
+          if (!ne) shipNotesOk++;
+        }
+        extOk = shipNotesOk;
+
         try {
           const extRows = _shtMapped.map(r => ({
             batch_date: today, po: r.po, ptn_no: '', sn: r.sn||'', pn: r.pn||'',
@@ -1288,8 +1303,8 @@
           <div style="display:flex;flex-direction:column;gap:8px;font-size:13px">
             <div>✅ <b>바코드 검증 데이터</b> (verification_sets): ${vsOk}건 저장${vsSkip ? ` · ${vsSkip}건 미매칭 제외` : ''}</div>
             <div>✅ <b>KRW 금액</b> (quotation_amounts_cache): ${priceOk}건 저장 — 출하관리 거래명세서 생성 시 자동 참조</div>
-            ${extOk ? `<div>✅ <b>ext_quote_lines 테이블</b>: ${extOk}건 저장</div>` : ''}
-            ${extErr && !extOk ? `<div style="color:#e8710a">⚠ ext_quote_lines 미저장 (테이블 없음) — localStorage로 대체 완료</div>` : ''}
+            <div>✅ <b>SHT 견적 마킹</b>: PTN 등록된 PO ${extOk}건 → 출하관리 즉시 SHT로 인식</div>
+            ${extErr ? `<div style="color:#6c757d;font-size:11px">※ ext_quote_lines 미저장 (테이블 없음) — 정상 동작에 영향 없음</div>` : ''}
             <div style="margin-top:4px">
               <b>다음 단계:</b> 출하관리 탭에서 해당 PO를 선택 후 거래명세서 생성
             </div>
