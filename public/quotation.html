@@ -1172,15 +1172,15 @@
       // 3. 데이터 행 (헤더 다음 행부터, 빈 행 제거)
       const dataRows = all.slice(bestRowIdx + 1).filter(r => r.some(c => String(c).trim()));
 
-      // 4. 오프셋 보정: 헤더 행의 'po' col이 데이터 행에서 실제 10자리 PO인지 확인
-      //    SHT 파일은 sub-header와 데이터 행 사이에 선행 blank 열 수가 달라 +N 오프셋 발생
+      // 4. 오프셋 보정: 헤더의 'po' col이 데이터 행의 실제 PO 위치와 다를 수 있음
+      //    SHT 파일은 breakdown 행 + main 행이 섞여있어 첫 행만으론 판단 불가 → 15행 스캔
       let offset = 0;
       if (po >= 0 && dataRows.length > 0) {
-        const testVal = String(dataRows[0][po] || '').replace(/[,\s]/g, '');
-        if (!/^\d{10,11}$/.test(testVal)) {
+        const scan = dataRows.slice(0, 15);
+        const has10at = col => scan.some(r => /^\d{10,11}$/.test(String(r[col] || '').replace(/[,\s]/g, '')));
+        if (!has10at(po)) {
           for (let d = 1; d <= 5; d++) {
-            const v = String(dataRows[0][po + d] || '').replace(/[,\s]/g, '');
-            if (/^\d{10,11}$/.test(v)) { offset = d; break; }
+            if (has10at(po + d)) { offset = d; break; }
           }
         }
       }
@@ -1267,8 +1267,9 @@
           const sn = get(row, 'sn');
           const pn    = get(row, 'pn');
           const krw   = parseFloat(String(get(row, 'price')).replace(/[^0-9.]/g, '')) || 0;
-          // 헤더 잔여 행 제거: SN 또는 PO가 텍스트 레이블(비숫자)인 경우
-          if ((sn && !/^\d/.test(sn)) || (po && !/^\d/.test(po))) {
+          // 헤더 잔여 행 제거: PO가 텍스트(예: "PO", "N/A") 또는 SN이 순수 텍스트 레이블인 경우만 제거
+          // SS P/N("A0563802")은 실제 데이터이므로 sn 필터는 PO로만 판단
+          if (po && /^[a-zA-Z]/.test(po)) {
             _nullRows.push(`행${ri}: 헤더 잔여 행 제외 (PO="${po}" SN="${sn}")`);
             return null;
           }
