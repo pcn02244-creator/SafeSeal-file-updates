@@ -1325,9 +1325,13 @@
           const pos = [...selectedPos];
           const hit = pos.filter(p => cached[p]).length;
           const misses = pos.filter(p => !cached[p]);
-          const sampleKeys = Object.keys(cached).slice(0, 3).join(', ');
-          status.innerHTML = `${hit > 0 ? '✅' : '⚠'} 캐시 ${cnt}건 | 선택 PO <b>${hit}/${pos.length}건</b> 금액 매칭<br>
-            <span style="font-size:10px;color:#6c757d">캐시 키 예시: ${sampleKeys}</span>${misses.length ? `<br><span style="font-size:10px;color:#dc3545">미매칭 PO: ${misses.join(', ')}</span>` : ''}`;
+          // 10자리 숫자 키(PO 형식)만 골라서 샘플 표시 (짧은 SN 키가 먼저 나오는 문제 방지)
+          const allKeys = Object.keys(cached);
+          const poFmtKeys = allKeys.filter(k => /^\d{9,11}$/.test(k));
+          const sampleKeys = (poFmtKeys.length ? poFmtKeys : allKeys).slice(0, 3).join(', ');
+          const poKeyInfo = poFmtKeys.length ? `PO형식 키 ${poFmtKeys.length}건` : 'PO형식 키 없음';
+          status.innerHTML = `${hit > 0 ? '✅' : '⚠'} 캐시 ${cnt}건(${poKeyInfo}) | 선택 PO <b>${hit}/${pos.length}건</b> 금액 매칭<br>
+            <span style="font-size:10px;color:#6c757d">캐시 키 예시(PO형식): ${sampleKeys}</span>${misses.length ? `<br><span style="font-size:10px;color:#dc3545">미매칭 PO: ${misses.join(', ')}</span>` : ''}`;
           status.className = hit > 0 ? 'small text-success fw-semibold' : 'small text-warning fw-semibold';
         } else {
           status.textContent = '❌ 견적 금액 없음 — SHT 견적 탭에서 먼저 파일 업로드하세요';

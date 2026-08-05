@@ -1210,6 +1210,8 @@
     }
 
     function applyShtColMapping(showPreview = true) {
+      _shtMapped = []; // 이전 실행 데이터 완전 초기화
+
       // 드롭다운에서 명시적으로 선택된 값만 반영 (선택 안 함 = -1이면 auto-detect 값 유지)
       ['po','sn','pn','price'].forEach(k => {
         const el = document.getElementById(`scm-${k}`);
@@ -1363,6 +1365,10 @@
 
       try {
         dbgLines.push(`📋 처리 대상: ${_shtMapped.length}건`);
+        // 매핑 샘플: 실제로 추출된 PO/KRW 값 확인용
+        const sample = _shtMapped.slice(0, 5).map(r => `PO="${r.po}" KRW=${r.krw}`).join(' | ');
+        dbgLines.push(`🔍 매핑 샘플: ${sample || '(없음)'}`);
+        dbgLines.push(`🔍 컬럼 인덱스: PO=[${_shtColMap.po}] SN=[${_shtColMap.sn}] KRW=[${_shtColMap.price}]`);
 
         const vsRows = _shtMapped
           .filter(r => r.order_no)
