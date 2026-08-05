@@ -1052,16 +1052,15 @@
         const rows = text.trim().split('\n').map(r => r.split('\t').map(c => c.trim()));
         if (rows.length < 2) { statusEl.innerHTML = '<span style="color:#dc3545">데이터가 부족합니다. Excel에서 전체 선택(Ctrl+A) 후 복사하세요.</span>'; return; }
         _shtSrcFile = 'clipboard_paste';
-        _shtHeaders = rows[0];
-        _shtRawRows = rows.slice(1).filter(r => r.some(c => c));
-        _shtColMap  = shtAutoDetectCols(_shtHeaders);
-        checkAndMergeSubHeader();
+        const _det = detectShtCols(rows, 0);
+        _shtHeaders = rows[_det.headerRowIdx];
+        _shtRawRows = rows.slice(_det.headerRowIdx + 1).filter(r => r.some(c => c));
+        _shtColMap  = { po: _det.po, sn: _det.sn, pn: _det.pn, price: _det.price };
 
-        // 헤더 목록을 화면에 표시 (컬럼명 확인용)
         const hdrs = _shtHeaders.map((h, i) => `[${i}] ${h}`).filter(s => !s.endsWith('] ')).join(' | ');
         statusEl.innerHTML = `<span style="color:#28a745">✅ ${_shtRawRows.length}행 읽힘</span><br>
           <span style="color:#6c757d;font-size:10px">감지된 컬럼: ${hdrs}</span><br>
-          <span style="color:#6c757d;font-size:10px">매핑: PO=[${_shtColMap.po}] SN=[${_shtColMap.sn}] KRW=[${_shtColMap.price}] PN=[${_shtColMap.pn}]</span>`;
+          <span style="color:#6c757d;font-size:10px">매핑: PO=[${_shtColMap.po}] SN=[${_shtColMap.sn}] KRW=[${_shtColMap.price}] PN=[${_shtColMap.pn}] offset=${_det.offset}</span>`;
 
         document.getElementById('sht-step2').style.display = 'none';
         document.getElementById('sht-step3').style.display = 'none';
