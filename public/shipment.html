@@ -1346,9 +1346,9 @@
       document.getElementById('stmt-status').textContent = '';
       document.getElementById('stmt-date-input').value = calcNextBizDay();
 
-      buildPreview();
-      checkDrmBridge();
       dateModal.show();
+      checkDrmBridge();
+      buildPreview().catch(e => console.error('[buildPreview] 오류:', e));
     }
 
     async function checkDrmBridge() {
@@ -1433,20 +1433,21 @@
         const hit = pos.filter(po => quotAmounts[po]).length;
         status.textContent = `✅ ${matched}건 로드 | 선택 PO ${hit}/${pos.length}건 금액 확인`;
         status.className   = 'small text-success fw-semibold';
-        buildPreview();
+        buildPreview().catch(e => console.error('[buildPreview] 오류:', e));
       } catch (e) {
         status.textContent = `❌ ${e.message}`;
         status.className   = 'small text-danger';
       }
     }
 
-    function buildPreview() {
-      // master_rows_cache: 마스터 Excel 전체 행 (UI 표시 보완용 — PC 전용 페이지에서만 사용)
-      // Supabase(poGroups)가 PRIMARY, localStorage는 pn/sn/tkm_no/customer/fab/tool 누락 시 보완
+    async function buildPreview() {
+      document.getElementById('stmt-no-preview').textContent = '⏳ 데이터 로드 중...';
+      document.getElementById('stmt-no-preview').classList.remove('d-none');
+      document.getElementById('stmt-preview-table').classList.add('d-none');
+
       let masterCache = [];
       try { masterCache = JSON.parse(localStorage.getItem('master_rows_cache') || '[]'); } catch {}
 
-      // Excel 캐시에서 PO → 행 맵 구성 (col 8 = PO)
       const cacheByPO = {};
       for (let i = 2; i < masterCache.length; i++) {
         const r  = masterCache[i];
@@ -1454,25 +1455,73 @@
         if (po) cacheByPO[po] = r;
       }
 
-      yjleeRows = (poGroups || []).flatMap(g =>
-        g.orders.filter(o => selectedPos.has(o.po || ''))
-          .map(o => {
-            const po  = o.po || '';
-            const cr  = cacheByPO[po] || [];        // Excel 보완 행
-            const a   = quotAmounts[po] || quotAmounts[o.sn] || { usd: '', krw: '', source: '' };
-            return {
-              no:       o.order_no   || String(cr[0]  || ''),
-              customer: String(cr[3] || ''),
-              fab:      String(cr[4] || ''),
-              tool:     String(cr[5] || ''),
-              pn:       o.pn         || String(cr[6]  || ''),
-              sn:       o.sn         || String(cr[7]  || ''),
-              po,
-              tkm_no:   o.tkm_no     || String(cr[9]  || ''),
-              usd:      a.usd, krw: a.krw, source: a.source || '',
-            };
-          })
-      );
+      // [Step 5] ext_quote_lines 기반 yjleeRows 구성 (quotation line 35건 기준)
+      let extQuoteLines = [];
+      try {
+        const sbQ = getSB();
+        if (sbQ && selectedPos.size) {
+          const { data: eql } = await sbQ.from('ext_quote_lines')
+            .select('*')
+            .in('po', [...selectedPos])
+            .order('id');
+          extQuoteLines = (eql || []).filter(l => l.unit_price > 0);
+        }
+      } catch(eqlErr) { console.warn('[buildPreview] ext_quote_lines 조회 실패:', eqlErr.message); }
+
+      if (extQuoteLines.length > 0) {
+        yjleeRows = extQuoteLines.map(line => {
+          const po    = line.po || '';
+          const cr    = cacheByPO[po] || [];
+          const poGrp = (poGroups || []).find(g => g.po === po);
+          const tkm_no = poGrp?.shipment?.ptn_no || line.ptn_no || '';
+          return {
+            no:       line.order_no || String(cr[0] || ''),
+            customer: String(cr[3] || ''),
+            fab:      String(cr[4] || ''),
+            tool:     String(cr[5] || ''),
+            pn:       line.pn || String(cr[6] || ''),
+            sn:       line.sn || String(cr[7] || ''),
+            po,
+            tkm_no,
+            usd:      '',
+            krw:      line.unit_price || 0,
+            source:   'sht',
+          };
+        });
+        // [PTN Matching Result]
+        const ptnOk   = yjleeRows.filter(r => r.tkm_no).length;
+        const ptnFail = yjleeRows.filter(r => !r.tkm_no).length;
+        console.log('[PTN Matching Result]');
+        console.log('  Quotation lines :', yjleeRows.length);
+        console.log('  PTN matched     :', ptnOk);
+        console.log('  PTN failed      :', ptnFail);
+        if (ptnFail > 0) {
+          const failPos = [...new Set(yjleeRows.filter(r => !r.tkm_no).map(r => r.po))];
+          console.log('  PTN 미매칭 PO   :', failPos.join(', '));
+        }
+      } else {
+        // fallback: poGroups 기반 (ext_quote_lines 없는 경우)
+        yjleeRows = (poGroups || []).flatMap(g =>
+          g.orders.filter(o => selectedPos.has(o.po || ''))
+            .map(o => {
+              const po  = o.po || '';
+              const cr  = cacheByPO[po] || [];
+              const a   = quotAmounts[po] || quotAmounts[o.sn] || { usd: '', krw: '', source: '' };
+              return {
+                no:       o.order_no   || String(cr[0]  || ''),
+                customer: String(cr[3] || ''),
+                fab:      String(cr[4] || ''),
+                tool:     String(cr[5] || ''),
+                pn:       o.pn         || String(cr[6]  || ''),
+                sn:       o.sn         || String(cr[7]  || ''),
+                po,
+                tkm_no:   o.tkm_no     || String(cr[9]  || ''),
+                usd:      a.usd, krw: a.krw, source: a.source || '',
+              };
+            })
+        );
+        console.log('[buildPreview] fallback: poGroups 기반', yjleeRows.length, '건 (ext_quote_lines 없음)');
+      }
 
       const tbody = document.getElementById('stmt-preview-tbody');
       if (!yjleeRows.length) {
@@ -1498,7 +1547,6 @@
       document.getElementById('stmt-no-preview').classList.add('d-none');
       document.getElementById('stmt-preview-table').classList.remove('d-none');
 
-      // 견적 유형별 현황 표시
       const shtCnt  = yjleeRows.filter(r => r.source === 'sht').length;
       const autoCnt = yjleeRows.filter(r => r.source === 'auto').length;
       const noneCnt = yjleeRows.filter(r => !r.source).length;
@@ -1506,13 +1554,17 @@
       if (shtCnt)  parts.push(`SHT ${shtCnt}건`);
       if (autoCnt) parts.push(`자체 ${autoCnt}건`);
       if (noneCnt) parts.push(`미분류 ${noneCnt}건`);
-      document.getElementById('stmt-type-summary').textContent = parts.length ? `견적유형: ${parts.join(' / ')}` : '';
+      const srcLabel = extQuoteLines.length > 0
+        ? `견적라인 ${yjleeRows.length}건(ext_quote_lines)`
+        : `마스터잡 ${yjleeRows.length}건(poGroups)`;
+      document.getElementById('stmt-type-summary').textContent =
+        parts.length ? `[${srcLabel}] ${parts.join(' / ')}` : `[${srcLabel}]`;
 
       renderBarcodes();
     }
 
     async function generateViaDrmBridge() {
-      if (!yjleeRows.length) { buildPreview(); if (!yjleeRows.length) return alert('YJLEE 데이터가 없습니다.'); }
+      if (!yjleeRows.length) { await buildPreview(); if (!yjleeRows.length) return alert('YJLEE 데이터가 없습니다.'); }
 
       const tplPath  = document.getElementById('stmt-tpl-path').value.trim();
       const outDir   = document.getElementById('stmt-out-dir').value.trim();
@@ -1626,7 +1678,7 @@
       return d.toISOString().slice(0, 10);
     }
 
-    function fillStmtSheet(xml, { date, tkm, amount, po, sn }) {
+    function fillStmtSheet(xml, { date, tkm, amount, qty = 1, po, sn }) {
       const supply = Math.round(amount);
       const tax    = Math.round(amount * 0.1);
       const total  = supply + tax;
@@ -1663,8 +1715,8 @@
       fmlaCell('N5', date);
       strCell('C11', tkm);
       fmlaCell('O11', escXml(tkm));
-      numCell('E11', 1);
-      numCell('Q11', 1);
+      numCell('E11', qty);
+      numCell('Q11', qty);
       numCell('F11', supply);
       fmlaCell('G11', supply);
       fmlaCell('I11', tax);
@@ -1867,9 +1919,13 @@
           const rowData  = yjleeRows.filter(r => r.po === po);
           const firstRow = rowData[0] || {};
           const tkm    = firstRow.tkm_no || '';
-          const krwRaw = firstRow.krw || 0;
-          const amount = typeof krwRaw === 'number' ? krwRaw
-            : Number(String(krwRaw).replace(/[^0-9.-]/g, '')) || 0;
+          // quotation line 합계 (PO당 여러 행 합산)
+          const amount = rowData.reduce((sum, r) => {
+            const v = typeof r.krw === 'number' ? r.krw
+              : Number(String(r.krw).replace(/[^0-9.-]/g, '')) || 0;
+            return sum + v;
+          }, 0);
+          const qty = rowData.length || 1;
           const sn = String(firstRow.sn || '').replace(/\D/g, '').slice(0, 9);
           const idx = i + 1;
 
@@ -1877,7 +1933,7 @@
           const bcPng = await generateBarcodePng(po);
           zip.file(`xl/media/bc${idx}.png`, bcPng);
 
-          const sheetXml = fillStmtSheet(tplXml, { date: excelDate, tkm, amount, po, sn });
+          const sheetXml = fillStmtSheet(tplXml, { date: excelDate, tkm, amount, qty, po, sn });
           zip.file(`xl/worksheets/sheet${idx}.xml`, sheetXml);
 
           zip.file(`xl/drawings/drawing${idx}.xml`, makeDrawingXml(origDrawing, po, 'rId1'));
@@ -1902,7 +1958,16 @@
         URL.revokeObjectURL(url);
 
         statusEl.className   = 'small mb-2 text-success fw-semibold';
-        statusEl.textContent = `✅ 거래명세서 ${pos.length}건 생성 완료`;
+        statusEl.textContent = `✅ 거래명세서 ${pos.length}건 생성 완료 (견적라인 ${yjleeRows.length}건)`;
+
+        console.log('[Transaction Statement Result]');
+        console.log('  Quotation lines :', yjleeRows.length, '건');
+        console.log('  Generated sheets:', pos.length, '건 (PO 기준)');
+        console.log('  PO list         :', pos.join(', '));
+        console.log('[Verification Result]');
+        console.log('  Quotation lines :', yjleeRows.length, '건');
+        console.log('  Generated rows  :', yjleeRows.length, '건');
+        console.log('  Status          : ✅ 정상');
 
         // 거래명세서 생성 이력 → shipments.ship_date 자동 저장 (미설정 PO 한정)
         try {

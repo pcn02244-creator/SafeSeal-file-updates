@@ -1482,6 +1482,11 @@
         dbgLines.push(`   비-quotation(A/C류)     : -${_nqRows.length}건 (KRW=0 또는 KRW=SN-like)`);
         dbgLines.push(`② quotation lines(파싱)   : ${_shtMapped.length}건  ← 원본 견적 line 수`);
         dbgLines.push(`   역방향fill-down 적용    : ${_shtRowDiag.filter(d => d.isBwdFill).length}건 (PO대표행 앞 B류 서비스행)`);
+        console.log('[SHT Parsing Result]');
+        console.log('  Raw rows        :', _shtRawRows.length);
+        console.log('  Breakdown       :', -_bdRows2.length);
+        console.log('  Non-quotation   :', -_nqRows.length, '(A/C류)');
+        console.log('  Quotation lines :', _shtMapped.length);
 
         const _diag_noKrw   = _shtMapped.filter(r => !r.krw);
         const _diag_noSn    = _shtMapped.filter(r => !r.sn);
