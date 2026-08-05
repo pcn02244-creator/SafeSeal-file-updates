@@ -1423,6 +1423,60 @@
         _diag_noOrder.forEach(r =>
           dbgLines.push(`     제외: PO=${r.po} SN=${r.sn||'(없음)'} / 사유: ${r.reason||'알수없음'}`)
         );
+
+        // ── 원본 PO vs _shtMapped 비교 ────────────────────────────
+        // col[_shtColMap.po]에 직접 10자리 숫자가 있는 행만 원본 PO로 인정
+        const _rawPOs = _shtRawRows
+          .map(row => String(row[_shtColMap.po] || '').replace(/[,\s]/g, ''))
+          .filter(v => /^\d{9,11}$/.test(v));
+        const _rawPOsUniq  = [...new Set(_rawPOs)];
+        const _mappedPOsUniq = [...new Set(_shtMapped.map(r => r.po).filter(v => v))];
+        const _missingPOs  = _rawPOsUniq.filter(po => !_mappedPOsUniq.includes(po));
+
+        dbgLines.push(`\n── 원본 PO vs _shtMapped ──`);
+        dbgLines.push(`원본 col${_shtColMap.po} 고유 PO : ${_rawPOsUniq.length}건 → ${_rawPOsUniq.join(', ')}`);
+        dbgLines.push(`_shtMapped 고유 PO       : ${_mappedPOsUniq.length}건 → ${_mappedPOsUniq.join(', ')}`);
+        dbgLines.push(`누락 PO                  : ${_missingPOs.length}건 → ${_missingPOs.join(', ')}`);
+
+        // 누락 PO별 탈락 위치 분석
+        if (_missingPOs.length) {
+          dbgLines.push(`\n── 누락 PO 탈락 위치 분석 ──`);
+          _missingPOs.forEach(mpo => {
+            const hits = _shtRawRows
+              .map((row, ri) => ({ row, ri }))
+              .filter(({ row }) => String(row[_shtColMap.po] || '').replace(/[,\s]/g, '') === mpo);
+
+            if (!hits.length) {
+              dbgLines.push(`PO=${mpo}: col${_shtColMap.po}에 원래 값 없음 (fill-down 파생 행) → applyShtColMapping fill-down 후 SN/KRW 확인 필요`);
+              return;
+            }
+            hits.forEach(({ row, ri }) => {
+              const sn2  = _shtColMap.sn    >= 0 ? String(row[_shtColMap.sn]    || '').trim() : '';
+              const krw2 = _shtColMap.price >= 0
+                ? parseFloat(String(row[_shtColMap.price] || '').replace(/[^0-9.]/g, '')) || 0 : 0;
+              const pn2  = _shtColMap.pn    >= 0 ? String(row[_shtColMap.pn]    || '').trim() : '';
+
+              let loc, why;
+              if (/^[a-zA-Z]/.test(mpo)) {
+                loc = 'applyShtColMapping'; why = '헤더 잔여 행 제거 (PO 알파벳 시작)';
+              } else if (!mpo && !sn2) {
+                loc = 'applyShtColMapping'; why = 'PO+SN 모두 없음 제거';
+              } else {
+                // 필터를 통과해 _shtMapped에 있어야 하는데 없는 경우 → lookup 결과 확인
+                const lk = shtLookupResult(mpo, '', sn2, pn2);
+                if (!lk.order_no) {
+                  loc = 'shtLookupResult'; why = lk.reason || '알수없음';
+                } else {
+                  // order_no 있는데 _shtMapped에 없다면 → _shtMapped에 다른 행이 이미 커버
+                  const covered = _shtMapped.find(r => r.po === mpo);
+                  loc = covered ? '_shtMapped 중복(다른 행이 커버)' : '???';
+                  why = covered ? `SN=${covered.sn} order_no=${covered.order_no}` : '재현 불가';
+                }
+              }
+              dbgLines.push(`PO=${mpo} 행${ri}: sn=${sn2||'없음'} krw=${krw2} → [${loc}] ${why}`);
+            });
+          });
+        }
         // ─────────────────────────────────────────────────────────
 
         const vsRowsRaw = _shtMapped
