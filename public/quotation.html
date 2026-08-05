@@ -1242,14 +1242,19 @@
 
       // 합병셀 PO 채우기: 빈 PO는 위 행의 PO 값으로 채움
       let lastPo = '';
+      const _nullRows = [];
       _shtMapped = _shtRawRows
-        .map(row => {
+        .map((row, ri) => {
           let po = get(row, 'po');
-          if (po) lastPo = po; else po = lastPo;  // 합병셀 대응
+          if (po) lastPo = po; else po = lastPo;
           const sn = get(row, 'sn');
           const pn    = get(row, 'pn');
           const krw   = parseFloat(String(get(row, 'price')).replace(/[^0-9.]/g, '')) || 0;
-          if (!po && !sn) return null;
+          if (!po && !sn) {
+            // 필터된 행 기록 (진단용)
+            _nullRows.push(`행${ri}[col${_shtColMap.po}="${row[_shtColMap.po]}" col${_shtColMap.sn}="${row[_shtColMap.sn]}"]`);
+            return null;
+          }
           const { order_no, reason } = shtLookupResult(po, '', sn, pn);
           return { po, sn, pn, krw, order_no, reason };
         })
@@ -1426,8 +1431,9 @@
         document.getElementById('sht-result').style.display = 'block';
         document.getElementById('sht-result-body').innerHTML = `
           <div style="display:flex;flex-direction:column;gap:8px;font-size:13px">
+            <div>✅ <b>KRW 금액</b>: ${priceOk}건 저장 · 컬럼[PO=${_shtColMap.po} SN=${_shtColMap.sn} KRW=${_shtColMap.price}]</div>
+            ${_nullRows.length ? `<div style="color:#dc3545">⚠ <b>누락 ${_nullRows.length}행</b> (PO+SN 모두 빈 행 — 파일 구조 불일치):<br><pre style="font-size:10px;margin:4px 0 0">${_nullRows.join('\n')}</pre></div>` : '<div style="color:#28a745">✅ 누락 행 없음</div>'}
             <div>✅ <b>바코드 검증 데이터</b> (verification_sets): ${vsOk}건 저장${vsSkip ? ` · ${vsSkip}건 미매칭 제외` : ''}</div>
-            <div>✅ <b>KRW 금액</b> (quotation_amounts_cache): ${priceOk}건 저장 — 출하관리 거래명세서 생성 시 자동 참조</div>
             <div>✅ <b>SHT 견적 마킹</b>: PTN 등록된 PO ${extOk}건 → 출하관리 즉시 SHT로 인식</div>
             <details style="margin-top:8px"><summary style="cursor:pointer;font-size:11px;color:#6c757d">▶ 상세 로그</summary>
               <pre style="font-size:10px;background:#f8f9fa;padding:8px;border-radius:4px;margin-top:4px;white-space:pre-wrap">${dbgLines.join('\n')}</pre>
