@@ -1403,11 +1403,27 @@
       const dbgLines = [];
 
       try {
-        dbgLines.push(`📋 처리 대상: ${_shtMapped.length}건`);
-        // 매핑 샘플: 실제로 추출된 PO/KRW 값 확인용
-        const sample = _shtMapped.slice(0, 5).map(r => `PO="${r.po}" KRW=${r.krw}`).join(' | ');
-        dbgLines.push(`🔍 매핑 샘플: ${sample || '(없음)'}`);
         dbgLines.push(`🔍 컬럼 인덱스: PO=[${_shtColMap.po}] SN=[${_shtColMap.sn}] KRW=[${_shtColMap.price}]`);
+
+        // ── 단계별 건수 추적 ──────────────────────────────────────
+        dbgLines.push(`\n── 단계별 건수 추적 ──`);
+        dbgLines.push(`① 원본 raw rows    : ${_shtRawRows.length}건`);
+        dbgLines.push(`   breakdown 제외  : -${_breakdownSkip}건 (정상 SHT 구조)`);
+        dbgLines.push(`   매핑오류 제외   : -${_nullRows.filter(s => !s.includes('헤더 잔여')).length}건`);
+        dbgLines.push(`② _shtMapped       : ${_shtMapped.length}건 (KRW 캐시 저장 대상)`);
+
+        const _diag_noKrw   = _shtMapped.filter(r => !r.krw);
+        const _diag_noSn    = _shtMapped.filter(r => !r.sn);
+        const _diag_noOrder = _shtMapped.filter(r => !r.order_no);
+        const _diag_hasOrder = _shtMapped.filter(r => r.order_no);
+        dbgLines.push(`   KRW=0 행        : ${_diag_noKrw.length}건${_diag_noKrw.length ? ' → ' + _diag_noKrw.map(r => `PO=${r.po}`).join(', ') : ''}`);
+        dbgLines.push(`   SN 없는 행      : ${_diag_noSn.length}건${_diag_noSn.length ? ' → ' + _diag_noSn.map(r => `PO=${r.po}`).join(', ') : ''}`);
+        dbgLines.push(`③ order_no 성공    : ${_diag_hasOrder.length}건`);
+        dbgLines.push(`   order_no 실패   : ${_diag_noOrder.length}건`);
+        _diag_noOrder.forEach(r =>
+          dbgLines.push(`     제외: PO=${r.po} SN=${r.sn||'(없음)'} / 사유: ${r.reason||'알수없음'}`)
+        );
+        // ─────────────────────────────────────────────────────────
 
         const vsRowsRaw = _shtMapped
           .filter(r => r.order_no)
@@ -1423,15 +1439,23 @@
         const vsRows = [..._vsMap.values()];
         const vsDup = vsRowsRaw.length - vsRows.length;
 
+        dbgLines.push(`④ vsRowsRaw        : ${vsRowsRaw.length}건`);
+        dbgLines.push(`⑤ dedupe 후 vsRows : ${vsRows.length}건`);
+        if (vsDup) {
+          const _winners = new Set(vsRows);
+          vsRowsRaw.filter(r => !_winners.has(r))
+            .forEach(r => dbgLines.push(`     dedupe 제거: PO=${r.po} SN=${r.sn||'(없음)'} order_no=${r.order_no}`));
+        }
+
         if (vsRows.length) {
           const { error } = await sb.from('verification_sets')
             .upsert(vsRows, { onConflict: 'order_no,batch_date' });
           if (error) { dbgLines.push(`❌ verification_sets 오류: ${error.message}`); throw error; }
           vsOk = vsRows.length;
-          dbgLines.push(`✅ verification_sets: ${vsOk}건${vsDup ? ` (중복 ${vsDup}건 dedupe)` : ''}`);
+          dbgLines.push(`⑥ verification_sets 저장: ${vsOk}건${vsDup ? ` (중복 ${vsDup}건 dedupe)` : ''}`);
         }
         vsSkip = _shtMapped.length - vsRowsRaw.length;
-        if (vsSkip) dbgLines.push(`⚠ order_no 없어 제외: ${vsSkip}건`);
+        if (vsSkip) dbgLines.push(`   order_no 없어 제외: ${vsSkip}건`);
 
         // quotation_amounts_cache: 거래명세서가 읽는 KRW 금액 캐시
         const amtCache = JSON.parse(localStorage.getItem('quotation_amounts_cache') || '{}');
@@ -1442,6 +1466,8 @@
         });
         localStorage.setItem('quotation_amounts_cache', JSON.stringify(amtCache));
         priceOk = _shtMapped.length;
+        const _cacheKeys = _shtMapped.reduce((n, r) => n + (r.sn ? 1 : 0) + (r.po ? 1 : 0), 0);
+        dbgLines.push(`⑦ quotation_amounts_cache 저장: ${_cacheKeys}개 key (PO+SN 합산)`);
 
         const shtPos = [...new Set(_shtMapped.map(r => r.po).filter(Boolean))];
         dbgLines.push(`✅ 저장된 고유 PO: ${shtPos.length}개`);
