@@ -980,6 +980,7 @@
     let _shtSrcFile    = '';
     let _shtMasterJobs = [];
     let _shtLoaded     = false;
+    let _nullRows      = [];
 
     async function loadShtMasterJobs() {
       const el = document.getElementById('sht-load-status');
@@ -1111,10 +1112,10 @@
         document.getElementById('sht-file-info').style.display = 'none';
         return;
       }
-      _shtHeaders = all[hdrIdx].map(c => String(c).trim());
-      _shtRawRows = all.slice(hdrIdx + 1).filter(r => r.some(c => String(c).trim()));
-      _shtColMap  = shtAutoDetectCols(_shtHeaders);
-      checkAndMergeSubHeader();
+      const _det = detectShtCols(all, hdrIdx);
+      _shtHeaders = all[_det.headerRowIdx].map(c => String(c).trim());
+      _shtRawRows = all.slice(_det.headerRowIdx + 1).filter(r => r.some(c => String(c).trim()));
+      _shtColMap  = { po: _det.po, sn: _det.sn, pn: _det.pn, price: _det.price };
 
       const hdrs = _shtHeaders.map((h, i) => `[${i}]${h}`).filter(s => s.length > 3).join(' | ');
       document.getElementById('sht-load-status').innerHTML =
@@ -1135,61 +1136,78 @@
       await importShtQuote();
     }
 
-    // 2행 헤더 감지: _shtRawRows[0]이 텍스트 헤더면 메인헤더에서 못 찾은 컬럼을 채우고 그 행을 제거
-    function checkAndMergeSubHeader() {
-      if (_shtRawRows.length === 0) return;
-      const sub = _shtRawRows[0].map(c => String(c).trim());
-      const filled = sub.filter(c => c).length;
-      if (filled < 2) return;
-      // 숫자가 아닌 값 비율 > 50% → 헤더 행으로 판단
-      const nonNum = sub.filter(c => c && isNaN(c.replace(/[,.\s]/g, ''))).length;
-      if (nonNum / filled < 0.5) return;
-      const subMap = shtAutoDetectCols(sub);
-      let merged = false;
-      ['po', 'sn', 'pn', 'price'].forEach(k => {
-        // 서브헤더 키워드 감지가 더 정확 → 값 기반 감지 결과를 항상 덮어씀
-        if (subMap[k] >= 0) { _shtColMap[k] = subMap[k]; merged = true; }
-      });
-      if (merged) _shtRawRows = _shtRawRows.slice(1); // 서브헤더 행 제거
-    }
+    // SHT 컬럼 감지: 전체 행 스캔 → 최적 헤더 행 선택 → 데이터 행 값으로 오프셋 보정
+    function detectShtCols(all, startIdx) {
+      const norm = c => String(c).toLowerCase().trim();
 
-    function shtAutoDetectCols(headers) {
-      const h = headers.map(s => String(s).toLowerCase().trim());
-      const exact = (...kws) => {
-        for (const kw of kws) {
-          const i = h.findIndex(s => s === kw.toLowerCase());
+      // 1. hdrIdx부터 최대 5행 스캔 → 키워드 점수 최고 행을 헤더로 선정
+      let bestScore = -1, bestRowIdx = startIdx;
+      for (let i = startIdx; i < Math.min(startIdx + 5, all.length); i++) {
+        const h = all[i].map(norm);
+        let score = 0;
+        if (h.some(c => c === 'po')) score += 4;
+        if (h.some(c => c.includes('total krw'))) score += 4;
+        if (h.some(c => c.includes('s/n'))) score += 3;
+        if (h.some(c => c.includes('p/n'))) score += 1;
+        if (score > bestScore) { bestScore = score; bestRowIdx = i; }
+      }
+
+      // 2. 선택된 헤더 행에서 col 인덱스 추출 (exact 우선, 없으면 contains)
+      const hRow = all[bestRowIdx].map(norm);
+      const findIn = (...kws) => {
+        for (const kw of kws) {          // 1단계: 완전 일치
+          const i = hRow.findIndex(s => s === kw);
+          if (i >= 0) return i;
+        }
+        for (const kw of kws) {          // 2단계: 포함 검색
+          const i = hRow.findIndex(s => s.includes(kw));
           if (i >= 0) return i;
         }
         return -1;
       };
-      const contains = (...kws) => {
-        for (const kw of kws) {
-          const i = h.findIndex(s => s.includes(kw.toLowerCase()));
-          if (i >= 0) return i;
+      let po    = findIn('po');
+      let sn    = findIn('ss s/n', 'ss sn', 's/n');
+      let pn    = findIn('ss p/n', 'material pn', 'p/n');
+      let price = findIn('total krw', 'krw price', 'krw total', 'krw');
+
+      // 3. 데이터 행 (헤더 다음 행부터, 빈 행 제거)
+      const dataRows = all.slice(bestRowIdx + 1).filter(r => r.some(c => String(c).trim()));
+
+      // 4. 오프셋 보정: 헤더 행의 'po' col이 데이터 행에서 실제 10자리 PO인지 확인
+      //    SHT 파일은 sub-header와 데이터 행 사이에 선행 blank 열 수가 달라 +N 오프셋 발생
+      let offset = 0;
+      if (po >= 0 && dataRows.length > 0) {
+        const testVal = String(dataRows[0][po] || '').replace(/[,\s]/g, '');
+        if (!/^\d{10,11}$/.test(testVal)) {
+          for (let d = 1; d <= 5; d++) {
+            const v = String(dataRows[0][po + d] || '').replace(/[,\s]/g, '');
+            if (/^\d{10,11}$/.test(v)) { offset = d; break; }
+          }
         }
-        return -1;
-      };
-      // PO: 헤더 기반
-      let po = exact('po') >= 0 ? exact('po')
-             : contains('p/o no', 'po no', 'po#', 'purchase order', 'po number', 'p.o.', 'customer po', 'c/po');
-      // PO: 헤더 미감지 시 값 기반 — 10~11자리 우선, 9자리는 SN 가능성 있어 후보만
-      if (po < 0 && _shtRawRows.length > 0) {
-        const colCount = Math.max(headers.length, ..._shtRawRows.slice(0, 5).map(r => r.length), 20);
+      }
+
+      // 5. PO 헤더 미감지 시 → 데이터 값 기반으로 직접 찾기 (10자리 우선)
+      if (po < 0 && dataRows.length > 0) {
+        const colCount = Math.max(...dataRows.slice(0, 10).map(r => r.length), 20);
         let col9 = -1;
         for (let c = 0; c < colCount; c++) {
-          const vals = _shtRawRows.map(r => String(r[c] || '').replace(/[,\s]/g, ''));
-          if (vals.some(v => /^\d{10,11}$/.test(v))) { po = c; break; } // 10-11자리 우선 채택
-          if (col9 < 0 && vals.some(v => /^\d{9}$/.test(v))) col9 = c; // 9자리는 후보
+          const vals = dataRows.slice(0, 10).map(r => String(r[c] || '').replace(/[,\s]/g, ''));
+          if (vals.some(v => /^\d{10,11}$/.test(v))) { po = c; offset = 0; break; }
+          if (col9 < 0 && vals.some(v => /^\d{9}$/.test(v))) col9 = c;
         }
-        if (po < 0) po = col9; // 10-11자리 없을 때만 9자리 사용
+        if (po < 0) { po = col9; offset = 0; }
       }
-      // SN
-      const sn = contains('ss s/n', 'ss sn', 's/n', 'serial number', 'serial no', 'sn');
-      // PN
-      const pn = contains('material pn', 'ss p/n', 'p/n', 'material p/n', 'part number', 'part no', 'pn');
-      // Price: KRW 포함 컬럼
-      const price = contains('total krw', 'krw price', 'krw total', 'amount(krw)', 'unit price(krw)', 'price(krw)', 'krw');
-      return { po, sn, pn, price };
+
+      // 6. 오프셋 적용
+      if (offset !== 0) {
+        if (po    >= 0) po    += offset;
+        if (sn    >= 0) sn    += offset;
+        if (pn    >= 0) pn    += offset;
+        if (price >= 0) price += offset;
+      }
+
+      console.log(`[SHT 컬럼 감지] headerRow=${bestRowIdx} offset=${offset} PO=${po} SN=${sn} PN=${pn} KRW=${price}`);
+      return { po, sn, pn, price, headerRowIdx: bestRowIdx, offset };
     }
 
     function renderShtColMapper() {
@@ -1242,7 +1260,7 @@
 
       // 합병셀 PO 채우기: 빈 PO는 위 행의 PO 값으로 채움
       let lastPo = '';
-      const _nullRows = [];
+      _nullRows = [];
       _shtMapped = _shtRawRows
         .map((row, ri) => {
           let po = get(row, 'po');
@@ -1250,8 +1268,12 @@
           const sn = get(row, 'sn');
           const pn    = get(row, 'pn');
           const krw   = parseFloat(String(get(row, 'price')).replace(/[^0-9.]/g, '')) || 0;
+          // 헤더 잔여 행 제거: SN 또는 PO가 텍스트 레이블(비숫자)인 경우
+          if ((sn && !/^\d/.test(sn)) || (po && !/^\d/.test(po))) {
+            _nullRows.push(`행${ri}: 헤더 잔여 행 제외 (PO="${po}" SN="${sn}")`);
+            return null;
+          }
           if (!po && !sn) {
-            // 필터된 행 기록 (진단용)
             _nullRows.push(`행${ri}[col${_shtColMap.po}="${row[_shtColMap.po]}" col${_shtColMap.sn}="${row[_shtColMap.sn]}"]`);
             return null;
           }
