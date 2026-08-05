@@ -502,7 +502,7 @@
             <div id="stmt-status" class="small mb-2" style="min-height:1.4em"></div>
 
             <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
-              <button class="btn btn-warning px-3" id="stmt-xlsm-btn" onclick="downloadStmtXlsm()">📄 거래명세서 생성 (xlsm)</button>
+              <button class="btn btn-warning px-3" id="stmt-xlsm-btn" onclick="downloadStmtXlsm()">📄 거래명세서 생성 (xlsx)</button>
               <button class="btn btn-outline-success px-3" id="stmt-dl-btn" onclick="downloadStmtDataExcel()">⬇️ YJLEE Excel</button>
               <button class="btn btn-link btn-sm text-muted p-0" type="button" data-bs-toggle="collapse" data-bs-target="#stmt-drm-collapse">
                 ⚙️ drm-bridge ▼
@@ -764,16 +764,24 @@
       document.getElementById('po-container').classList.add('d-none');
 
       const sb = getSB();
-      let jobs = [], ships = [];
+      let jobs = [], ships = [], shtPoSet = new Set();
       try {
         if (sb) {
           const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000));
           const [j, s] = await Promise.race([
-            Promise.all([sb.from('master_jobs').select('*'), sb.from('shipments').select('*')]),
+            Promise.all([
+              sb.from('master_jobs').select('*'),
+              sb.from('shipments').select('*'),
+            ]),
             timeout,
           ]);
           ships = s.data || [];
           const rawJobs = j.data || [];
+          // ext_quote_lines는 별도 조회 — 실패해도 핵심 데이터에 영향 없음
+          try {
+            const eq = await sb.from('ext_quote_lines').select('po').not('source_file', 'is', null);
+            shtPoSet = new Set((eq.data || []).map(r => r.po).filter(Boolean));
+          } catch { /* 테이블 없거나 오류 시 무시 */ }
           // latestTs 필터 제거 — synced_at 기준 필터링 시 이전 broad sync 행(SHT PO 등)이
           // 탈락하여 pn/sn/tkm_no 가 빈 행으로 대체되는 문제 발생
           // master_jobs 전체를 사용하고 중복 PO는 그룹화로 처리
@@ -821,7 +829,7 @@
           pns:        [...g.pns],
           orders:     g.orders,
           shipment:   shipMap[g.po] || null,
-          quotSource: amtCache[g.po]?.source || '',  // 'sht' | 'auto' | ''
+          quotSource: amtCache[g.po]?.source || (shtPoSet.has(g.po) ? 'sht' : ''),
         })).sort((a, b) => a.po.localeCompare(b.po));
       } catch (e) { poGroups = []; }
       finally {
@@ -1246,11 +1254,11 @@
           ptn_uploaded_at: today,
         };
 
-        const ops = targets.map(t => {
+        const ops = targets.map((t, i) => {
           if (existingMap[t.po]) {
-            return sb.from('shipments').update({ ...baseData, ptn_no: t.pkgId }).eq('po', t.po);
+            return sb.from('shipments').update({ ...baseData, ptn_no: t.pkgId, ptn_seq: i }).eq('po', t.po);
           } else {
-            return sb.from('shipments').insert({ id: nextId++, po: t.po, ptn_no: t.pkgId, ...baseData, created_at: today });
+            return sb.from('shipments').insert({ id: nextId++, po: t.po, ptn_no: t.pkgId, ptn_seq: i, ...baseData, created_at: today });
           }
         });
 
@@ -1504,7 +1512,7 @@
 
       const today    = new Date().toISOString().slice(0, 10).replace(/-/g, '');
       const poLabel  = [...selectedPos].join('_').slice(0, 40);
-      const outFile  = `${outDir}\\거래명세서_${poLabel}_${today}.xlsm`;
+      const outFile  = `${outDir}\\거래명세서_${poLabel}_${today}.xlsx`;
       const bridgeUrl = localStorage.getItem('drm_bridge_url') || 'http://localhost:3001';
 
       const logEl = document.getElementById('stmt-drm-log');
@@ -1655,10 +1663,10 @@
       fmlaCell('F20', total);
       fmlaCell('R19', supply); fmlaCell('S19', supply); fmlaCell('U19', tax);
       fmlaCell('R20', total);
-      forceCell('C22', po);   // numCell 실패 시 포맷 무관 강제 교체
-      fmlaCell('O22', po);
-      forceCell('G22', sn);   // SN도 동일하게 강제 교체
-      fmlaCell('S22', sn);
+      forceCell('C22', po);
+      forceCell('O22', po);
+      forceCell('G22', sn);
+      forceCell('S22', sn);
       fmlaCell('G9', total);
       fmlaCell('S9', total);
 
@@ -1745,9 +1753,10 @@
     function rebuildWorkbookRels(origRels, n) {
       const wsType = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet';
       const calcType = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/calcChain';
+      const vbaType  = 'http://schemas.microsoft.com/office/2006/relationships/vbaProject';
 
       const others = (origRels.match(/<Relationship[^>]*\/>/g) || [])
-        .filter(r => !r.includes(`Type="${wsType}"`) && !r.includes(calcType));
+        .filter(r => !r.includes(`Type="${wsType}"`) && !r.includes(calcType) && !r.includes(vbaType));
 
       let rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
         `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`;
@@ -1769,8 +1778,13 @@
         .filter(o =>
           !o.includes('/xl/worksheets/') &&
           !o.includes('/xl/drawings/') &&
-          !o.includes('/xl/calcChain.xml')
-        );
+          !o.includes('/xl/calcChain.xml') &&
+          !o.includes('vbaProject')
+        )
+        .map(o => o.replace(
+          'application/vnd.ms-excel.sheet.macroEnabled.main+xml',
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml'
+        ));
 
       const sheetOvr = Array.from({length: n}, (_, i) =>
         `<Override PartName="/xl/worksheets/sheet${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`
@@ -1826,8 +1840,14 @@
           .filter(p => p.startsWith('xl/media/bc'))
           .forEach(p => zip.remove(p));
         zip.remove('xl/calcChain.xml');
+        zip.remove('xl/vbaProject.bin');
 
-        const pos = [...selectedPos];
+        // PTN 페이지 순서로 정렬 (ptn_seq 없는 PO는 뒤로)
+        const pos = [...selectedPos].sort((a, b) => {
+          const seqA = poGroups.find(g => g.po === a)?.shipment?.ptn_seq ?? 9999;
+          const seqB = poGroups.find(g => g.po === b)?.shipment?.ptn_seq ?? 9999;
+          return seqA - seqB;
+        });
         statusEl.textContent = `⏳ ${pos.length}개 거래명세서 생성 중...`;
 
         for (let i = 0; i < pos.length; i++) {
@@ -1865,7 +1885,7 @@
         a.href = url;
         const today = new Date().toISOString().slice(0,10).replace(/-/g,'');
         const label = pos.slice(0,3).join('_');
-        a.download = `거래명세서_${label}_${today}.xlsm`;
+        a.download = `거래명세서_${label}_${today}.xlsx`;
         a.click();
         URL.revokeObjectURL(url);
 
