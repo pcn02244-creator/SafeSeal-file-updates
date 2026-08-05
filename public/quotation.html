@@ -1286,12 +1286,14 @@
             _diag.outcome = '헤더잔여행제외'; _shtRowDiag.push(_diag);
             return null;
           }
-          if (!origPo && !sn) {
-            // fill-down 이전 origPo 기준 판별:
-            //   origPo='' + SN='' → breakdown(col없음) 또는 detail sub-row(col빈칸), 모두 제외
-            _breakdownSkip++;
-            _diag.outcome = row[_shtColMap.po] === undefined
-              ? 'breakdown(col=undefined)' : 'breakdown(origPo=빈칸+SN없음)';
+          if (!po && !sn) {
+            if (_shtColMap.po >= 0 && row[_shtColMap.po] === undefined) {
+              _breakdownSkip++;
+              _diag.outcome = 'breakdown(col=undefined)';
+            } else {
+              _nullRows.push(`행${ri}[col${_shtColMap.po}="${row[_shtColMap.po]}" col${_shtColMap.sn}="${row[_shtColMap.sn]}"]`);
+              _diag.outcome = 'breakdown(col=빈값)';
+            }
             _shtRowDiag.push(_diag);
             return null;
           }
