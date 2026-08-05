@@ -1063,7 +1063,7 @@
 
         document.getElementById('sht-step2').style.display = 'none';
         document.getElementById('sht-step3').style.display = 'none';
-        applyShtColMapping();
+        applyShtColMapping(false);
         await importShtQuote();
       } catch(e) {
         statusEl.innerHTML = `<span style="color:#dc3545">클립보드 읽기 실패: ${e.message}<br>브라우저 주소창 왼쪽 자물쇠 → 클립보드 권한 허용 후 재시도</span>`;
@@ -1109,7 +1109,7 @@
       document.getElementById('sht-load-status').innerHTML =
         `⏳ Supabase 저장 중… (컬럼: ${hdrs})`;
 
-      applyShtColMapping();
+      applyShtColMapping(false);
       await importShtQuote();
     }
 
@@ -1129,14 +1129,22 @@
         }
         return -1;
       };
-      // PO
-      const po = exact('po') >= 0 ? exact('po')
-               : contains('p/o no', 'po no', 'po#', 'purchase order', 'po number', 'p.o.');
+      // PO: 헤더 기반
+      let po = exact('po') >= 0 ? exact('po')
+             : contains('p/o no', 'po no', 'po#', 'purchase order', 'po number', 'p.o.', 'customer po', 'c/po');
+      // PO: 헤더 미감지 시 값 기반 — 9~11자리 숫자 컬럼 탐색
+      if (po < 0 && _shtRawRows.length > 0) {
+        const samples = _shtRawRows.slice(0, 10);
+        for (let c = 0; c < Math.max(headers.length, 20); c++) {
+          const hits = samples.filter(r => /^\d{9,11}$/.test(String(r[c] || '').trim())).length;
+          if (hits >= Math.ceil(samples.length * 0.5)) { po = c; break; }
+        }
+      }
       // SN
       const sn = contains('ss s/n', 'ss sn', 's/n', 'serial number', 'serial no', 'sn');
       // PN
       const pn = contains('material pn', 'ss p/n', 'p/n', 'material p/n', 'part number', 'part no', 'pn');
-      // Price: KRW 포함 컬럼 (PO Price 등 제외)
+      // Price: KRW 포함 컬럼
       const price = contains('total krw', 'krw price', 'krw total', 'amount(krw)', 'unit price(krw)', 'price(krw)', 'krw');
       return { po, sn, pn, price };
     }
@@ -1162,15 +1170,22 @@
         </div>`).join('');
     }
 
-    function applyShtColMapping() {
+    function applyShtColMapping(showPreview = true) {
+      // 드롭다운에서 명시적으로 선택된 값만 반영 (선택 안 함 = -1이면 auto-detect 값 유지)
       ['po','sn','pn','price'].forEach(k => {
         const el = document.getElementById(`scm-${k}`);
-        if (el) _shtColMap[k] = parseInt(el.value);
+        if (el) {
+          const v = parseInt(el.value);
+          if (v >= 0) _shtColMap[k] = v;
+        }
       });
 
-      if (_shtColMap.po < 0)    { alert('PO 번호 컬럼을 선택해주세요.'); return; }
-      if (_shtColMap.sn < 0)    { alert('SN 컬럼을 선택해주세요.'); return; }
-      if (_shtColMap.price < 0) { alert('Total KRW Price 컬럼을 선택해주세요.'); return; }
+      const statusEl = document.getElementById('sht-load-status');
+      const setErr = msg => { if (statusEl) statusEl.innerHTML = `<span style="color:#dc3545">❌ ${msg}</span>`; };
+
+      if (_shtColMap.po < 0)    { setErr('PO 번호 컬럼을 감지하지 못했습니다. 파일 헤더(열 제목)를 확인하세요.'); return; }
+      if (_shtColMap.sn < 0)    { setErr('SN 컬럼을 감지하지 못했습니다.'); return; }
+      if (_shtColMap.price < 0) { setErr('Total KRW Price 컬럼을 감지하지 못했습니다.'); return; }
 
       const get = (row, key) => {
         const idx = _shtColMap[key];
@@ -1189,7 +1204,7 @@
         })
         .filter(Boolean);
 
-      // 미리보기 생성 즉시 quotation_amounts_cache 저장 (임포트 버튼 없이도 거래명세서에서 사용 가능)
+      // quotation_amounts_cache: PO 키로 저장 (SN도 보조로 함께 저장)
       try {
         const amtCache = JSON.parse(localStorage.getItem('quotation_amounts_cache') || '{}');
         _shtMapped.forEach(r => {
@@ -1200,9 +1215,11 @@
         localStorage.setItem('quotation_amounts_cache', JSON.stringify(amtCache));
       } catch {}
 
-      renderShtPreview();
-      document.getElementById('sht-step3').style.display = 'block';
-      document.getElementById('sht-step3').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      if (showPreview) {
+        renderShtPreview();
+        document.getElementById('sht-step3').style.display = 'block';
+        document.getElementById('sht-step3').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
     }
 
     function shtLookupOrderNo(po, ptn, sn, pn) {
@@ -1291,8 +1308,7 @@
 
     async function importShtQuote() {
       const btn = document.getElementById('sht-import-btn');
-      btn.disabled = true;
-      btn.innerHTML = '⏳ 임포트 중…';
+      if (btn) { btn.disabled = true; btn.innerHTML = '⏳ 임포트 중…'; }
 
       const sb = getSB();
       if (!sb) { alert('Supabase 연결 없음'); btn.disabled = false; btn.innerHTML = '☁️ Supabase에 저장 (최종 확정)'; return; }
@@ -1366,6 +1382,8 @@
             </div>
           </div>`;
         document.getElementById('sht-result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        const statusEl2 = document.getElementById('sht-load-status');
+        if (statusEl2) statusEl2.innerHTML = `<span style="color:#28a745">✅ 저장 완료: ${priceOk}건 (PO 매핑 완료)</span>`;
 
       } catch(e) {
         document.getElementById('sht-result').style.display = 'block';
@@ -1373,8 +1391,7 @@
           <div style="color:#dc3545;font-weight:700">❌ 임포트 실패: ${e.message}</div>
           <pre style="font-size:10px;background:#fff3f3;padding:8px;border-radius:4px;margin-top:8px;white-space:pre-wrap">${dbgLines.join('\n')}</pre>`;
       } finally {
-        btn.disabled = false;
-        btn.innerHTML = '☁️ Supabase에 임포트';
+        if (btn) { btn.disabled = false; btn.innerHTML = '☁️ Supabase에 임포트'; }
       }
     }
 
