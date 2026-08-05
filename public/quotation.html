@@ -1527,6 +1527,43 @@
         }
         // ─────────────────────────────────────────────────────────
 
+        // ── breakdown 제외 행 분석 ──────────────────────────────────
+        {
+          const _bdRows = _shtRowDiag.filter(d => d.outcome && d.outcome.startsWith('breakdown'));
+          dbgLines.push(`\n── breakdown 제외 행 분석 (${_bdRows.length}행) ──`);
+          dbgLines.push(`컬럼맵: PO=[${_shtColMap.po}] SN=[${_shtColMap.sn}] PN=[${_shtColMap.pn}] KRW=[${_shtColMap.price}]`);
+          dbgLines.push(`헤더: ${_shtHeaders.map((h,i)=>`[${i}]${h}`).join(' | ')}`);
+          const firstPoRi = _shtRawRows.findIndex(row =>
+            /^\d{9,11}$/.test(String(row[_shtColMap.po]||'').replace(/[,\s]/g,''))
+          );
+          dbgLines.push(`_shtRawRows 첫 PO 등장: ri=${firstPoRi} (Excel행 ${firstPoRi>=0?_shtRawRowXlRow[firstPoRi]:'없음'}) / 첫 PO 이전 행: ${firstPoRi>=0?firstPoRi:_shtRawRows.length}건\n`);
+          _bdRows.forEach(d => {
+            const dataCols = d.rawRow
+              .map((v,ci) => (v!==undefined && String(v).trim() ? `[${ci}]${_shtHeaders[ci]||('col'+ci)}=${String(v).trim().slice(0,30)}` : null))
+              .filter(Boolean);
+            const hasKrw = d.krw > 0;
+            const hasSn  = !!d.sn;
+            const hasPn  = _shtColMap.pn >= 0 && !!String(d.rawRow[_shtColMap.pn]||'').trim();
+            let cls;
+            if (!dataCols.length)   cls = '완전빈행';
+            else if (hasKrw||hasSn) cls = '★실제SHT라인가능';
+            else if (hasPn)         cls = '▲PN있음';
+            else                    cls = '설명텍스트';
+            const cells = d.rawRow.map((v,ci) =>
+              v===undefined ? `[${ci}](X)` : (String(v).trim() ? `[${ci}]${String(v).trim().slice(0,20)}` : `[${ci}](빈)`)
+            ).join(' ');
+            dbgLines.push(`Excel행${d.xlRow}(ri=${d.ri}) [${d.outcome}] → [${cls}]`);
+            if (dataCols.length) dbgLines.push(`  데이터컬럼: ${dataCols.join(' | ')}`);
+            dbgLines.push(`  전체셀: ${cells}`);
+          });
+          const _bdKrwSn = _bdRows.filter(d => d.krw>0||d.sn).length;
+          const _bdPnOnly= _bdRows.filter(d => !d.krw&&!d.sn&&_shtColMap.pn>=0&&!!String(d.rawRow[_shtColMap.pn]||'').trim()).length;
+          const _bdEmpty = _bdRows.filter(d => !d.rawRow.some(v=>v!==undefined&&String(v).trim())).length;
+          const _bdText  = _bdRows.length - _bdKrwSn - _bdPnOnly - _bdEmpty;
+          dbgLines.push(`\n[breakdown 요약] 전체:${_bdRows.length} | ★실제라인가능(KRW/SN):${_bdKrwSn} | ▲PN만:${_bdPnOnly} | 설명텍스트:${_bdText} | 완전빈행:${_bdEmpty}`);
+        }
+        // ─────────────────────────────────────────────────────────
+
         const vsRowsRaw = _shtMapped
           .filter(r => r.order_no)
           .map(r => ({ order_no: r.order_no, batch_date: today, po: r.po, sn: r.sn||'', ptn_no: '' }));
