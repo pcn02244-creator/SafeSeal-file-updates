@@ -982,6 +982,7 @@
     let _shtLoaded     = false;
     let _nullRows      = [];   // 실제 매핑 오류 행 (컬럼은 있으나 PO+SN 값 없음)
     let _breakdownSkip = 0;   // SHT breakdown 행 (col 자체 없음, 정상 제외)
+    let _shtRowDiag    = [];   // 행별 처리 경로 진단
 
     async function loadShtMasterJobs() {
       const el = document.getElementById('sht-load-status');
@@ -1263,29 +1264,37 @@
       let lastPo = '';
       _nullRows = [];
       _breakdownSkip = 0;
+      _shtRowDiag = [];
       _shtMapped = _shtRawRows
         .map((row, ri) => {
-          let po = get(row, 'po');
+          const origPo = get(row, 'po');
+          let po = origPo;
           if (po) lastPo = po; else po = lastPo;
-          const sn = get(row, 'sn');
+          const sn    = get(row, 'sn');
           const pn    = get(row, 'pn');
           const krw   = parseFloat(String(get(row, 'price')).replace(/[^0-9.]/g, '')) || 0;
-          // 헤더 잔여 행 제거: PO가 텍스트(예: "PO", "N/A") 또는 SN이 순수 텍스트 레이블인 경우만 제거
-          // SS P/N("A0563802")은 실제 데이터이므로 sn 필터는 PO로만 판단
+          const _diag = { ri, origPo, filledPo: po, sn, krw, rowLen: row.length, outcome: '?' };
+
           if (po && /^[a-zA-Z]/.test(po)) {
             _nullRows.push(`행${ri}: 헤더 잔여 행 제외 (PO="${po}" SN="${sn}")`);
+            _diag.outcome = '헤더잔여행제외'; _shtRowDiag.push(_diag);
             return null;
           }
           if (!po && !sn) {
-            // breakdown row: PO 컬럼 위치에 셀 자체가 없는 짧은 행 → 정상 제외
             if (_shtColMap.po >= 0 && row[_shtColMap.po] === undefined) {
               _breakdownSkip++;
+              _diag.outcome = 'breakdown(col=undefined)';
             } else {
               _nullRows.push(`행${ri}[col${_shtColMap.po}="${row[_shtColMap.po]}" col${_shtColMap.sn}="${row[_shtColMap.sn]}"]`);
+              _diag.outcome = 'breakdown(col=빈값)';
             }
+            _shtRowDiag.push(_diag);
             return null;
           }
           const { order_no, reason } = shtLookupResult(po, '', sn, pn);
+          _diag.outcome    = order_no ? `mapped(${order_no})` : `no_order`;
+          _diag.isFillDown = origPo === '' && po !== '';
+          _shtRowDiag.push(_diag);
           return { po, sn, pn, krw, order_no, reason };
         })
         .filter(Boolean);
@@ -1423,6 +1432,26 @@
         _diag_noOrder.forEach(r =>
           dbgLines.push(`     제외: PO=${r.po} SN=${r.sn||'(없음)'} / 사유: ${r.reason||'알수없음'}`)
         );
+
+        // ── 행별 처리 경로 + fill-down 분석 ─────────────────────────
+        const _fdRows = _shtRowDiag.filter(d => d.isFillDown);
+        dbgLines.push(`\n── 행별 처리 경로 (전체 ${_shtRowDiag.length}행) ──`);
+        _shtRowDiag.forEach(d => {
+          const pMark = d.origPo ? '직접' : (d.filledPo ? '채움↑' : '없음');
+          dbgLines.push(
+            `행${String(d.ri).padStart(2,' ')}: origPO=${d.origPo||'(빈칸)'}[${pMark}]` +
+            ` SN=${d.sn||'(없음)'} KRW=${d.krw} 길이=${d.rowLen}` +
+            ` → ${d.outcome}${d.isFillDown ? ' ⚠fill-down' : ''}`
+          );
+        });
+        if (_fdRows.length) {
+          dbgLines.push(`\n⚠ breakdown 미포착 (fill-down+SN없음) : ${_fdRows.length}건`);
+          dbgLines.push(`현재 필터 조건  : if (!po && !sn)  ← po는 fill-down 후 값으로 평가`);
+          dbgLines.push(`통과 원인       : origPo='' → fill-down → po=이전PO → !po=false → 필터 통과`);
+          _fdRows.forEach(d =>
+            dbgLines.push(`  행${d.ri}: origPo='' → filledPo=${d.filledPo} SN='' → !po&&!sn=false → 통과 → ${d.outcome}`)
+          );
+        }
 
         // ── 원본 PO vs _shtMapped 비교 ────────────────────────────
         // col[_shtColMap.po]에 직접 10자리 숫자가 있는 행만 원본 PO로 인정
