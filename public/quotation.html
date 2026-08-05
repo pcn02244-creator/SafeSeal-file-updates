@@ -1112,19 +1112,12 @@
       _shtRawRows = all.slice(hdrIdx + 1).filter(r => r.some(c => String(c).trim()));
       _shtColMap  = shtAutoDetectCols(_shtHeaders);
 
-      const autoOk = _shtColMap.po >= 0 && _shtColMap.sn >= 0 && _shtColMap.price >= 0;
-      if (autoOk) {
-        document.getElementById('sht-step2').style.display = 'none';
-        applyShtColMapping();
-      } else {
-        renderShtColMapper();
-        document.getElementById('sht-load-status').innerHTML =
-          `<span style="color:#e8710a">⚠ 컬럼 자동감지 실패 — 아래 드롭다운에서 직접 선택 후 "미리보기 생성" 클릭</span><br>
-           <span style="color:#6c757d">감지된 헤더: ${_shtHeaders.join(' / ')}</span>`;
-        document.getElementById('sht-step2').style.display = 'block';
-        document.getElementById('sht-step3').style.display = 'none';
-        document.getElementById('sht-step2').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      }
+      const hdrs = _shtHeaders.map((h, i) => `[${i}]${h}`).filter(s => s.length > 3).join(' | ');
+      document.getElementById('sht-load-status').innerHTML =
+        `⏳ Supabase 저장 중… (컬럼: ${hdrs})`;
+
+      applyShtColMapping();
+      await importShtQuote();
     }
 
     function shtAutoDetectCols(headers) {
