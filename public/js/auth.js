@@ -5,6 +5,7 @@
 
   if (sessionStorage.getItem(KEY) === '1') return;
 
+  function initAuth() {
   const overlay = document.createElement('div');
   overlay.id = 'auth-overlay';
   overlay.style.cssText = [
@@ -46,4 +47,11 @@
   });
 
   setTimeout(() => document.getElementById('auth-input').focus(), 100);
+  } // end initAuth
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initAuth);
+  } else {
+    initAuth();
+  }
 })();
