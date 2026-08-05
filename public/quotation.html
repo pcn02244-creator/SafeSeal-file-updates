@@ -1064,6 +1064,15 @@
         document.getElementById('sht-step2').style.display = 'none';
         document.getElementById('sht-step3').style.display = 'none';
         applyShtColMapping(false);
+
+        if (_shtMapped.length === 0) {
+          const firstRow = _shtRawRows[0] ? JSON.stringify(_shtRawRows[0].slice(0, 8)) : '(행 없음)';
+          statusEl.innerHTML = `<span style="color:#dc3545">❌ 데이터 매핑 실패 (0건)<br>
+            감지된 컬럼: PO=[${_shtColMap.po}] SN=[${_shtColMap.sn}] KRW=[${_shtColMap.price}]<br>
+            <span style="font-size:10px">첫 행: ${firstRow}</span></span>`;
+          return;
+        }
+        statusEl.innerHTML = `⏳ Supabase 저장 중… (${_shtMapped.length}건)`;
         await importShtQuote();
       } catch(e) {
         statusEl.innerHTML = `<span style="color:#dc3545">클립보드 읽기 실패: ${e.message}<br>브라우저 주소창 왼쪽 자물쇠 → 클립보드 권한 허용 후 재시도</span>`;
@@ -1107,9 +1116,20 @@
 
       const hdrs = _shtHeaders.map((h, i) => `[${i}]${h}`).filter(s => s.length > 3).join(' | ');
       document.getElementById('sht-load-status').innerHTML =
-        `⏳ Supabase 저장 중… (컬럼: ${hdrs})`;
+        `⏳ 컬럼 감지 중… PO=[${_shtColMap.po}] SN=[${_shtColMap.sn}] KRW=[${_shtColMap.price}]<br>
+        <span style="font-size:10px;color:#6c757d">${hdrs}</span>`;
 
       applyShtColMapping(false);
+
+      if (_shtMapped.length === 0) {
+        const firstRow = _shtRawRows[0] ? JSON.stringify(_shtRawRows[0].slice(0, 8)) : '(행 없음)';
+        document.getElementById('sht-load-status').innerHTML =
+          `<span style="color:#dc3545">❌ 데이터 매핑 실패 (0건)<br>
+          감지된 컬럼: PO=[${_shtColMap.po}] SN=[${_shtColMap.sn}] KRW=[${_shtColMap.price}]<br>
+          <span style="font-size:10px">첫 행 값: ${firstRow}</span></span>`;
+        return;
+      }
+      document.getElementById('sht-load-status').innerHTML = `⏳ Supabase 저장 중… (${_shtMapped.length}건)`;
       await importShtQuote();
     }
 
@@ -1132,12 +1152,12 @@
       // PO: 헤더 기반
       let po = exact('po') >= 0 ? exact('po')
              : contains('p/o no', 'po no', 'po#', 'purchase order', 'po number', 'p.o.', 'customer po', 'c/po');
-      // PO: 헤더 미감지 시 값 기반 — 9~11자리 숫자 컬럼 탐색
+      // PO: 헤더 미감지 시 값 기반 — 9~11자리 숫자 컬럼 탐색 (합병셀 대응: 1건 이상이면 채택)
       if (po < 0 && _shtRawRows.length > 0) {
-        const samples = _shtRawRows.slice(0, 10);
-        for (let c = 0; c < Math.max(headers.length, 20); c++) {
-          const hits = samples.filter(r => /^\d{9,11}$/.test(String(r[c] || '').trim())).length;
-          if (hits >= Math.ceil(samples.length * 0.5)) { po = c; break; }
+        const colCount = Math.max(headers.length, ..._shtRawRows.slice(0, 5).map(r => r.length), 20);
+        for (let c = 0; c < colCount; c++) {
+          const hit = _shtRawRows.some(r => /^\d{9,11}$/.test(String(r[c] || '').replace(/[,\s]/g, '')));
+          if (hit) { po = c; break; }
         }
       }
       // SN
@@ -1189,13 +1209,19 @@
 
       const get = (row, key) => {
         const idx = _shtColMap[key];
-        return idx >= 0 ? String(row[idx] || '').trim() : '';
+        if (idx < 0) return '';
+        let v = String(row[idx] || '').trim();
+        if (key === 'po') v = v.replace(/[,\s]/g, '');  // 합병셀 숫자 포맷 정리
+        return v;
       };
 
+      // 합병셀 PO 채우기: 빈 PO는 위 행의 PO 값으로 채움
+      let lastPo = '';
       _shtMapped = _shtRawRows
         .map(row => {
-          const po    = get(row, 'po');
-          const sn    = get(row, 'sn');
+          let po = get(row, 'po');
+          if (po) lastPo = po; else po = lastPo;  // 합병셀 대응
+          const sn = get(row, 'sn');
           const pn    = get(row, 'pn');
           const krw   = parseFloat(String(get(row, 'price')).replace(/[^0-9.]/g, '')) || 0;
           if (!po && !sn) return null;
