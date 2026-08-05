@@ -1251,11 +1251,14 @@
       btn.innerHTML = '⏳ 임포트 중…';
 
       const sb = getSB();
-      if (!sb) { alert('Supabase 연결 없음'); btn.disabled = false; btn.innerHTML = '☁️ Supabase에 임포트'; return; }
+      if (!sb) { alert('Supabase 연결 없음'); btn.disabled = false; btn.innerHTML = '☁️ Supabase에 저장 (최종 확정)'; return; }
       const today = new Date().toISOString().slice(0, 10);
       let vsOk = 0, vsSkip = 0, priceOk = 0, extOk = 0, extErr = '';
+      const dbgLines = [];
 
       try {
+        dbgLines.push(`📋 처리 대상: ${_shtMapped.length}건`);
+
         const vsRows = _shtMapped
           .filter(r => r.order_no)
           .map(r => ({ order_no: r.order_no, batch_date: today, po: r.po, sn: r.sn||'', ptn_no: '' }));
@@ -1263,10 +1266,12 @@
         if (vsRows.length) {
           const { error } = await sb.from('verification_sets')
             .upsert(vsRows, { onConflict: 'order_no,batch_date' });
-          if (error) throw error;
+          if (error) { dbgLines.push(`❌ verification_sets 오류: ${error.message}`); throw error; }
           vsOk = vsRows.length;
+          dbgLines.push(`✅ verification_sets: ${vsOk}건`);
         }
         vsSkip = _shtMapped.length - vsRows.length;
+        if (vsSkip) dbgLines.push(`⚠ order_no 없어 제외: ${vsSkip}건`);
 
         // quotation_amounts_cache: 거래명세서가 읽는 KRW 금액 캐시
         const amtCache = JSON.parse(localStorage.getItem('quotation_amounts_cache') || '{}');
@@ -1277,15 +1282,20 @@
         });
         localStorage.setItem('quotation_amounts_cache', JSON.stringify(amtCache));
         priceOk = _shtMapped.length;
+        dbgLines.push(`✅ localStorage 캐시: ${priceOk}건`);
 
         // PTN이 이미 업로드된 PO는 shipments.notes = 'SHT' 로 업데이트 (즉시 출하관리에 반영)
         const shtPos = [...new Set(_shtMapped.map(r => r.po).filter(Boolean))];
-        let shipNotesOk = 0;
+        dbgLines.push(`🔍 SHT PO 목록: ${shtPos.join(', ')}`);
+        let shipNotesOk = 0, shipNotesErr = [];
         for (const po of shtPos) {
           const { error: ne } = await sb.from('shipments').update({ notes: 'SHT' }).eq('po', po);
-          if (!ne) shipNotesOk++;
+          if (ne) shipNotesErr.push(`${po}: ${ne.message}`);
+          else shipNotesOk++;
         }
         extOk = shipNotesOk;
+        dbgLines.push(`✅ shipments.notes=SHT 업데이트: ${shipNotesOk}건 성공`);
+        if (shipNotesErr.length) dbgLines.push(`⚠ 업데이트 실패(PTN 미등록 PO는 정상): ${shipNotesErr.join(' | ')}`);
 
         try {
           const extRows = _shtMapped.map(r => ({
@@ -1294,9 +1304,9 @@
             total_price: r.krw, source_file: _shtSrcFile,
           }));
           const { error } = await sb.from('ext_quote_lines').insert(extRows);
-          if (!error) extOk = extRows.length;
-          else extErr = error.message;
-        } catch(e) { extErr = e.message; }
+          if (!error) { extOk = extRows.length; dbgLines.push(`✅ ext_quote_lines: ${extOk}건`); }
+          else { extErr = error.message; dbgLines.push(`ℹ ext_quote_lines 없음 (무시): ${extErr}`); }
+        } catch(e) { extErr = e.message; dbgLines.push(`ℹ ext_quote_lines 없음 (무시): ${extErr}`); }
 
         document.getElementById('sht-result').style.display = 'block';
         document.getElementById('sht-result-body').innerHTML = `
@@ -1304,7 +1314,9 @@
             <div>✅ <b>바코드 검증 데이터</b> (verification_sets): ${vsOk}건 저장${vsSkip ? ` · ${vsSkip}건 미매칭 제외` : ''}</div>
             <div>✅ <b>KRW 금액</b> (quotation_amounts_cache): ${priceOk}건 저장 — 출하관리 거래명세서 생성 시 자동 참조</div>
             <div>✅ <b>SHT 견적 마킹</b>: PTN 등록된 PO ${extOk}건 → 출하관리 즉시 SHT로 인식</div>
-            ${extErr ? `<div style="color:#6c757d;font-size:11px">※ ext_quote_lines 미저장 (테이블 없음) — 정상 동작에 영향 없음</div>` : ''}
+            <details style="margin-top:8px"><summary style="cursor:pointer;font-size:11px;color:#6c757d">▶ 상세 로그</summary>
+              <pre style="font-size:10px;background:#f8f9fa;padding:8px;border-radius:4px;margin-top:4px;white-space:pre-wrap">${dbgLines.join('\n')}</pre>
+            </details>
             <div style="margin-top:4px">
               <b>다음 단계:</b> 출하관리 탭에서 해당 PO를 선택 후 거래명세서 생성
             </div>
@@ -1312,7 +1324,10 @@
         document.getElementById('sht-result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
       } catch(e) {
-        alert('임포트 오류: ' + e.message);
+        document.getElementById('sht-result').style.display = 'block';
+        document.getElementById('sht-result-body').innerHTML = `
+          <div style="color:#dc3545;font-weight:700">❌ 임포트 실패: ${e.message}</div>
+          <pre style="font-size:10px;background:#fff3f3;padding:8px;border-radius:4px;margin-top:8px;white-space:pre-wrap">${dbgLines.join('\n')}</pre>`;
       } finally {
         btn.disabled = false;
         btn.innerHTML = '☁️ Supabase에 임포트';
