@@ -1063,6 +1063,9 @@
         applyShtColMapping();
       } else {
         renderShtColMapper();
+        document.getElementById('sht-load-status').innerHTML =
+          `<span style="color:#e8710a">⚠ 컬럼 자동감지 실패 — 아래 드롭다운에서 직접 선택 후 "미리보기 생성" 클릭</span><br>
+           <span style="color:#6c757d">감지된 헤더: ${_shtHeaders.join(' / ')}</span>`;
         document.getElementById('sht-step2').style.display = 'block';
         document.getElementById('sht-step3').style.display = 'none';
         document.getElementById('sht-step2').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -1085,14 +1088,15 @@
         }
         return -1;
       };
-      // PO: 정확히 'po'인 컬럼 우선 (PO Price 등과 구분)
-      const po = exact('po') >= 0 ? exact('po') : contains('purchase order', 'po number');
-      // SN: SS S/N 형식 우선
-      const sn = contains('ss s/n', 'ss sn', 's/n', 'serial number', 'serial no');
-      // PN: Material PN, SS P/N 우선
-      const pn = contains('material pn', 'ss p/n', 'material p/n', 'part number', 'part no');
-      // Price: Total KRW Price 우선 (PO Price 등과 구분)
-      const price = contains('total krw', 'krw price', 'krw total', 'krw');
+      // PO
+      const po = exact('po') >= 0 ? exact('po')
+               : contains('p/o no', 'po no', 'po#', 'purchase order', 'po number', 'p.o.');
+      // SN
+      const sn = contains('ss s/n', 'ss sn', 's/n', 'serial number', 'serial no', 'sn');
+      // PN
+      const pn = contains('material pn', 'ss p/n', 'p/n', 'material p/n', 'part number', 'part no', 'pn');
+      // Price: KRW 포함 컬럼 (PO Price 등 제외)
+      const price = contains('total krw', 'krw price', 'krw total', 'amount(krw)', 'unit price(krw)', 'price(krw)', 'krw');
       return { po, sn, pn, price };
     }
 
