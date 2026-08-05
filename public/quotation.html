@@ -278,13 +278,24 @@
 
       <!-- STEP 1: 파일 업로드 -->
       <div class="sht-card">
-        <div class="sht-card-title">📁 STEP 1 — SHT 견적 Excel 업로드</div>
+        <div class="sht-card-title">📁 STEP 1 — SHT 견적 데이터 입력</div>
         <div id="sht-load-status" style="font-size:11px;color:#6c757d;margin-bottom:8px"></div>
+
+        <!-- DRM 파일용 클립보드 붙여넣기 (우선) -->
+        <div style="background:#fff8e1;border:2px solid #ffc107;border-radius:10px;padding:16px 20px;margin-bottom:12px">
+          <div style="font-size:13px;font-weight:700;color:#856404;margin-bottom:8px">📋 DRM 파일인 경우 — Excel에서 복사 후 붙여넣기</div>
+          <div style="font-size:12px;color:#6c757d;margin-bottom:10px">Excel에서 파일 열기 → 데이터 전체 선택(Ctrl+A) → 복사(Ctrl+C) → 아래 버튼 클릭</div>
+          <button class="btn btn-warning btn-sm fw-bold" onclick="pasteFromClipboard()" style="font-size:13px;padding:8px 20px">
+            📋 클립보드에서 붙여넣기 (Ctrl+V 대체)
+          </button>
+        </div>
+
+        <!-- 일반 파일 드래그앤드롭 -->
         <div class="sht-dropzone" id="sht-dropzone" onclick="document.getElementById('sht-file-input').click()">
           <input type="file" id="sht-file-input" accept=".xlsx,.xls" style="display:none" onchange="handleShtFile(this.files[0])">
           <div style="font-size:2.2rem;line-height:1">📄</div>
-          <div style="margin-top:10px;font-size:14px;font-weight:600;color:#6c757d">Excel 파일을 드래그하거나 클릭해서 선택</div>
-          <div style="font-size:11px;color:#adb5bd;margin-top:4px">.xlsx / .xls 지원 · PO, PTN(0247#), SN, PN, 단가, 수량 컬럼 포함 파일</div>
+          <div style="margin-top:10px;font-size:14px;font-weight:600;color:#6c757d">비DRM 파일 드래그 또는 클릭해서 선택</div>
+          <div style="font-size:11px;color:#adb5bd;margin-top:4px">.xlsx / .xls 지원</div>
         </div>
         <div id="sht-file-info" style="margin-top:10px;font-size:12px;color:#6c757d;display:none"></div>
       </div>
@@ -1031,6 +1042,33 @@
         if (f) handleShtFile(f);
       });
     })();
+
+    async function pasteFromClipboard() {
+      const statusEl = document.getElementById('sht-load-status');
+      try {
+        const text = await navigator.clipboard.readText();
+        if (!text.trim()) { statusEl.innerHTML = '<span style="color:#dc3545">클립보드가 비어있습니다. Excel에서 Ctrl+A → Ctrl+C 후 다시 시도하세요.</span>'; return; }
+        const rows = text.trim().split('\n').map(r => r.split('\t').map(c => c.trim()));
+        if (rows.length < 2) { statusEl.innerHTML = '<span style="color:#dc3545">데이터가 부족합니다. Excel에서 전체 선택(Ctrl+A) 후 복사하세요.</span>'; return; }
+        _shtSrcFile = 'clipboard_paste';
+        _shtHeaders = rows[0];
+        _shtRawRows = rows.slice(1).filter(r => r.some(c => c));
+        _shtColMap  = shtAutoDetectCols(_shtHeaders);
+        statusEl.innerHTML = `<span style="color:#28a745">✅ 클립보드에서 ${_shtRawRows.length}행 읽음 — 헤더: ${_shtHeaders.filter(h=>h).join(', ')}</span>`;
+        const autoOk = _shtColMap.po >= 0 && _shtColMap.sn >= 0 && _shtColMap.price >= 0;
+        if (autoOk) {
+          document.getElementById('sht-step2').style.display = 'none';
+          applyShtColMapping();
+        } else {
+          renderShtColMapper();
+          document.getElementById('sht-step2').style.display = 'block';
+          document.getElementById('sht-step3').style.display = 'none';
+          document.getElementById('sht-step2').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      } catch(e) {
+        statusEl.innerHTML = `<span style="color:#dc3545">클립보드 읽기 실패: ${e.message} — 브라우저 주소창 왼쪽 자물쇠 클릭 → 클립보드 권한 허용 후 재시도</span>`;
+      }
+    }
 
     async function handleShtFile(file) {
       if (!file) return;
