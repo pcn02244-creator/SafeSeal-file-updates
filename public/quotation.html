@@ -980,9 +980,11 @@
     let _shtSrcFile    = '';
     let _shtMasterJobs = [];
     let _shtLoaded     = false;
-    let _nullRows      = [];   // 실제 매핑 오류 행 (컬럼은 있으나 PO+SN 값 없음)
-    let _breakdownSkip = 0;   // SHT breakdown 행 (col 자체 없음, 정상 제외)
-    let _shtRowDiag    = [];   // 행별 처리 경로 진단
+    let _nullRows        = [];  // 실제 매핑 오류 행 (컬럼은 있으나 PO+SN 값 없음)
+    let _breakdownSkip   = 0;  // SHT breakdown 행 (col 자체 없음, 정상 제외)
+    let _shtRowDiag      = [];  // 행별 처리 경로 진단
+    let _shtHeaderRowIdx = 0;  // detectShtCols 헤더 행 인덱스 (Excel 행번호 역산용)
+    let _shtRawRowXlRow  = [];  // _shtRawRows[i]에 대응하는 1-based Excel 행 번호
 
     async function loadShtMasterJobs() {
       const el = document.getElementById('sht-load-status');
@@ -1056,7 +1058,9 @@
         _shtSrcFile = 'clipboard_paste';
         const _det = detectShtCols(rows, 0);
         _shtHeaders = rows[_det.headerRowIdx];
-        _shtRawRows = rows.slice(_det.headerRowIdx + 1).filter(r => r.some(c => c));
+        _shtHeaderRowIdx = _det.headerRowIdx;
+        { const _af = rows.slice(_det.headerRowIdx + 1).map((r, i) => ({ r, xl: _det.headerRowIdx + 2 + i })).filter(x => x.r.some(c => c));
+          _shtRawRows = _af.map(x => x.r); _shtRawRowXlRow = _af.map(x => x.xl); }
         _shtColMap  = { po: _det.po, sn: _det.sn, pn: _det.pn, price: _det.price };
 
         const hdrs = _shtHeaders.map((h, i) => `[${i}] ${h}`).filter(s => !s.endsWith('] ')).join(' | ');
@@ -1115,7 +1119,9 @@
       }
       const _det = detectShtCols(all, hdrIdx);
       _shtHeaders = all[_det.headerRowIdx].map(c => String(c).trim());
-      _shtRawRows = all.slice(_det.headerRowIdx + 1).filter(r => r.some(c => String(c).trim()));
+      _shtHeaderRowIdx = _det.headerRowIdx;
+      { const _af = all.slice(_det.headerRowIdx + 1).map((r, i) => ({ r, xl: _det.headerRowIdx + 2 + i })).filter(x => x.r.some(c => String(c).trim()));
+        _shtRawRows = _af.map(x => x.r); _shtRawRowXlRow = _af.map(x => x.xl); }
       _shtColMap  = { po: _det.po, sn: _det.sn, pn: _det.pn, price: _det.price };
 
       const hdrs = _shtHeaders.map((h, i) => `[${i}]${h}`).filter(s => s.length > 3).join(' | ');
@@ -1273,7 +1279,7 @@
           const sn    = get(row, 'sn');
           const pn    = get(row, 'pn');
           const krw   = parseFloat(String(get(row, 'price')).replace(/[^0-9.]/g, '')) || 0;
-          const _diag = { ri, origPo, filledPo: po, sn, krw, rowLen: row.length, outcome: '?' };
+          const _diag = { ri, xlRow: _shtRawRowXlRow[ri] || 0, origPo, filledPo: po, sn, krw, rowLen: row.length, outcome: '?', rawRow: row.slice() };
 
           if (po && /^[a-zA-Z]/.test(po)) {
             _nullRows.push(`행${ri}: 헤더 잔여 행 제외 (PO="${po}" SN="${sn}")`);
@@ -1448,9 +1454,22 @@
           dbgLines.push(`\n⚠ breakdown 미포착 (fill-down+SN없음) : ${_fdRows.length}건`);
           dbgLines.push(`현재 필터 조건  : if (!po && !sn)  ← po는 fill-down 후 값으로 평가`);
           dbgLines.push(`통과 원인       : origPo='' → fill-down → po=이전PO → !po=false → 필터 통과`);
-          _fdRows.forEach(d =>
-            dbgLines.push(`  행${d.ri}: origPo='' → filledPo=${d.filledPo} SN='' → !po&&!sn=false → 통과 → ${d.outcome}`)
-          );
+
+          // A/B/C 분류
+          const _fdA = _fdRows.filter(d => !d.sn && !d.krw);   // SN없음 + KRW없음
+          const _fdB = _fdRows.filter(d => !d.sn &&  d.krw);   // SN없음 + KRW있음
+          const _fdC = _fdRows.filter(d =>  d.sn &&  d.krw);   // SN있음 + KRW있음
+          dbgLines.push(`\n  A. SN없음 + KRW없음 : ${_fdA.length}건`);
+          dbgLines.push(`  B. SN없음 + KRW있음 : ${_fdB.length}건  ← 실제 데이터 가능성`);
+          dbgLines.push(`  C. SN있음 + KRW있음 : ${_fdC.length}건  ← 실제 데이터`);
+
+          dbgLines.push(`\n── fill-down 행 상세 ──`);
+          _fdRows.forEach(d => {
+            const cls = !d.sn && !d.krw ? 'A' : (!d.sn && d.krw ? 'B' : 'C');
+            const cells = d.rawRow.map((v, ci) => `[${ci}]${v === undefined ? '(X)' : (String(v).trim() || '(빈칸)')}`).join(' ');
+            dbgLines.push(`[${cls}] Excel행${d.xlRow}(ri=${d.ri}): origPO=(빈칸) filledPO=${d.filledPo} SN=${d.sn||'(없음)'} KRW=${d.krw}`);
+            dbgLines.push(`    셀전체: ${cells}`);
+          });
         }
 
         // ── 원본 PO vs _shtMapped 비교 ────────────────────────────
