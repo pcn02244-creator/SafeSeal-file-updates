@@ -1402,18 +1402,28 @@
         dbgLines.push(`🔍 매핑 샘플: ${sample || '(없음)'}`);
         dbgLines.push(`🔍 컬럼 인덱스: PO=[${_shtColMap.po}] SN=[${_shtColMap.sn}] KRW=[${_shtColMap.price}]`);
 
-        const vsRows = _shtMapped
+        const vsRowsRaw = _shtMapped
           .filter(r => r.order_no)
           .map(r => ({ order_no: r.order_no, batch_date: today, po: r.po, sn: r.sn||'', ptn_no: '' }));
+
+        // PRIMARY KEY = (order_no, batch_date): 배치 내 중복 row → SN 있는 row 우선 유지
+        const _vsMap = new Map();
+        vsRowsRaw.forEach(r => {
+          const key = `${r.order_no}|${r.batch_date}`;
+          const prev = _vsMap.get(key);
+          if (!prev || (!prev.sn && r.sn)) _vsMap.set(key, r);
+        });
+        const vsRows = [..._vsMap.values()];
+        const vsDup = vsRowsRaw.length - vsRows.length;
 
         if (vsRows.length) {
           const { error } = await sb.from('verification_sets')
             .upsert(vsRows, { onConflict: 'order_no,batch_date' });
           if (error) { dbgLines.push(`❌ verification_sets 오류: ${error.message}`); throw error; }
           vsOk = vsRows.length;
-          dbgLines.push(`✅ verification_sets: ${vsOk}건`);
+          dbgLines.push(`✅ verification_sets: ${vsOk}건${vsDup ? ` (중복 ${vsDup}건 dedupe)` : ''}`);
         }
-        vsSkip = _shtMapped.length - vsRows.length;
+        vsSkip = _shtMapped.length - vsRowsRaw.length;
         if (vsSkip) dbgLines.push(`⚠ order_no 없어 제외: ${vsSkip}건`);
 
         // quotation_amounts_cache: 거래명세서가 읽는 KRW 금액 캐시
