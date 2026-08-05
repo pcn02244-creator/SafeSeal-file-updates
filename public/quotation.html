@@ -1048,12 +1048,20 @@
       const wb  = XLSX.read(buf, { type: 'array' });
       const ws  = wb.Sheets[wb.SheetNames[0]];
       const all = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      console.log('[SHT 파일 읽기] 시트명:', wb.SheetNames[0], '/ 총 행수:', all.length);
+      all.slice(0, 10).forEach((r, i) => console.log(`  행${i}:`, JSON.stringify(r).slice(0, 200)));
 
       const isDrmRow = row => row.some(c => /drm|fasoo|encrypted|protected/i.test(String(c)));
-      let hdrIdx = 0;
-      for (let i = 0; i < Math.min(15, all.length); i++) {
+      let hdrIdx = -1;
+      for (let i = 0; i < Math.min(20, all.length); i++) {
         if (isDrmRow(all[i])) continue;
-        if (all[i].filter(c => String(c).trim()).length >= 3) { hdrIdx = i; break; }
+        if (all[i].filter(c => String(c).trim()).length >= 2) { hdrIdx = i; break; }
+      }
+      if (hdrIdx === -1) {
+        document.getElementById('sht-load-status').innerHTML =
+          `<span style="color:#dc3545">❌ 파일 데이터를 읽을 수 없습니다. DRM 브릿지가 브라우저 파일 읽기를 지원하지 않을 수 있습니다.<br>Excel에서 열고 → 다른 이름으로 저장(.xlsx) → 그 파일을 올려주세요.</span>`;
+        document.getElementById('sht-file-info').style.display = 'none';
+        return;
       }
       _shtHeaders = all[hdrIdx].map(c => String(c).trim());
       _shtRawRows = all.slice(hdrIdx + 1).filter(r => r.some(c => String(c).trim()));
