@@ -720,6 +720,12 @@
     pdfjsLib.GlobalWorkerOptions.workerSrc =
       'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
 
+    // KST(UTC+9) 기준 날짜 문자열 반환
+    const kstDate = (offset = 0) => {
+      const d = new Date(Date.now() + 9 * 60 * 60 * 1000 + offset);
+      return d.toISOString().slice(0, 10);
+    };
+
     let dateModal, ptnModal, barcodeModal, verifyModal;
     let verifyCamStream = null;
     let verifyTargetField = null;
@@ -883,8 +889,8 @@
           || (sourceFilter === 'auto' && g.quotSource === 'auto')
           || (sourceFilter === 'none' && !g.quotSource);
 
-        const today   = new Date().toISOString().slice(0, 10);
-        const weekAgo = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+        const today   = kstDate();
+        const weekAgo = kstDate(-6 * 24 * 60 * 60 * 1000);
         const uDate   = g.shipment?.ptn_uploaded_at || '';
         const matchUpload = !uploadFilter
           || (uploadFilter === 'today' && uDate === today)
@@ -1232,7 +1238,7 @@
       if (!checked.length) { alert('저장할 항목을 선택하세요.'); return; }
 
       const pairs  = window._ptnPairs || [];
-      const today  = new Date().toISOString().slice(0, 10);
+      const today  = kstDate();
       const targets = checked.map(c => pairs[parseInt(c.dataset.idx)]).filter(Boolean);
       if (!targets.length) { alert('유효한 항목이 없습니다.'); return; }
 
