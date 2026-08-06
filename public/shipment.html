@@ -1132,26 +1132,36 @@
       ptnFileName = '';
     }
 
-    /* PDF에서 (3S) PKG ID + (K) AMAT ORDER NO 쌍 추출 */
+    /* PDF에서 (3S) PKG ID + (K) AMAT ORDER NO + TKM No(0247-xxxxx) 쌍 추출 */
     function parsePTNPairs(text) {
-      // 1차: 원본 패턴
+      // ── PO ──
+      let poMatches = [...text.matchAll(/\(K\)\s*AMAT\s*ORDER\s*NO\s*[:：]?\s*(\d+)/gi)].map(m => m[1].trim());
+      if (!poMatches.length) poMatches = [...text.matchAll(/AMAT\s*ORDER\s*NO\s*[:：]?\s*(\d{9,})/gi)].map(m => m[1].trim());
+      if (!poMatches.length) poMatches = [...text.matchAll(/\b(45\d{8,})\b/g)].map(m => m[1]);
+
+      // ── PKG ID ──
       let pkgMatches = [...text.matchAll(/\(3S\)\s*PKG\s*ID\s*[:：]?\s*([A-Z0-9\-]+)/gi)].map(m => m[1].trim());
-      let poMatches  = [...text.matchAll(/\(K\)\s*AMAT\s*ORDER\s*NO\s*[:：]?\s*(\d+)/gi)].map(m => m[1].trim());
-
-      // 2차 fallback: (3S) 기호 없이 키워드만
       if (!pkgMatches.length) pkgMatches = [...text.matchAll(/PKG\s*ID\s*[:：]\s*([A-Z0-9\-]+)/gi)].map(m => m[1].trim());
-      if (!poMatches.length)  poMatches  = [...text.matchAll(/AMAT\s*ORDER\s*NO\s*[:：]?\s*(\d{9,})/gi)].map(m => m[1].trim());
 
-      // 3차 fallback: PO 숫자 패턴 (10자리 이상 숫자)
-      if (!poMatches.length)  poMatches  = [...text.matchAll(/\b(45\d{8,})\b/g)].map(m => m[1]);
+      // ── TKM No (0247-xxxxx) ─ 규격 번호 / 거래명세서 기입용 ──
+      // 1차: 0247- 뒤에 영숫자 4~10자 (예: 0247-AB123, 0247-12345)
+      let tkmMatches = [...text.matchAll(/\b(0247-[A-Z0-9]{4,10})\b/gi)].map(m => m[1].trim());
+      // 2차 fallback: 대시 없이 붙어 있는 경우 (예: 024712345)
+      if (!tkmMatches.length) tkmMatches = [...text.matchAll(/\b(0247[A-Z0-9]{4,10})\b/g)].map(m => `0247-${m[1].slice(4)}`);
 
-      console.log('[PTN파싱] PKG:', pkgMatches, 'PO:', poMatches);
+      console.log('[PTN파싱] PO:', poMatches, 'PKG:', pkgMatches, 'TKM:', tkmMatches);
       if (pkgMatches.length !== poMatches.length) {
         console.warn(`PTN 파싱: PKG ID(${pkgMatches.length})와 PO(${poMatches.length}) 개수 불일치 — 적은 쪽으로 매칭`);
       }
       const count = Math.min(pkgMatches.length, poMatches.length);
       const results = [];
-      for (let i = 0; i < count; i++) results.push({ po: poMatches[i], pkgId: pkgMatches[i] });
+      for (let i = 0; i < count; i++) {
+        results.push({
+          po:    poMatches[i],
+          pkgId: pkgMatches[i],
+          tkmNo: tkmMatches[i] || '',   // 0247-xxxxx — 거래명세서 TKM No 소스
+        });
+      }
       return results;
     }
 
@@ -1187,12 +1197,22 @@
         const pairs = parsePTNPairs(text);
         window._ptnPairs = pairs;
 
+        // ── TKM No 맵을 localStorage에 저장 (PTN → 거래명세서 TKM 데이터 흐름) ──
+        if (pairs.some(p => p.tkmNo)) {
+          const existing = (() => { try { return JSON.parse(localStorage.getItem('ptn_tkm_map') || '{}'); } catch { return {}; } })();
+          pairs.forEach(p => { if (p.tkmNo) existing[p.po] = p.tkmNo; });
+          try { localStorage.setItem('ptn_tkm_map', JSON.stringify(existing)); } catch {}
+          console.log('[PTN→TKM 저장]', Object.fromEntries(pairs.filter(p => p.tkmNo).map(p => [p.po, p.tkmNo])));
+        } else {
+          console.warn('[PTN파싱] TKM No(0247-xxxxx) 추출 실패 — PDF 텍스트에서 0247- 패턴을 찾을 수 없음');
+        }
+
         const knownPOs = new Set(poGroups.map(g => g.po));
         const tbody    = document.getElementById('ptn-pairs-tbody');
 
         if (pairs.length === 0) {
           const sample = text.replace(/\s+/g, ' ').trim().slice(0, 400).replace(/</g, '&lt;');
-          tbody.innerHTML = `<tr><td colspan="4" class="py-3 small">
+          tbody.innerHTML = `<tr><td colspan="5" class="py-3 small">
             <div class="text-danger fw-semibold mb-1">⚠ PO / PKG ID를 찾을 수 없습니다 (${pdfDoc.numPages}페이지 분석)</div>
             <div class="text-muted mb-1">추출된 텍스트 샘플 (개발자 도구 Console에서 전체 확인 가능):</div>
             <code style="font-size:10px;word-break:break-all;white-space:pre-wrap;display:block;background:#f8f9fa;padding:6px;border-radius:4px;max-height:120px;overflow-y:auto">${sample}</code>
@@ -1200,21 +1220,25 @@
         } else {
           tbody.innerHTML = pairs.map((p, i) => {
             const inSystem = knownPOs.has(p.po);
+            const tkmBadge = p.tkmNo
+              ? `<span class="font-monospace fw-bold text-success" style="font-size:12px">${p.tkmNo}</span>`
+              : `<span class="text-muted" style="font-size:11px">0247 없음</span>`;
             return `<tr>
               <td><input type="checkbox" class="ptn-pair-chk" data-idx="${i}" checked></td>
               <td class="font-monospace">${p.po}</td>
               <td class="font-monospace fw-bold text-primary">${p.pkgId}</td>
+              <td>${tkmBadge}</td>
               <td><span class="badge ${inSystem ? 'bg-success' : 'bg-warning text-dark'}">${inSystem ? '✓ 있음' : '신규'}</span></td>
             </tr>`;
           }).join('');
-          // 전체 선택 체크박스 초기화
           const chkAll = document.getElementById('ptn-chk-all');
           if (chkAll) chkAll.checked = true;
         }
 
+        const tkmFoundCnt = pairs.filter(p => p.tkmNo).length;
         document.getElementById('ptn-pair-count').textContent = pairs.length + '건';
         document.getElementById('ptn-parse-note').textContent =
-          `총 ${pdfDoc.numPages}페이지 분석 — PO ${pairs.length}건 / PKG ID ${pairs.length}건 추출`;
+          `총 ${pdfDoc.numPages}페이지 분석 — PO ${pairs.length}건 / PKG ID ${pairs.length}건 / TKM No ${tkmFoundCnt}건 추출`;
 
         document.getElementById('ptn-loading').classList.add('d-none');
         document.getElementById('ptn-results').classList.remove('d-none');
@@ -1478,20 +1502,25 @@
         } catch(le) { console.warn('[buildPreview] localStorage 캐시 읽기 실패:', le.message); }
       }
 
+      // PTN 파싱 결과의 TKM No 맵 로드 (최우선 소스)
+      const ptnTkmMap = (() => { try { return JSON.parse(localStorage.getItem('ptn_tkm_map') || '{}'); } catch { return {}; } })();
+
       if (extQuoteLines.length > 0) {
         yjleeRows = extQuoteLines.map(line => {
           const po    = line.po || '';
           const cr    = cacheByPO[po] || [];
           const poGrp = (poGroups || []).find(g => g.po === po);
+          const pkg_id = poGrp?.shipment?.ptn_no || '';   // PKG ID — 거래명세서 사용 금지
 
-          // TKM No는 master_jobs.tkm_no 사용 (shipment.ptn_no는 PKG ID이므로 사용 금지)
-          const tkm_no = poGrp?.tkmNos?.[0]
+          // TKM No 우선순위: PTN 파싱 결과 → master_jobs → 없음
+          // PKG ID(shipment.ptn_no)는 절대 사용하지 않음
+          const tkm_no = ptnTkmMap[po]
+                      || poGrp?.tkmNos?.[0]
                       || poGrp?.orders?.find(o => o.tkm_no)?.tkm_no
                       || '';
-          const pkg_id = poGrp?.shipment?.ptn_no || '';   // PKG ID (로그용 — 거래명세서 사용 금지)
 
           // [TKM Mapping Result]
-          console.log(`[TKM Mapping Result] PO: ${po} | PKG ID: ${pkg_id || '(없음)'} | TKM No: ${tkm_no || '(없음)'} | Selected: ${tkm_no || '(없음)'}`);
+          console.log(`[TKM Mapping Result] PO: ${po} | PKG ID: ${pkg_id||'(없음)'} | PTN Parsed TKM: ${ptnTkmMap[po]||'(없음)'} | master_jobs TKM: ${poGrp?.tkmNos?.[0]||'(없음)'} | Selected: ${tkm_no||'(없음)'}`);
 
           return {
             no:       line.order_no || String(cr[0] || ''),
@@ -1526,10 +1555,15 @@
               const po     = o.po || '';
               const cr     = cacheByPO[po] || [];
               const a      = quotAmounts[po] || quotAmounts[o.sn] || { usd: '', krw: '', source: '' };
-              const tkm_no = o.tkm_no || String(cr[9] || '');
-              const poGrp  = (poGroups || []).find(g => g.po === po);
+              const poGrp  = (poGroups || []).find(g2 => g2.po === po);
               const pkg_id = poGrp?.shipment?.ptn_no || '';
-              console.log(`[TKM Mapping Result] PO: ${po} | PKG ID: ${pkg_id || '(없음)'} | TKM No: ${tkm_no || '(없음)'} | Selected: ${tkm_no || '(없음)'}`);
+
+              // TKM No 우선순위: PTN 파싱 결과 → master_jobs → 없음 (PKG ID 사용 금지)
+              const tkm_no = ptnTkmMap[po]
+                          || o.tkm_no
+                          || String(cr[9] || '');
+
+              console.log(`[TKM Mapping Result] PO: ${po} | PKG ID: ${pkg_id||'(없음)'} | PTN Parsed TKM: ${ptnTkmMap[po]||'(없음)'} | master_jobs TKM: ${o.tkm_no||'(없음)'} | Selected: ${tkm_no||'(없음)'}`);
               return {
                 no:       o.order_no   || String(cr[0]  || ''),
                 customer: String(cr[3] || ''),
@@ -1942,6 +1976,7 @@
           const rowData  = yjleeRows.filter(r => r.po === po);
           const firstRow = rowData[0] || {};
           const tkm    = firstRow.tkm_no || '';
+          console.log(`[TKM Mapping Result] downloadStmtXlsm | PO: ${po} | tkm→fillStmtSheet: "${tkm||'(없음)'}"`);
           // quotation line 합계 (PO당 여러 행 합산)
           const amount = rowData.reduce((sum, r) => {
             const v = typeof r.krw === 'number' ? r.krw
