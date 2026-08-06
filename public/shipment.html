@@ -1864,14 +1864,56 @@
         `</Relationships>`;
     }
 
-    function rebuildWorkbookXml(origXml, pos) {
-      const sheetEls = pos.map((po, i) =>
-        `<sheet name="${escXml(po)}" sheetId="${i + 1}" r:id="rIdS${i + 1}"/>`
-      ).join('');
+    function buildSummaryXml(pos, yjleeRows, dateStr) {
+      const headers = ['No', 'PO', 'SN', 'TKM No', 'Amount (KRW)', 'Date'];
+      let xmlRows = `<row r="1">`;
+      headers.forEach((h, ci) => {
+        const col = String.fromCharCode(65 + ci);
+        xmlRows += `<c r="${col}1" t="inlineStr"><is><t>${escXml(h)}</t></is></c>`;
+      });
+      xmlRows += `</row>`;
+      pos.forEach((po, i) => {
+        const rowData = yjleeRows.filter(r => r.po === po);
+        const firstRow = rowData[0] || {};
+        const sn  = String(firstRow.sn || '');
+        const tkm = firstRow.tkm_no || '';
+        const amount = rowData.reduce((sum, r) => {
+          const v = typeof r.krw === 'number' ? r.krw
+            : Number(String(r.krw).replace(/[^0-9.-]/g, '')) || 0;
+          return sum + v;
+        }, 0);
+        const rowNum = i + 2;
+        xmlRows += `<row r="${rowNum}">`;
+        xmlRows += `<c r="A${rowNum}"><v>${i + 1}</v></c>`;
+        xmlRows += `<c r="B${rowNum}" t="inlineStr"><is><t>${escXml(po)}</t></is></c>`;
+        xmlRows += `<c r="C${rowNum}" t="inlineStr"><is><t>${escXml(sn)}</t></is></c>`;
+        xmlRows += `<c r="D${rowNum}" t="inlineStr"><is><t>${escXml(tkm)}</t></is></c>`;
+        xmlRows += `<c r="E${rowNum}"><v>${Math.round(amount)}</v></c>`;
+        xmlRows += `<c r="F${rowNum}" t="inlineStr"><is><t>${escXml(dateStr)}</t></is></c>`;
+        xmlRows += `</row>`;
+      });
+      return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+        `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
+        `<sheetData>${xmlRows}</sheetData>` +
+        `</worksheet>`;
+    }
+
+    function rebuildWorkbookXml(origXml, pos, includeSummary = false) {
+      let sheetEls = '';
+      if (includeSummary) {
+        sheetEls  = `<sheet name="Summary" sheetId="1" r:id="rIdSummary"/>`;
+        sheetEls += pos.map((po, i) =>
+          `<sheet name="${escXml(po)}" sheetId="${i + 2}" r:id="rIdS${i + 2}"/>`
+        ).join('');
+      } else {
+        sheetEls = pos.map((po, i) =>
+          `<sheet name="${escXml(po)}" sheetId="${i + 1}" r:id="rIdS${i + 1}"/>`
+        ).join('');
+      }
       return origXml.replace(/<sheets>[\s\S]*?<\/sheets>/, `<sheets>${sheetEls}</sheets>`);
     }
 
-    function rebuildWorkbookRels(origRels, n) {
+    function rebuildWorkbookRels(origRels, n, includeSummary = false) {
       const wsType = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet';
       const calcType = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/calcChain';
       const vbaType  = 'http://schemas.microsoft.com/office/2006/relationships/vbaProject';
@@ -1881,15 +1923,22 @@
 
       let rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
         `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`;
-      for (let i = 1; i <= n; i++) {
-        rels += `<Relationship Id="rIdS${i}" Type="${wsType}" Target="worksheets/sheet${i}.xml"/>`;
+      if (includeSummary) {
+        rels += `<Relationship Id="rIdSummary" Type="${wsType}" Target="worksheets/sheet1.xml"/>`;
+        for (let i = 2; i <= n + 1; i++) {
+          rels += `<Relationship Id="rIdS${i}" Type="${wsType}" Target="worksheets/sheet${i}.xml"/>`;
+        }
+      } else {
+        for (let i = 1; i <= n; i++) {
+          rels += `<Relationship Id="rIdS${i}" Type="${wsType}" Target="worksheets/sheet${i}.xml"/>`;
+        }
       }
       rels += others.join('');
       rels += `</Relationships>`;
       return rels;
     }
 
-    function rebuildContentTypes(origCt, n) {
+    function rebuildContentTypes(origCt, n, includeSummary = false) {
       const defs = (origCt.match(/<Default[^>]*\/>/g) || []);
       if (!defs.some(d => d.includes('png'))) {
         defs.push('<Default Extension="png" ContentType="image/png"/>');
@@ -1907,12 +1956,24 @@
           'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml'
         ));
 
-      const sheetOvr = Array.from({length: n}, (_, i) =>
-        `<Override PartName="/xl/worksheets/sheet${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`
-      );
-      const drawOvr = Array.from({length: n}, (_, i) =>
-        `<Override PartName="/xl/drawings/drawing${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>`
-      );
+      let sheetOvr, drawOvr;
+      if (includeSummary) {
+        // sheet1=Summary + sheet2..n+1=Statements
+        sheetOvr = Array.from({length: n + 1}, (_, i) =>
+          `<Override PartName="/xl/worksheets/sheet${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`
+        );
+        // drawing2..n+1 (Summary는 drawing 없음)
+        drawOvr = Array.from({length: n}, (_, i) =>
+          `<Override PartName="/xl/drawings/drawing${i+2}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>`
+        );
+      } else {
+        sheetOvr = Array.from({length: n}, (_, i) =>
+          `<Override PartName="/xl/worksheets/sheet${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`
+        );
+        drawOvr = Array.from({length: n}, (_, i) =>
+          `<Override PartName="/xl/drawings/drawing${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>`
+        );
+      }
 
       return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
         `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` +
@@ -1971,6 +2032,10 @@
         });
         statusEl.textContent = `⏳ ${pos.length}개 거래명세서 생성 중...`;
 
+        // ── Summary 시트 (sheet1) ──────────────────────────────────────
+        zip.file('xl/worksheets/sheet1.xml', buildSummaryXml(pos, yjleeRows, dateStr));
+        // Summary에는 drawing/_rels 불필요
+
         for (let i = 0; i < pos.length; i++) {
           const po = pos[i];
           const rowData  = yjleeRows.filter(r => r.po === po);
@@ -1985,7 +2050,7 @@
           }, 0);
           const qty = rowData.length || 1;
           const sn = String(firstRow.sn || '').replace(/\D/g, '').slice(0, 9);
-          const idx = i + 1;
+          const idx = i + 2; // Summary가 sheet1 이므로 Statement는 sheet2부터
 
           statusEl.textContent = `⏳ 바코드 생성 중... (${i+1}/${pos.length})`;
           const bcPng = await generateBarcodePng(po);
@@ -1999,9 +2064,9 @@
           zip.file(`xl/worksheets/_rels/sheet${idx}.xml.rels`, makeSheetRels(idx));
         }
 
-        zip.file('xl/workbook.xml',       rebuildWorkbookXml(origWb, pos));
-        zip.file('xl/_rels/workbook.xml.rels', rebuildWorkbookRels(origRel, pos.length));
-        zip.file('[Content_Types].xml',   rebuildContentTypes(origCt, pos.length));
+        zip.file('xl/workbook.xml',       rebuildWorkbookXml(origWb, pos, true));
+        zip.file('xl/_rels/workbook.xml.rels', rebuildWorkbookRels(origRel, pos.length, true));
+        zip.file('[Content_Types].xml',   rebuildContentTypes(origCt, pos.length, true));
 
         statusEl.textContent = '⏳ 파일 압축 중...';
         const outBuf = await zip.generateAsync({ type: 'arraybuffer', compression: 'DEFLATE' });
@@ -2017,6 +2082,21 @@
 
         statusEl.className   = 'small mb-2 text-success fw-semibold';
         statusEl.textContent = `✅ 거래명세서 ${pos.length}건 생성 완료 (견적라인 ${yjleeRows.length}건)`;
+
+        // ── Summary Result 로그 ────────────────────────────────────────
+        const summaryRows = pos.map((po, i) => {
+          const rd = yjleeRows.filter(r => r.po === po);
+          const fr = rd[0] || {};
+          const amt = rd.reduce((s, r) => {
+            const v = typeof r.krw === 'number' ? r.krw : Number(String(r.krw).replace(/[^0-9.-]/g,''))||0;
+            return s + v;
+          }, 0);
+          return { no: i+1, po, sn: fr.sn||'', tkm: fr.tkm_no||'', amount: Math.round(amt), date: dateStr };
+        });
+        console.log('[Summary Result]');
+        console.log('  Summary rows    :', summaryRows.length, '건', summaryRows.map(r=>`[${r.no}] PO:${r.po} SN:${r.sn} TKM:${r.tkm} KRW:${r.amount} Date:${r.date}`));
+        console.log('  Statement sheets:', pos.length, '건 (sheet2~sheet'+(pos.length+1)+')');
+        console.log('  First sheet     : Summary (sheet1)');
 
         console.log('[Transaction Statement Result]');
         console.log('  Quotation lines :', yjleeRows.length, '건');
