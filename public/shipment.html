@@ -1483,7 +1483,16 @@
           const po    = line.po || '';
           const cr    = cacheByPO[po] || [];
           const poGrp = (poGroups || []).find(g => g.po === po);
-          const tkm_no = poGrp?.shipment?.ptn_no || line.ptn_no || '';
+
+          // TKM No는 master_jobs.tkm_no 사용 (shipment.ptn_no는 PKG ID이므로 사용 금지)
+          const tkm_no = poGrp?.tkmNos?.[0]
+                      || poGrp?.orders?.find(o => o.tkm_no)?.tkm_no
+                      || '';
+          const pkg_id = poGrp?.shipment?.ptn_no || '';   // PKG ID (로그용 — 거래명세서 사용 금지)
+
+          // [TKM Mapping Result]
+          console.log(`[TKM Mapping Result] PO: ${po} | PKG ID: ${pkg_id || '(없음)'} | TKM No: ${tkm_no || '(없음)'} | Selected: ${tkm_no || '(없음)'}`);
+
           return {
             no:       line.order_no || String(cr[0] || ''),
             customer: String(cr[3] || ''),
@@ -1510,13 +1519,17 @@
           console.log('  PTN 미매칭 PO   :', failPos.join(', '));
         }
       } else {
-        // fallback: poGroups 기반 (ext_quote_lines 없는 경우)
+        // fallback: poGroups 기반 (ext_quote_lines 없는 경우 — 국내 견적서 경로)
         yjleeRows = (poGroups || []).flatMap(g =>
           g.orders.filter(o => selectedPos.has(o.po || ''))
             .map(o => {
-              const po  = o.po || '';
-              const cr  = cacheByPO[po] || [];
-              const a   = quotAmounts[po] || quotAmounts[o.sn] || { usd: '', krw: '', source: '' };
+              const po     = o.po || '';
+              const cr     = cacheByPO[po] || [];
+              const a      = quotAmounts[po] || quotAmounts[o.sn] || { usd: '', krw: '', source: '' };
+              const tkm_no = o.tkm_no || String(cr[9] || '');
+              const poGrp  = (poGroups || []).find(g => g.po === po);
+              const pkg_id = poGrp?.shipment?.ptn_no || '';
+              console.log(`[TKM Mapping Result] PO: ${po} | PKG ID: ${pkg_id || '(없음)'} | TKM No: ${tkm_no || '(없음)'} | Selected: ${tkm_no || '(없음)'}`);
               return {
                 no:       o.order_no   || String(cr[0]  || ''),
                 customer: String(cr[3] || ''),
@@ -1525,7 +1538,7 @@
                 pn:       o.pn         || String(cr[6]  || ''),
                 sn:       o.sn         || String(cr[7]  || ''),
                 po,
-                tkm_no:   o.tkm_no     || String(cr[9]  || ''),
+                tkm_no,
                 usd:      a.usd, krw: a.krw, source: a.source || '',
               };
             })
