@@ -360,81 +360,45 @@
     }
     .hist-export-btn:active { opacity: .7; }
 
-    /* Tabs */
-    .htab-bar {
-      display: flex; border-bottom: 1px solid rgba(255,255,255,.1);
-      background: #0d1520; flex-shrink: 0;
+    /* ── 날짜 선택 바 ── */
+    #hist-date-bar {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(255,255,255,.1);
+      flex-shrink: 0; flex-wrap: wrap;
     }
-    .htab {
-      flex: 1; padding: 10px 0; text-align: center; font-size: 13px;
-      color: rgba(255,255,255,.4); cursor: pointer; transition: color .15s;
+    .hdb-label {
+      font-size: 12px; color: rgba(255,255,255,.45);
+      white-space: nowrap; font-weight: 600; letter-spacing: .02em;
     }
-    .htab.active { color: #7ec8ff; border-bottom: 2px solid #4f8cff; }
-
-    /* ── 캘린더 뷰 ── */
-    #hview-cal { flex: 1; overflow-y: auto; padding: 14px 12px; }
-    .cal-nav {
-      display: flex; align-items: center; justify-content: space-between;
-      margin-bottom: 12px;
+    .hdb-select {
+      background: rgba(79,140,255,.15); border: 1px solid rgba(79,140,255,.4);
+      border-radius: 7px; color: #7ec8ff; padding: 6px 10px; font-size: 13px;
+      font-weight: 700; outline: none; font-family: var(--fn); color-scheme: dark;
+      cursor: pointer; min-width: 128px;
     }
-    .cal-nav-btn {
-      background: rgba(255,255,255,.08); border: none; color: #fff;
-      border-radius: 8px; width: 32px; height: 32px; font-size: 18px;
-      cursor: pointer; display: flex; align-items: center; justify-content: center;
+    .hdb-select:focus { border-color: #4f8cff; }
+    .hdb-cnt {
+      font-size: 11px; color: rgba(255,255,255,.35);
+      white-space: nowrap;
     }
-    .cal-nav-btn:active { opacity: .6; }
-    #cal-title { font-size: 15px; font-weight: 700; color: #fff; }
-    .cal-wd-row {
-      display: grid; grid-template-columns: repeat(7, 1fr);
-      margin-bottom: 4px;
+    .hdb-search {
+      flex: 1; min-width: 80px;
     }
-    .cal-wd { text-align: center; font-size: 10px; color: rgba(255,255,255,.35);
-              padding: 2px 0; font-weight: 600; }
-    .cal-wd:first-child { color: #ff7eb3; }
-    .cal-wd:last-child  { color: #7ec8ff; }
-    #cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
-    .cal-cell {
-      aspect-ratio: 1; border-radius: 8px; display: flex; align-items: center;
-      justify-content: center; font-size: 13px; color: rgba(255,255,255,.22);
+    .hdb-reset {
+      background: rgba(255,255,255,.05) !important;
+      border-color: rgba(255,255,255,.12) !important;
+      color: rgba(255,255,255,.4) !important;
     }
-    .cal-cell.in-month { color: rgba(255,255,255,.6); }
-    .cal-cell.has-scan {
-      background: rgba(79,140,255,.18); color: #7ec8ff;
-      cursor: pointer; font-weight: 700;
-    }
-    .cal-cell.has-scan:active { opacity: .7; }
-    .cal-cell.selected { background: #4f8cff !important; color: #fff !important; }
-    .cal-cell.today.in-month { box-shadow: inset 0 0 0 1.5px rgba(79,140,255,.5); color: #fff; }
-    #cal-day-summary {
-      margin-top: 14px; padding: 10px 2px;
-      border-top: 1px solid rgba(255,255,255,.07);
-    }
-    #cal-day-summary .cds-title {
-      font-size: 11px; color: rgba(255,255,255,.4); margin-bottom: 8px;
-    }
-    #cal-day-summary .cds-row {
-      font-size: 11px; color: #e0e0e0;
-      padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,.05);
-      display: flex; gap: 8px; align-items: center;
-    }
-    #cal-day-summary .cds-ts  { color: rgba(255,255,255,.4); font-size: 10px; min-width: 36px; }
-    #cal-day-summary .cds-po  { color: #7ec8ff; font-family: monospace; }
-    #cal-day-summary .cds-sn  { color: rgba(255,255,255,.5); font-family: monospace; font-size: 10px; }
 
     /* ── 목록 뷰 ── */
     #hview-list { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
-    #hist-filter-bar {
-      display: flex; gap: 6px; padding: 8px 10px;
-      border-bottom: 1px solid rgba(255,255,255,.08); flex-shrink: 0; flex-wrap: wrap;
-    }
     .hf-input {
       background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.12);
       border-radius: 7px; color: #fff; padding: 6px 10px; font-size: 12px;
       outline: none; font-family: var(--fn);
     }
     .hf-input::placeholder { color: rgba(255,255,255,.3); }
-    #hf-date { width: 130px; color-scheme: dark; }
-    #hf-search { flex: 1; min-width: 90px; }
     .hf-btn {
       background: #1a3a5c; border: 1px solid #2a5a8c; color: #7ec8ff;
       border-radius: 7px; padding: 6px 12px; font-size: 12px; cursor: pointer;
@@ -485,7 +449,7 @@
       -webkit-tap-highlight-color: transparent;
       cursor: pointer;
     }
-    #hview-cal, #hist-list {
+    #hist-list {
       -webkit-overflow-scrolling: touch; /* 구형 Android 모멘텀 스크롤 */
       overflow-y: auto;
     }
@@ -546,36 +510,19 @@
       </div>
     </div>
 
-    <!-- 탭 -->
-    <div class="htab-bar">
-      <div class="htab active" id="htab-cal"  onclick="switchHistTab('cal')">📅 캘린더</div>
-      <div class="htab"        id="htab-list" onclick="switchHistTab('list')">📋 목록</div>
+    <!-- 날짜 선택 바 -->
+    <div id="hist-date-bar">
+      <span class="hdb-label">조회 날짜</span>
+      <select id="hf-date-sel" class="hdb-select" onchange="onDateSelChange()">
+        <option value="">불러오는 중...</option>
+      </select>
+      <span id="hdb-cnt" class="hdb-cnt"></span>
+      <input class="hf-input hdb-search" id="hf-search" type="text" placeholder="PO / SN" autocomplete="off" oninput="applyHistFilter()">
+      <button class="hf-btn hdb-reset" onclick="clearHistFilter()">초기화</button>
     </div>
 
-    <!-- 캘린더 뷰 -->
-    <div id="hview-cal">
-      <div class="cal-nav">
-        <button class="cal-nav-btn" onclick="calMove(-1)">‹</button>
-        <span id="cal-title"></span>
-        <button class="cal-nav-btn" onclick="calMove(1)">›</button>
-      </div>
-      <div class="cal-wd-row">
-        <div class="cal-wd">일</div><div class="cal-wd">월</div><div class="cal-wd">화</div>
-        <div class="cal-wd">수</div><div class="cal-wd">목</div><div class="cal-wd">금</div>
-        <div class="cal-wd">토</div>
-      </div>
-      <div id="cal-grid"></div>
-      <div id="cal-day-summary"><div style="color:rgba(255,255,255,.3);font-size:12px">날짜를 탭하면 해당 일 이력을 확인할 수 있습니다</div></div>
-    </div>
-
-    <!-- 목록 뷰 -->
-    <div id="hview-list" style="display:none">
-      <div id="hist-filter-bar">
-        <input class="hf-input" id="hf-date"   type="date" title="날짜 필터">
-        <input class="hf-input" id="hf-search" type="text" placeholder="PO / SN 검색" autocomplete="off">
-        <button class="hf-btn" onclick="applyHistFilter()">검색</button>
-        <button class="hf-btn" onclick="clearHistFilter()" style="background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.15);color:rgba(255,255,255,.6)">초기화</button>
-      </div>
+    <!-- 이력 목록 -->
+    <div id="hview-list">
       <div id="hist-act-bar">
         <label><input type="checkbox" id="chk-all" onchange="toggleSelAll(this)"> 전체선택</label>
         <button class="hf-btn" onclick="exportHistExcel()">⬇ 선택 엑셀</button>
@@ -915,10 +862,6 @@ async function saveScanLog(result) {
 ══════════════════════════════════════════ */
 let _histData      = [];   // 전체 로드된 데이터
 let _histFiltered  = [];   // 현재 필터 적용된 데이터
-let _histTab       = 'cal';
-let _calYear       = new Date().getFullYear();
-let _calMonth      = new Date().getMonth();  // 0-indexed
-let _calSelDate    = null; // 'YYYY-MM-DD'
 
 function toggleHistory() {
   const panel = $('hist-panel');
@@ -930,14 +873,8 @@ function toggleHistory() {
   }
 }
 
-function switchHistTab(tab) {
-  _histTab = tab;
-  ['cal','list'].forEach(t => {
-    $(`htab-${t}`).classList.toggle('active', t === tab);
-    $(`hview-${t}`).style.display = t === tab ? '' : 'none';
-  });
-  if (tab === 'list') renderHistTable();
-}
+/* switchHistTab — 탭 제거 후 하위 호환 stub */
+function switchHistTab(tab) {}
 
 async function loadHistory() {
   const sb = getSB();
@@ -961,91 +898,38 @@ async function loadHistory() {
       if (data.length < PAGE) break;
     }
     _histData = all;
-    _histFiltered = all;
-    renderCal();
-    if (_histTab === 'list') renderHistTable();
+    populateDateSel();  // 날짜 드롭다운 채우기 + 최신 날짜 자동 선택
   } catch(e) {
     $('hist-list').innerHTML = `<div class="hist-empty">조회 실패: ${e.message}</div>`;
   }
 }
 
-/* ── 캘린더 렌더링 ── */
-function renderCal() {
-  const title  = $('cal-title');
-  const grid   = $('cal-grid');
-  const today  = new Date();
-  const todayStr = fmtDate(today);
+/* ── 날짜 드롭다운 채우기 ── */
+function populateDateSel() {
+  const dates = [...new Set(
+    _histData.map(r => (r.scanned_at||'').slice(0,10)).filter(Boolean)
+  )].sort().reverse(); // 최신 날짜 먼저
 
-  title.textContent = `${_calYear}년 ${String(_calMonth+1).padStart(2,'0')}월`;
+  const sel = $('hf-date-sel');
+  if (!sel) return;
 
-  // 날짜별 스캔 건수 맵
-  const cntMap = {};
-  _histData.forEach(r => {
-    const d = r.scanned_at ? r.scanned_at.slice(0,10) : '';
-    if (d) cntMap[d] = (cntMap[d] || 0) + 1;
-  });
-
-  const firstDay = new Date(_calYear, _calMonth, 1).getDay(); // 0=Sun
-  const lastDate = new Date(_calYear, _calMonth+1, 0).getDate();
-
-  let html = '';
-  // 앞 빈칸
-  for (let i = 0; i < firstDay; i++) {
-    html += `<div class="cal-cell"></div>`;
+  if (dates.length) {
+    sel.innerHTML = dates.map(d => `<option value="${d}">${d}</option>`).join('');
+    sel.value = dates[0]; // 가장 최근 날짜 기본 선택
+  } else {
+    sel.innerHTML = '<option value="">이력 없음</option>';
   }
-  for (let d = 1; d <= lastDate; d++) {
-    const ds    = `${_calYear}-${String(_calMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-    const cnt   = cntMap[ds] || 0;
-    const cls   = ['cal-cell','in-month',
-      cnt  ? 'has-scan' : '',
-      ds === todayStr ? 'today' : '',
-      ds === _calSelDate ? 'selected' : '',
-    ].filter(Boolean).join(' ');
-    const onclick = cnt ? `onclick="calSelectDay('${ds}')"` : '';
-    html += `<div class="${cls}" ${onclick}>${d}</div>`;
-  }
-  grid.innerHTML = html;
-  if (_calSelDate) renderCalDaySummary(_calSelDate);
+  applyHistFilter();
 }
 
-function calMove(dir) {
-  _calMonth += dir;
-  if (_calMonth < 0)  { _calMonth = 11; _calYear--; }
-  if (_calMonth > 11) { _calMonth = 0;  _calYear++; }
-  renderCal();
+/* ── 날짜 변경 시 호출 ── */
+function onDateSelChange() {
+  applyHistFilter();
 }
 
-function calSelectDay(ds) {
-  _calSelDate = ds;
-  renderCal();
-  renderCalDaySummary(ds);
-  // 목록 필터에도 날짜 연동
-  const hfDate = $('hf-date');
-  if (hfDate) hfDate.value = ds;
-  _histFiltered = _histData.filter(r => (r.scanned_at||'').slice(0,10) === ds);
-}
-
-function renderCalDaySummary(ds) {
-  const rows = _histData.filter(r => (r.scanned_at||'').slice(0,10) === ds);
-  const el = $('cal-day-summary');
-  if (!rows.length) {
-    el.innerHTML = `<div class="cds-title">${ds} — 스캔 이력 없음</div>`;
-    return;
-  }
-  el.innerHTML = `<div class="cds-title">${ds} · ${rows.length}건</div>` +
-    rows.map(r => {
-      const ts = r.scanned_at ? r.scanned_at.slice(11,16) : '';
-      return `<div class="cds-row">
-        <span class="cds-ts">${ts}</span>
-        <span class="cds-po">${r.po||'—'}</span>
-        <span class="cds-sn">${r.sn||'—'}</span>
-      </div>`;
-    }).join('');
-}
-
-/* ── 목록 필터 ── */
+/* ── 필터 적용 ── */
 function applyHistFilter() {
-  const date = ($('hf-date').value || '').trim();
+  const date = ($('hf-date-sel').value || '').trim();
   const srch = ($('hf-search').value || '').trim().toUpperCase();
   _histFiltered = _histData.filter(r => {
     if (date && (r.scanned_at||'').slice(0,10) !== date) return false;
@@ -1055,15 +939,18 @@ function applyHistFilter() {
     }
     return true;
   });
+  // 건수 표시
+  const cntEl = $('hdb-cnt');
+  if (cntEl) cntEl.textContent = _histFiltered.length ? `${_histFiltered.length}건` : '';
   renderHistTable();
 }
 
 function clearHistFilter() {
-  $('hf-date').value   = '';
   $('hf-search').value = '';
-  _histFiltered = _histData;
-  _calSelDate = null;
-  renderHistTable();
+  // 날짜 드롭다운: 첫 번째(최신) 날짜로 리셋
+  const sel = $('hf-date-sel');
+  if (sel && sel.options.length) sel.selectedIndex = 0;
+  applyHistFilter();
 }
 
 /* ── 목록 테이블 렌더링 ── */
