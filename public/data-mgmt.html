@@ -304,16 +304,36 @@
     <div class="sec-title">바코드 스캔 PASS 이력</div>
     <div id="h-err" class="err-box"></div>
 
-    <!-- 날짜 선택 + 검색 (단일 행 compact) -->
-    <div id="h-filter-wrap" style="background:var(--sur);border:1px solid var(--bdr);border-radius:10px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-      <span style="font-size:12px;font-weight:700;color:var(--mut);white-space:nowrap;letter-spacing:.04em">조회 날짜</span>
-      <select id="h-date-sel" onchange="loadScanLogs()"
-        style="padding:6px 10px;border:1.5px solid var(--bdr);border-radius:7px;font-size:13px;font-weight:700;color:var(--p);background:var(--bg);font-family:var(--fn);cursor:pointer;min-width:130px;outline:none">
-        <option value="">로딩 중…</option>
-      </select>
-      <input type="text" id="h-search" placeholder="PO / SN 검색" oninput="hFilter()"
-        style="flex:1;min-width:120px;padding:6px 10px;border:1.5px solid var(--bdr);border-radius:7px;font-size:12px;font-family:var(--fn);outline:none"
-        onfocus="this.style.borderColor='var(--p)'" onblur="this.style.borderColor='var(--bdr)'">
+    <!-- 조회 기간 필터 (기간 프리셋 + Range Date Picker) -->
+    <div id="h-filter-wrap" style="background:var(--sur);border:1px solid var(--bdr);border-radius:10px;padding:12px 16px;margin-bottom:14px;">
+      <!-- 1행: 기간 선택 + 검색 + 조회 버튼 -->
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <span style="font-size:12px;font-weight:700;color:var(--mut);white-space:nowrap;letter-spacing:.04em">조회 기간</span>
+        <select id="h-period-sel" onchange="hOnPeriodChange()"
+          style="padding:6px 10px;border:1.5px solid var(--bdr);border-radius:7px;font-size:13px;font-weight:700;color:var(--p);background:var(--bg);font-family:var(--fn);cursor:pointer;min-width:130px;outline:none">
+          <option value="today">오늘</option>
+          <option value="7d" selected>최근 7일</option>
+          <option value="30d">최근 30일</option>
+          <option value="3m">최근 3개월</option>
+          <option value="custom">날짜 선택</option>
+        </select>
+        <input type="text" id="h-search" placeholder="PO / SN 검색" oninput="hFilter()"
+          style="flex:1;min-width:120px;padding:6px 10px;border:1.5px solid var(--bdr);border-radius:7px;font-size:12px;font-family:var(--fn);outline:none"
+          onfocus="this.style.borderColor='var(--p)'" onblur="this.style.borderColor='var(--bdr)'">
+        <button onclick="loadScanLogs()"
+          style="padding:6px 16px;border-radius:7px;border:1.5px solid var(--p);color:var(--p);background:transparent;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;font-family:var(--fn);transition:.15s"
+          onmouseover="this.style.background='var(--p-bg)'" onmouseout="this.style.background='transparent'">조회</button>
+      </div>
+      <!-- 2행: 날짜 범위 직접 선택 (날짜 선택 모드일 때만 표시) -->
+      <div id="h-date-range" style="display:none;margin-top:10px;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span style="font-size:12px;color:var(--mut);white-space:nowrap">기간</span>
+        <input type="date" id="h-date-from" onchange="hOnDateChange()"
+          style="padding:6px 10px;border:1.5px solid var(--bdr);border-radius:7px;font-size:13px;font-family:var(--fn);color:var(--txt);background:var(--bg);outline:none;cursor:pointer">
+        <span style="color:var(--mut);font-size:13px">~</span>
+        <input type="date" id="h-date-to" onchange="hOnDateChange()"
+          style="padding:6px 10px;border:1.5px solid var(--bdr);border-radius:7px;font-size:13px;font-family:var(--fn);color:var(--txt);background:var(--bg);outline:none;cursor:pointer">
+        <span id="h-date-err" style="font-size:11px;color:var(--r)"></span>
+      </div>
     </div>
 
     <!-- 결과 테이블 -->
@@ -596,40 +616,62 @@ function switchTab(name) {
 ────────────────────────────────────────────── */
 let hBatchesLoaded = false;
 
+/* ── 날짜 포맷 헬퍼 ── */
+function hFmtDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+/* ── 기간 프리셋 → 시작/종료 날짜 계산 ── */
+function hCalcRange(preset) {
+  const today = new Date();
+  const todayStr = hFmtDate(today);
+  if (preset === 'today') return { start: todayStr, end: todayStr };
+  if (preset === '7d')  { const d = new Date(today); d.setDate(d.getDate() - 6);   return { start: hFmtDate(d), end: todayStr }; }
+  if (preset === '30d') { const d = new Date(today); d.setDate(d.getDate() - 29);  return { start: hFmtDate(d), end: todayStr }; }
+  if (preset === '3m')  { const d = new Date(today); d.setMonth(d.getMonth() - 3); return { start: hFmtDate(d), end: todayStr }; }
+  return null; // custom
+}
+
+/* ── 기간 프리셋 변경 ── */
+function hOnPeriodChange() {
+  const preset   = document.getElementById('h-period-sel')?.value;
+  const rangeRow = document.getElementById('h-date-range');
+  if (preset === 'custom') {
+    if (rangeRow) rangeRow.style.display = 'flex';
+  } else {
+    if (rangeRow) rangeRow.style.display = 'none';
+    loadScanLogs(); // 프리셋 변경 즉시 조회
+  }
+}
+
+/* ── 날짜 직접 입력 유효성 확인 ── */
+function hOnDateChange() {
+  const from  = document.getElementById('h-date-from')?.value;
+  const to    = document.getElementById('h-date-to')?.value;
+  const errEl = document.getElementById('h-date-err');
+  if (errEl) {
+    errEl.textContent = (from && to && from > to)
+      ? '시작일이 종료일보다 늦을 수 없습니다.' : '';
+  }
+}
+
 async function initScanHistoryTab() {
   if (hBatchesLoaded) return;
   hBatchesLoaded = true;
 
-  const sb  = getClient();
-  const sel = document.getElementById('h-date-sel');
-  if (!sb) {
-    if (sel) sel.innerHTML = '<option value="">Supabase 미연결</option>';
-    return;
-  }
+  // 기본값: 최근 7일
+  const sel = document.getElementById('h-period-sel');
+  if (sel) sel.value = '7d';
 
-  // scan_logs에서 사용된 batch_date 목록 조회
-  const { data, error } = await sb
-    .from('scan_logs')
-    .select('batch_date')
-    .not('batch_date', 'is', null)
-    .order('batch_date', { ascending: false });
+  const rangeRow = document.getElementById('h-date-range');
+  if (rangeRow) rangeRow.style.display = 'none';
 
-  if (error) {
-    if (sel) sel.innerHTML = `<option value="">${error.message}</option>`;
-    return;
-  }
+  const todayStr = hFmtDate(new Date());
+  const fromEl = document.getElementById('h-date-from');
+  const toEl   = document.getElementById('h-date-to');
+  if (fromEl) { fromEl.value = todayStr; fromEl.max = todayStr; }
+  if (toEl)   { toEl.value   = todayStr; toEl.max   = todayStr; }
 
-  const dates = [...new Set((data || []).map(r => r.batch_date))].sort((a,b) => b.localeCompare(a));
-
-  if (!dates.length) {
-    if (sel) sel.innerHTML = '<option value="">이력 없음</option>';
-    return;
-  }
-
-  if (sel) {
-    sel.innerHTML = dates.map(d => `<option value="${d}">${d}</option>`).join('');
-    sel.value = dates[0]; // 가장 최근 날짜 기본 선택
-  }
   loadScanLogs();
 }
 
@@ -641,17 +683,32 @@ async function loadScanLogs() {
   const tbody  = document.getElementById('h-tbody');
   const rcnt   = document.getElementById('h-rcnt');
   const rtitle = document.getElementById('h-rtitle');
+  const dateErrEl = document.getElementById('h-date-err');
 
   errBox.classList.remove('show');
   result.style.display = 'none';
   empty.style.display  = 'none';
+  if (dateErrEl) dateErrEl.textContent = '';
 
-  const sel  = document.getElementById('h-date-sel');
-  const date = sel ? sel.value : '';
-  if (!date) {
-    errBox.textContent = '날짜를 선택하세요.';
-    errBox.classList.add('show');
-    return;
+  // 날짜 범위 계산
+  const preset = document.getElementById('h-period-sel')?.value || '7d';
+  let startDate, endDate;
+
+  if (preset === 'custom') {
+    startDate = document.getElementById('h-date-from')?.value;
+    endDate   = document.getElementById('h-date-to')?.value;
+    if (!startDate || !endDate) {
+      if (dateErrEl) dateErrEl.textContent = '시작일과 종료일을 모두 선택해주세요.';
+      return;
+    }
+    if (startDate > endDate) {
+      if (dateErrEl) dateErrEl.textContent = '시작일이 종료일보다 늦을 수 없습니다.';
+      return;
+    }
+  } else {
+    const range = hCalcRange(preset);
+    startDate = range.start;
+    endDate   = range.end;
   }
 
   if (!sb) { errBox.textContent = 'Supabase 미연결'; errBox.classList.add('show'); return; }
@@ -660,17 +717,20 @@ async function loadScanLogs() {
   const searchEl = document.getElementById('h-search');
   if (searchEl) searchEl.value = '';
 
+  const periodLabel = startDate === endDate ? startDate : `${startDate} ~ ${endDate}`;
+  if (rtitle) rtitle.textContent = `${periodLabel} 스캔 이력`;
+
   rcnt.textContent = '조회 중…';
-  if (rtitle) rtitle.textContent = `${date} 스캔 이력`;
   result.style.display = 'block';
-  tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--mut);padding:20px">불러오는 중…</td></tr>';
+  tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--mut);padding:20px">불러오는 중… (${periodLabel})</td></tr>`;
 
   const { data, error } = await sb
     .from('scan_logs')
     .select('id,scanned_at,batch_date,order_no,po,pkg_id,sn')
-    .eq('batch_date', date)
+    .gte('scanned_at', startDate + 'T00:00:00')
+    .lte('scanned_at', endDate   + 'T23:59:59.999')
     .order('scanned_at', { ascending: false })
-    .limit(500);
+    .limit(1000);
 
   if (error) {
     result.style.display = 'none';
@@ -687,15 +747,14 @@ async function loadScanLogs() {
 
   window._hRows = data;
   rcnt.textContent = `총 ${data.length}건`;
-  // 전체 선택 체크박스 초기화
   const allChk = document.getElementById('h-chk-all-rows');
   if (allChk) allChk.checked = false;
   document.getElementById('h-del-btn').style.display = 'none';
 
   tbody.innerHTML = data.map(r => {
     const dt = new Date(r.scanned_at);
-    const ts = dt.toLocaleDateString('ko-KR',{month:'2-digit',day:'2-digit'})
-             + ' ' + dt.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    const ts = dt.toLocaleDateString('ko-KR',{year:'numeric',month:'2-digit',day:'2-digit'})
+             + ' ' + dt.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
     return `<tr id="h-row-${r.id}">
       <td style="text-align:center">
         <input type="checkbox" class="h-row-chk" data-id="${r.id}"

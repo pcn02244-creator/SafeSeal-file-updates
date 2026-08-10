@@ -510,15 +510,30 @@
       </div>
     </div>
 
-    <!-- 날짜 선택 바 -->
+    <!-- 조회 기간 바 (기간 프리셋) -->
     <div id="hist-date-bar">
-      <span class="hdb-label">조회 날짜</span>
-      <select id="hf-date-sel" class="hdb-select" onchange="onDateSelChange()">
-        <option value="">불러오는 중...</option>
+      <span class="hdb-label">조회 기간</span>
+      <select id="hf-period-sel" class="hdb-select" onchange="onPeriodSelChange()">
+        <option value="today" selected>오늘</option>
+        <option value="7d">최근 7일</option>
+        <option value="30d">최근 30일</option>
+        <option value="3m">최근 3개월</option>
+        <option value="custom">날짜 선택</option>
       </select>
       <span id="hdb-cnt" class="hdb-cnt"></span>
       <input class="hf-input hdb-search" id="hf-search" type="text" placeholder="PO / SN" autocomplete="off" oninput="applyHistFilter()">
       <button class="hf-btn hdb-reset" onclick="clearHistFilter()">초기화</button>
+    </div>
+    <!-- 날짜 범위 직접 선택 (날짜 선택 모드) -->
+    <div id="hdb-date-range" style="display:none;padding:8px 12px;border-bottom:1px solid rgba(255,255,255,.1);flex-shrink:0;flex-wrap:wrap;align-items:center;gap:8px;background:rgba(0,0,0,.2)">
+      <span class="hdb-label" style="font-size:11px">기간</span>
+      <input type="date" id="hf-date-from" class="hf-input"
+        style="color-scheme:dark;cursor:pointer;padding:5px 8px;font-size:12px;min-width:130px">
+      <span style="color:rgba(255,255,255,.4);font-size:13px;white-space:nowrap">~</span>
+      <input type="date" id="hf-date-to" class="hf-input"
+        style="color-scheme:dark;cursor:pointer;padding:5px 8px;font-size:12px;min-width:130px">
+      <span id="hdb-date-err" style="font-size:11px;color:#f87171;flex:1;min-width:60px"></span>
+      <button class="hf-btn" onclick="loadHistory()">조회</button>
     </div>
 
     <!-- 이력 목록 -->
@@ -876,70 +891,87 @@ function toggleHistory() {
 /* switchHistTab — 탭 제거 후 하위 호환 stub */
 function switchHistTab(tab) {}
 
+/* ── 기간 프리셋 → 시작/종료 날짜 계산 ── */
+function calcDateRange(preset) {
+  const today = new Date();
+  const todayStr = fmtDate(today);
+  if (preset === 'today') return { start: todayStr, end: todayStr };
+  if (preset === '7d')  { const d = new Date(today); d.setDate(d.getDate() - 6);   return { start: fmtDate(d), end: todayStr }; }
+  if (preset === '30d') { const d = new Date(today); d.setDate(d.getDate() - 29);  return { start: fmtDate(d), end: todayStr }; }
+  if (preset === '3m')  { const d = new Date(today); d.setMonth(d.getMonth() - 3); return { start: fmtDate(d), end: todayStr }; }
+  return null; // custom
+}
+
 async function loadHistory() {
   const sb = getSB();
   if (!sb) {
     $('hist-list').innerHTML = '<div class="hist-empty">Supabase 미연결</div>';
     return;
   }
+
+  // 날짜 범위 계산
+  const preset = ($('hf-period-sel')?.value) || 'today';
+  let startDate, endDate;
+
+  if (preset === 'custom') {
+    startDate = $('hf-date-from')?.value;
+    endDate   = $('hf-date-to')?.value;
+    const errEl = $('hdb-date-err');
+    if (errEl) errEl.textContent = '';
+    if (!startDate || !endDate) {
+      if (errEl) errEl.textContent = '시작일과 종료일을 모두 선택해주세요.';
+      $('hist-list').innerHTML = '<div class="hist-empty">날짜를 선택해주세요.</div>';
+      return;
+    }
+    if (startDate > endDate) {
+      if (errEl) errEl.textContent = '시작일이 종료일보다 늦을 수 없습니다.';
+      return;
+    }
+  } else {
+    const range = calcDateRange(preset);
+    startDate = range.start;
+    endDate   = range.end;
+  }
+
   $('hist-list').innerHTML = '<div class="hist-empty">불러오는 중...</div>';
   try {
-    const PAGE = 500;
-    let all = [];
-    for (let from = 0; ; from += PAGE) {
-      const { data, error } = await sb
-        .from('scan_logs')
-        .select('scanned_at,batch_date,po,pkg_id,sn,order_no')
-        .order('scanned_at', { ascending: false })
-        .range(from, from + PAGE - 1);
-      if (error) throw error;
-      if (!data || !data.length) break;
-      all.push(...data);
-      if (data.length < PAGE) break;
-    }
-    _histData = all;
-    populateDateSel();  // 날짜 드롭다운 채우기 + 최신 날짜 자동 선택
+    const { data, error } = await sb
+      .from('scan_logs')
+      .select('scanned_at,batch_date,po,pkg_id,sn,order_no')
+      .gte('scanned_at', startDate + 'T00:00:00')
+      .lte('scanned_at', endDate   + 'T23:59:59.999')
+      .order('scanned_at', { ascending: false })
+      .limit(500);
+    if (error) throw error;
+    _histData = data || [];
+    applyHistFilter();
   } catch(e) {
     $('hist-list').innerHTML = `<div class="hist-empty">조회 실패: ${e.message}</div>`;
   }
 }
 
-/* ── 날짜 드롭다운 채우기 ── */
-function populateDateSel() {
-  const dates = [...new Set(
-    _histData.map(r => (r.scanned_at||'').slice(0,10)).filter(Boolean)
-  )].sort().reverse(); // 최신 날짜 먼저
-
-  const sel = $('hf-date-sel');
-  if (!sel) return;
-
-  if (dates.length) {
-    sel.innerHTML = dates.map(d => `<option value="${d}">${d}</option>`).join('');
-    sel.value = dates[0]; // 가장 최근 날짜 기본 선택
+/* ── 기간 프리셋 변경 ── */
+function onPeriodSelChange() {
+  const preset   = $('hf-period-sel')?.value;
+  const rangeRow = $('hdb-date-range');
+  if (preset === 'custom') {
+    if (rangeRow) rangeRow.style.display = 'flex';
   } else {
-    sel.innerHTML = '<option value="">이력 없음</option>';
+    if (rangeRow) rangeRow.style.display = 'none';
+    loadHistory();
   }
-  applyHistFilter();
 }
 
-/* ── 날짜 변경 시 호출 ── */
-function onDateSelChange() {
-  applyHistFilter();
-}
-
-/* ── 필터 적용 ── */
+/* ── 필터 적용 (텍스트 검색 — 날짜는 서버에서 처리됨) ── */
 function applyHistFilter() {
-  const date = ($('hf-date-sel').value || '').trim();
   const srch = ($('hf-search').value || '').trim().toUpperCase();
   _histFiltered = _histData.filter(r => {
-    if (date && (r.scanned_at||'').slice(0,10) !== date) return false;
     if (srch) {
       const haystack = [r.po,r.sn,r.pkg_id,r.order_no].map(v=>String(v||'').toUpperCase()).join('|');
       if (!haystack.includes(srch)) return false;
     }
     return true;
   });
-  // 건수 표시
   const cntEl = $('hdb-cnt');
   if (cntEl) cntEl.textContent = _histFiltered.length ? `${_histFiltered.length}건` : '';
   renderHistTable();
@@ -947,10 +979,11 @@ function applyHistFilter() {
 
 function clearHistFilter() {
   $('hf-search').value = '';
-  // 날짜 드롭다운: 첫 번째(최신) 날짜로 리셋
-  const sel = $('hf-date-sel');
-  if (sel && sel.options.length) sel.selectedIndex = 0;
-  applyHistFilter();
+  const sel = $('hf-period-sel');
+  if (sel) sel.value = 'today';
+  const rangeRow = $('hdb-date-range');
+  if (rangeRow) rangeRow.style.display = 'none';
+  loadHistory();
 }
 
 /* ── 목록 테이블 렌더링 ── */
