@@ -997,14 +997,15 @@
           if (!seenKey.has(key)) { seenKey.add(key); merged.push(row); }
         };
 
-        // ① Supabase master_jobs + verification_sets
+        // ① Supabase master_jobs (active batch 기준 전체) + verification_sets
+        // ※ 배치 필터 없으면 날짜별 중복 PO 표시됨 — fetchMasterJobsBatch() 필수
         const sb = getSB();
         if (sb) {
-          const [mjRes, vsRes] = await Promise.all([
-            sb.from('master_jobs').select('order_no,po,tkm_no,sn,pn'),
+          const [mjRows, vsRes] = await Promise.all([
+            fetchMasterJobsBatch('order_no, po, tkm_no, sn, pn'), // active batch 기준 전체
             sb.from('verification_sets').select('order_no,po,sn,ptn_no'),
           ]);
-          (mjRes.data || []).forEach(r => add({ order_no: r.order_no, po: r.po, tkm_no: r.tkm_no||'', sn: r.sn, pn: r.pn||'' }));
+          mjRows.forEach(r => add({ order_no: r.order_no, po: r.po, tkm_no: r.tkm_no||'', sn: r.sn, pn: r.pn||'' }));
           (vsRes.data || []).forEach(r => add({ order_no: r.order_no, po: r.po, tkm_no: r.ptn_no||'', sn: r.sn, pn: '' }));
         }
 

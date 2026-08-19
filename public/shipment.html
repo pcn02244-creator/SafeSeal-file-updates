@@ -763,6 +763,12 @@
       await loadData();
     });
 
+    // 브라우저 뒤로가기(BFCache) 복귀 시 데이터 재로드
+    // → quotation.html에서 견적 생성 후 back 버튼으로 돌아왔을 때 amtCache 반영
+    window.addEventListener('pageshow', function(e) {
+      if (e.persisted) { loadData(); }
+    });
+
     /* ════ 데이터 로드 ════ */
     async function loadData() {
       document.getElementById('loading').classList.remove('d-none');
@@ -772,24 +778,47 @@
       let jobs = [], ships = [], shtPoSet = new Set();
       try {
         if (sb) {
-          const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000));
-          const [j, s] = await Promise.race([
-            Promise.all([
-              sb.from('master_jobs').select('*'),
-              sb.from('shipments').select('*'),
-            ]),
-            timeout,
-          ]);
+          const activeBatch = getActiveBatch();
+          const PAGE = 1000;
+
+          // shipments는 건수가 작아 단순 조회 (병렬 시작)
+          const shipPromise = sb.from('shipments').select('*');
+
+          // master_jobs: active batch 기준으로 count → 병렬 페이지 fetch
+          // → 이전 방식(select('*') 전체 조회)의 PostgREST 1,000건 상한 문제 해결
+          let masterPromise;
+          if (activeBatch) {
+            const { count } = await sb.from('master_jobs')
+              .select('*', { count: 'exact', head: true })
+              .eq('batch_date', activeBatch);
+            if (count > 0) {
+              const pageCount = Math.ceil(count / PAGE);
+              masterPromise = Promise.all(
+                Array.from({ length: pageCount }, (_, i) =>
+                  sb.from('master_jobs')
+                    .select('order_no, pn, sn, po, tkm_no, cln_date, batch_date')
+                    .eq('batch_date', activeBatch)
+                    .range(i * PAGE, (i + 1) * PAGE - 1)
+                )
+              ).then(results => ({ data: results.flatMap(r => r.data || []) }));
+            } else {
+              console.warn(`[loadData] active batch ${activeBatch} 데이터 없음`);
+              masterPromise = Promise.resolve({ data: [] });
+            }
+          } else {
+            console.warn('[loadData] active batch 미설정 — master_jobs 로드 생략');
+            masterPromise = Promise.resolve({ data: [] });
+          }
+
+          const [j, s] = await Promise.all([masterPromise, shipPromise]);
           ships = s.data || [];
           const rawJobs = j.data || [];
           // shipments.notes = 'SHT' 로 SHT 견적 PO 구분 (ext_quote_lines 테이블 불필요)
           shtPoSet = new Set(ships.filter(s => s.notes === 'SHT').map(s => s.po));
-          // latestTs 필터 제거 — synced_at 기준 필터링 시 이전 broad sync 행(SHT PO 등)이
-          // 탈락하여 pn/sn/tkm_no 가 빈 행으로 대체되는 문제 발생
-          // master_jobs 전체를 사용하고 중복 PO는 그룹화로 처리
           if (rawJobs.length > 0) {
             jobs = rawJobs;
           }
+          console.log(`[loadData] master_jobs ${rawJobs.length}건 로드 (배치: ${activeBatch})`);
         }
       } catch (e) { console.warn('Supabase 로드 실패:', e.message); }
 
@@ -831,7 +860,9 @@
           pns:        [...g.pns],
           orders:     g.orders,
           shipment:   shipMap[g.po] || null,
-          quotSource: amtCache[g.po]?.source || (shtPoSet.has(g.po) ? 'sht' : ''),
+          quotSource: amtCache[g.po]?.source
+            || (shtPoSet.has(g.po) ? 'sht'
+            : (g.orders.some(o => o.sn && amtCache[o.sn]?.source === 'auto') ? 'auto' : '')),
         })).sort((a, b) => a.po.localeCompare(b.po));
       } catch (e) { poGroups = []; }
       finally {
@@ -1444,7 +1475,7 @@
           const krw = typeof krwRaw === 'number' ? krwRaw
             : parseFloat(String(krwRaw).replace(/[^0-9.]/g, '')) || 0;
           const usd = usdIdx >= 0 ? (r[usdIdx] || 0) : 0;
-          const entry = { usd, krw };
+          const entry = { usd, krw, source: 'sht' };  // source 필드 추가 → SHT 견적 표시 정상화
           if (sn) quotAmounts[sn] = entry;
           if (po) quotAmounts[po] = entry;
           matched++;
@@ -1452,6 +1483,13 @@
 
         // localStorage에도 저장 (페이지 이동 후에도 유지)
         try { localStorage.setItem('quotation_amounts_cache', JSON.stringify(quotAmounts)); } catch {}
+
+        // PO 목록 quotSource 즉시 갱신 (page reload 없이 SHT/국내 뱃지 즉시 반영)
+        poGroups = poGroups.map(g => ({
+          ...g,
+          quotSource: quotAmounts[g.po]?.source || g.quotSource,
+        }));
+        renderList();
 
         const pos = [...selectedPos];
         const hit = pos.filter(po => quotAmounts[po]).length;

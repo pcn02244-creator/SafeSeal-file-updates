@@ -32,6 +32,61 @@ function setActiveBatch(date) {
   localStorage.setItem('active_batch_date', date || new Date().toISOString().slice(0, 10));
 }
 
+// ── master_jobs 배치 전체 조회 (공통 헬퍼) ───────────
+// columns : 'col1, col2' 또는 ['col1','col2'] — 기본값: 'order_no, pn, sn, po, tkm_no'
+// batchDate: 조회 배치 날짜 (생략 시 getActiveBatch() 사용)
+// 반환     : row[] (오류 시 빈 배열)
+async function fetchMasterJobsBatch(columns, batchDate) {
+  const sb = getSB();
+  if (!sb) return [];
+  const targetBatch = batchDate || getActiveBatch();
+  if (!targetBatch) return [];
+  const PAGE      = 1000;
+  const selectStr = Array.isArray(columns) ? columns.join(', ')
+                  : (columns || 'order_no, pn, sn, po, tkm_no');
+  try {
+    const { count } = await sb.from('master_jobs')
+      .select('*', { count: 'exact', head: true })
+      .eq('batch_date', targetBatch);
+    if (!count || count === 0) return [];
+    const pageCount   = Math.ceil(count / PAGE);
+    const pageResults = await Promise.all(
+      Array.from({ length: pageCount }, (_, i) =>
+        sb.from('master_jobs')
+          .select(selectStr)
+          .eq('batch_date', targetBatch)
+          .range(i * PAGE, (i + 1) * PAGE - 1)
+      )
+    );
+    console.log(`[fetchMasterJobsBatch] 배치 ${targetBatch}: ${count}건 로드`);
+    return pageResults.flatMap(r => r.data || []);
+  } catch(e) {
+    console.warn('[fetchMasterJobsBatch] 오류:', e.message);
+    return [];
+  }
+}
+
+// master_jobs에 존재하는 모든 배치 날짜 목록 조회 (최신순)
+// ASC 1000행 + DESC 1000행 유니온 → 오래된 소량 배치와 최신 대량 배치를 동시에 커버
+async function fetchAllBatchDates() {
+  const sb = getSB();
+  if (!sb) return [];
+  try {
+    const [asc, desc] = await Promise.all([
+      sb.from('master_jobs').select('batch_date').order('batch_date', { ascending: true }),
+      sb.from('master_jobs').select('batch_date').order('batch_date', { ascending: false }),
+    ]);
+    const dates = new Set([
+      ...(asc.data  || []).map(r => r.batch_date),
+      ...(desc.data || []).map(r => r.batch_date),
+    ]);
+    return [...dates].filter(Boolean).sort().reverse(); // 최신순
+  } catch(e) {
+    console.warn('[fetchAllBatchDates] 오류:', e.message);
+    return [];
+  }
+}
+
 // ── localStorage 캐시 래퍼 ────────────────────────────
 const DB = {
   _g: k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
@@ -265,72 +320,70 @@ async function generateQuotation(mesFile, masterFile) {
         clnDate,
       });
     }
-    // Supabase 동기화 — strict 필터 통과 행만 (cln_date 포함)
+    // Supabase 동기화 — strict/broad 두 세트를 병렬 upsert (두 집합의 order_no가 겹치지 않음)
     const sb = getSB();
-    if (sb && masterTargets.length) {
-      try {
-        const batchDate = now.slice(0, 10);
+    if (sb && (masterTargets.length || msRows.length >= 3)) {
+      const batchDate = now.slice(0, 10);
+      const upsertPromises = [];
+
+      // [A] strict rows — cln_date 포함 행
+      if (masterTargets.length) {
         const rows = masterTargets.map(t => ({
           order_no: t.orderNo, pn: t.pn, sn: t.sn,
           po: t.po, tkm_no: t.tkmNo, cln_date: now, synced_at: now,
           batch_date: batchDate,
         }));
-        await sb.from('master_jobs').upsert(rows, { onConflict: 'order_no' });
-        setActiveBatch(batchDate);
-        console.log(`✅ master_jobs strict 동기화: ${rows.length}건 (배치: ${batchDate})`);
-      } catch(e) { console.warn('master_jobs 동기화 오류:', e.message); }
-    }
+        upsertPromises.push(
+          sb.from('master_jobs').upsert(rows, { onConflict: 'order_no,batch_date' })
+            .then(() => {
+              setActiveBatch(batchDate);
+              console.log(`✅ master_jobs strict 동기화: ${rows.length}건 (배치: ${batchDate})`);
+            })
+            .catch(e => console.warn('master_jobs 동기화 오류:', e.message))
+        );
+      }
 
-    // 검증 전용 전체 PO/SN 누적 — strict 필터 미통과 행도 포함 (파일 업로드 시에만 실행)
-    if (sb && msRows.length >= 3) {
-      const batchDate = now.slice(0, 10);
-      const strictKeys = new Set(masterTargets.map(t => t.orderNo));
-      const keyMap = {};
-      for (let i = 2; i < msRows.length; i++) {
-        const r   = msRows[i];
-        const po  = String(r[8]  || '').trim().toUpperCase();
-        const sn  = String(r[7]  || '').trim().replace(/\s/g, '').toUpperCase();
-        const ono = String(r[10] || '').trim();
-        const pn  = String(r[6]  || '').trim();
-        const tkm = String(r[9]  || '').trim();
-        if (!po && !ono) continue;
-        const key = ono || `po:${po}`;
-        if (strictKeys.has(key)) continue;
-        const prev = keyMap[key];
-        if (!prev || (!prev.sn && sn)) {
-          keyMap[key] = { order_no: key, pn: pn||null, sn: sn||null, po: po||null,
-                          tkm_no: tkm||null, batch_date: batchDate, synced_at: now };
+      // [B] broad rows — strict 미통과 행 (검증 전용, 파일 업로드 시에만 실행)
+      if (msRows.length >= 3) {
+        const strictKeys = new Set(masterTargets.map(t => t.orderNo));
+        const keyMap = {};
+        for (let i = 2; i < msRows.length; i++) {
+          const r   = msRows[i];
+          const po  = String(r[8]  || '').trim().toUpperCase();
+          const sn  = String(r[7]  || '').trim().replace(/\s/g, '').toUpperCase();
+          const ono = String(r[10] || '').trim();
+          const pn  = String(r[6]  || '').trim();
+          const tkm = String(r[9]  || '').trim();
+          if (!po && !ono) continue;
+          const key = ono || `po:${po}`;
+          if (strictKeys.has(key)) continue;
+          const prev = keyMap[key];
+          if (!prev || (!prev.sn && sn)) {
+            keyMap[key] = { order_no: key, pn: pn||null, sn: sn||null, po: po||null,
+                            tkm_no: tkm||null, batch_date: batchDate, synced_at: now };
+          }
+        }
+        const verRows = Object.values(keyMap);
+        if (verRows.length) {
+          upsertPromises.push(
+            sb.from('master_jobs').upsert(verRows, { onConflict: 'order_no,batch_date' })
+              .then(() => console.log(`✅ 검증용 전체 PO 누적: ${verRows.length}건`))
+              .catch(e => console.warn('검증용 PO 누적 오류:', e.message))
+          );
         }
       }
-      const verRows = Object.values(keyMap);
-      if (verRows.length) {
-        try {
-          await sb.from('master_jobs').upsert(verRows, { onConflict: 'order_no' });
-          console.log(`✅ 검증용 전체 PO 누적: ${verRows.length}건`);
-        } catch(e) { console.warn('검증용 PO 누적 오류:', e.message); }
-      }
+
+      await Promise.all(upsertPromises);
     }
   } else {
-    // 마스터파일 없음 → Supabase master_jobs에서 직접 로드
-    const sb = getSB();
-    if (sb) {
-      const PAGE_MJ = 1000;
-      let allMj = [];
-      for (let from = 0; ; from += PAGE_MJ) {
-        const { data, error } = await sb
-          .from('master_jobs').select('*')
-          .range(from, from + PAGE_MJ - 1);
-        if (error) break;
-        if (!data || data.length === 0) break;
-        allMj.push(...data);
-        if (data.length < PAGE_MJ) break;
-      }
-      if (allMj.length > 0) {
-        masterTargets = allMj.map(r => ({
-          orderNo: r.order_no, pn: r.pn || '', sn: r.sn || '',
-          po: r.po || '', tkmNo: r.tkm_no || '',
-        }));
-      }
+    // 마스터파일 없음 → Supabase master_jobs에서 직접 로드 (active batch 기준)
+    // ※ 배치 필터 필수 — 전체 스캔 시 날짜별 중복 PO 발생
+    const allMj = await fetchMasterJobsBatch('order_no, pn, sn, po, tkm_no');
+    if (allMj.length > 0) {
+      masterTargets = allMj.map(r => ({
+        orderNo: r.order_no, pn: r.pn || '', sn: r.sn || '',
+        po: r.po || '', tkmNo: r.tkm_no || '',
+      }));
     }
     if (!masterTargets.length) throw new Error('마스터 데이터가 없습니다. 관리자가 마스터파일을 한 번 업로드해야 합니다.');
     // 파일 없이는 broad sync 불가 — msRows는 빈 배열 유지
@@ -500,7 +553,7 @@ async function generateQuotation(mesFile, masterFile) {
 //   master_jobs.cln_date    = 세정 완료/승인 날짜 (마스터 Excel 원본값)
 //   shipments.ship_date     = 출하(선적) 날짜 (출하 등록 시 입력)
 //   verification_sets.batch_date = 각 master_jobs row의 동기화 날짜 (batch_date 그대로)
-async function syncVerificationSets() {
+async function syncVerificationSets(targetBatchDate) {
   const sb = getSB();
   if (!sb) throw new Error('Supabase 미연결');
 
@@ -508,12 +561,16 @@ async function syncVerificationSets() {
   const PAGE     = 1000; // PostgREST 기본 상한
   const UPSERT_BATCH = 500;
 
-  // 1. master_jobs 전체 페이지네이션 조회 (기본 1000건 제한 우회)
+  // 동기화할 배치 날짜 결정 (파라미터 우선, 없으면 활성 배치)
+  const syncBatchDate = targetBatchDate || getActiveBatch() || today;
+
+  // 1. 지정 배치의 master_jobs만 조회 (배치 날짜 필터)
   let allJobs = [];
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await sb
       .from('master_jobs')
       .select('order_no, po, sn, batch_date')
+      .eq('batch_date', syncBatchDate)
       .range(from, from + PAGE - 1);
     if (error) throw new Error('master_jobs 조회 오류: ' + error.message);
     if (!data || data.length === 0) break;
@@ -525,9 +582,7 @@ async function syncVerificationSets() {
   const { data: shipData, error: shipErr } = await sb.from('shipments').select('po, ptn_no');
   if (shipErr) throw new Error('shipments 조회 오류: ' + shipErr.message);
 
-  const latestBatchDate = allJobs
-    .map(j => j.batch_date).filter(Boolean)
-    .sort().reverse()[0] || today;
+  const latestBatchDate = syncBatchDate;
 
   const filtered    = allJobs.filter(j => j.order_no && j.po);
   const masterPoSet = new Set(filtered.map(j => j.po.trim().toUpperCase()));
@@ -592,22 +647,14 @@ async function syncVerificationSets() {
 // ── 스캐너용 마스터 데이터 메모리 로드 ──────────────────────────────
 // master_jobs + shipments를 직접 읽어 Map<PO, {order_no,sn,ptn_no,batch_date}> 반환
 // verification_sets 테이블 불필요 — 스캐너는 이 Map으로 직접 조회
-async function loadMasterMap() {
+// batchDate를 지정하지 않으면 활성 배치(getActiveBatch())를 사용
+async function loadMasterMap(batchDate) {
   const sb = getSB();
   if (!sb) throw new Error('Supabase 미연결');
 
-  const PAGE = 1000;
-  let allJobs = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await sb
-      .from('master_jobs')
-      .select('order_no, po, sn, batch_date')
-      .range(from, from + PAGE - 1);
-    if (error) throw new Error('master_jobs 조회 오류: ' + error.message);
-    if (!data || data.length === 0) break;
-    allJobs.push(...data);
-    if (data.length < PAGE) break;
-  }
+  // fetchMasterJobsBatch: count + 병렬 페이지 fetch, 배치 필터 필수 (중복 PO 방지)
+  const allJobs = await fetchMasterJobsBatch('order_no, po, sn, batch_date', batchDate);
+  if (!allJobs.length) throw new Error('master_jobs에 데이터가 없습니다. 활성 배치를 확인하세요.');
 
   const { data: shipData, error: shipErr } = await sb.from('shipments').select('po, ptn_no');
   if (shipErr) throw new Error('shipments 조회 오류: ' + shipErr.message);
@@ -766,14 +813,40 @@ async function buildMasterFillResult(mesFile, masterFile) {
     masterRows = JSON.parse(cached);
   }
 
+  // ── MES 헤더 행 + 컬럼 동적 탐색 (generateQuotation과 동일 로직) ──
+  // 고정 인덱스(r[2], r[8], r[9])를 사용하면 MES 파일 포맷 변경 시
+  // 자재 PN 컬럼을 읽지 못해 typeQtys가 비어 AU가 전체 누락되는 문제를 방지
+  const ORDER_COL_NAMES_MF = ['반입번호', '반출번호', '수주번호'];
+  let mfHeaderRow = 0, mfOrderCol = 3;
+  outer_mf: for (let ri = 0; ri < Math.min(10, mesRows.length); ri++) {
+    const row = mesRows[ri];
+    for (let ci = 0; ci < row.length; ci++) {
+      if (ORDER_COL_NAMES_MF.includes(String(row[ci] || '').trim())) {
+        mfHeaderRow = ri; mfOrderCol = ci; break outer_mf;
+      }
+    }
+  }
+  const mfHdr = mesRows[mfHeaderRow];
+  function _findMesFillCol(name, def) {
+    for (let ci = 0; ci < mfHdr.length; ci++) {
+      if (String(mfHdr[ci] || '').trim() === name) return ci;
+    }
+    return def;
+  }
+  const MF_COL_ORDER   = mfOrderCol;
+  const MF_COL_PROCESS = _findMesFillCol('SafeSeal타입',  2);
+  const MF_COL_MATPN   = _findMesFillCol('사용자재목록', 8);
+  const MF_COL_MATQTY  = _findMesFillCol('사용수량목록', 9);
+  console.log(`[buildMasterFillResult] MES 컬럼 탐지 — 헤더행:${mfHeaderRow}, 주문:${MF_COL_ORDER}, 공정:${MF_COL_PROCESS}, 자재PN:${MF_COL_MATPN}, 자재QTY:${MF_COL_MATQTY}`);
+
   const mesByOrder = {};
-  for (let i = 1; i < mesRows.length; i++) {
+  for (let i = mfHeaderRow + 1; i < mesRows.length; i++) {
     const r       = mesRows[i];
-    const orderNo = String(r[3] || '').trim();
-    if (!orderNo || orderNo === '반입번호') continue;
-    const process = String(r[2] || '').trim();
-    const matPN   = String(r[8] || '').trim();
-    const matQty  = parseInt(String(r[9] || '').replace(/[^0-9]/g, '')) || 1;
+    const orderNo = String(r[MF_COL_ORDER] || '').trim();
+    if (!orderNo) continue;
+    const process = String(r[MF_COL_PROCESS] || '').trim();
+    const matPN   = String(r[MF_COL_MATPN]   || '').trim();
+    const matQty  = parseInt(String(r[MF_COL_MATQTY] || '').replace(/[^0-9]/g, '')) || 1;
     if (!mesByOrder[orderNo]) mesByOrder[orderNo] = { processType: normalizeProcessKey(process), materials: [] };
     if (matPN) mesByOrder[orderNo].materials.push({ pn: matPN, qty: matQty });
   }
@@ -781,9 +854,14 @@ async function buildMasterFillResult(mesFile, masterFile) {
 
   const parts = DB.parts.get();
   const partsMap = {};
+  // p.type: parts.json 기본 필드명. Supabase 스키마가 다를 경우(part_type 등)도 대비
   for (const p of parts) {
-    partsMap[p.part_number] = { partType: p.type };
-    if (p.alt_numbers) p.alt_numbers.forEach(a => { partsMap[a] = { partType: p.type }; });
+    const pt = p.type || p.part_type || p.partType || '';
+    if (p.part_number) partsMap[p.part_number] = { partType: pt };
+    if (p.alt_numbers) p.alt_numbers.forEach(a => { if (a) partsMap[a] = { partType: pt }; });
+  }
+  if (!Object.keys(partsMap).length) {
+    console.warn('[buildMasterFillResult] partsMap이 비어 있음 — DB.parts.get() 반환값:', parts.length, '건');
   }
 
   const COL = { AT:45,AU:46,AV:47,AW:48,AX:49,AY:50,AZ:51,BA:52,BB:53,BC:54,BD:55,BE:56,BF:57 };
@@ -827,15 +905,7 @@ async function buildMasterFillResult(mesFile, masterFile) {
         po: u.po, tkm_no: u.tkmNo, cln_date: u.clnDate, synced_at: now,
         batch_date: batchDate,
       }));
-    if (syncRows.length) {
-      try {
-        await sbFill.from('master_jobs').upsert(syncRows, { onConflict: 'order_no' });
-        setActiveBatch(batchDate);
-        console.log('master_jobs strict sync:', syncRows.length, '배치:', batchDate);
-      } catch(e) { console.warn('master_jobs sync error:', e.message); }
-    }
-
-    // broad sync — strict 미통과 행 (비즈니스 필터 없이 전체 PO/SN 누적)
+    // broad rows 먼저 구성 (sync 배열과 독립적으로 계산 가능)
     const strictKeys = new Set(
       [...updates, ...alreadyFilled, ...noMesMatch].map(u => u.orderNo).filter(Boolean)
     );
@@ -857,12 +927,27 @@ async function buildMasterFillResult(mesFile, masterFile) {
       }
     }
     const verRows = Object.values(keyMap);
-    if (verRows.length) {
-      try {
-        await sbFill.from('master_jobs').upsert(verRows, { onConflict: 'order_no' });
-        console.log(`✅ 검증용 전체 PO 누적(buildMaster): ${verRows.length}건`);
-      } catch(e) { console.warn('검증용 PO 누적 오류:', e.message); }
+
+    // strict/broad upsert 병렬 실행 (두 집합의 order_no가 겹치지 않음)
+    const fillUpsertPromises = [];
+    if (syncRows.length) {
+      fillUpsertPromises.push(
+        sbFill.from('master_jobs').upsert(syncRows, { onConflict: 'order_no,batch_date' })
+          .then(() => {
+            setActiveBatch(batchDate);
+            console.log('master_jobs strict sync:', syncRows.length, '배치:', batchDate);
+          })
+          .catch(e => console.warn('master_jobs sync error:', e.message))
+      );
     }
+    if (verRows.length) {
+      fillUpsertPromises.push(
+        sbFill.from('master_jobs').upsert(verRows, { onConflict: 'order_no,batch_date' })
+          .then(() => console.log(`✅ 검증용 전체 PO 누적(buildMaster): ${verRows.length}건`))
+          .catch(e => console.warn('검증용 PO 누적 오류:', e.message))
+      );
+    }
+    if (fillUpsertPromises.length) await Promise.all(fillUpsertPromises);
   }
 
   return {
