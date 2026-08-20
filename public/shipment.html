@@ -776,82 +776,92 @@
 
       const sb = getSB();
       let jobs = [], ships = [], shtPoSet = new Set();
+
+      // ── 1단계: 실제 사용할 배치 결정 (함수 스코프) ──────────────────────
+      // batchToUse 는 블록 스코프 없이 함수 전체에서 참조 가능
+      let batchToUse = '';   // 최종 결정된 배치 (activeBatch 또는 fallback)
+      let batchCount = 0;
+
       try {
         if (sb) {
           const activeBatch = getActiveBatch();
           const PAGE = 1000;
 
-          // shipments는 건수가 작아 단순 조회 (병렬 시작)
-          const shipPromise = sb.from('shipments').select('*');
-
-          // master_jobs: active batch 기준 count → 데이터 없으면 최근 배치 자동 대체
-          // → active_batch_date 미설정 또는 오늘 배치 upsert 실패 시에도 데이터 유지
-          let masterPromise;
-          {
-            let batchToUse = activeBatch || '';
-            let batchCount = 0;
-
-            if (batchToUse) {
-              const { count: c1 } = await sb.from('master_jobs')
-                .select('*', { count: 'exact', head: true })
-                .eq('batch_date', batchToUse);
-              batchCount = c1 || 0;
-            }
-
-            // active batch에 데이터 없으면 가장 최근 배치로 자동 대체
-            if (batchCount === 0) {
-              const { data: latest } = await sb.from('master_jobs')
-                .select('batch_date')
-                .order('batch_date', { ascending: false })
-                .limit(1);
-              const fallback = latest?.[0]?.batch_date;
-              if (fallback) {
-                const { count: c2 } = await sb.from('master_jobs')
-                  .select('*', { count: 'exact', head: true })
-                  .eq('batch_date', fallback);
-                batchCount  = c2 || 0;
-                batchToUse  = fallback;
-                console.warn(`[loadData] active batch '${activeBatch}' 없음 → 최근 배치 '${fallback}' 자동 사용 (${batchCount}건)`);
-              }
-            }
-
-            if (batchCount > 0) {
-              const pageCount = Math.ceil(batchCount / PAGE);
-              masterPromise = Promise.all(
-                Array.from({ length: pageCount }, (_, i) =>
-                  sb.from('master_jobs')
-                    .select('order_no, pn, sn, po, tkm_no, cln_date, batch_date')
-                    .eq('batch_date', batchToUse)
-                    .range(i * PAGE, (i + 1) * PAGE - 1)
-                )
-              ).then(results => ({ data: results.flatMap(r => r.data || []) }));
-            } else {
-              console.warn('[loadData] 사용 가능한 master_jobs 배치 없음');
-              masterPromise = Promise.resolve({ data: [] });
+          // activeBatch에 데이터가 있는지 먼저 확인
+          if (activeBatch) {
+            const { count: c1 } = await sb.from('master_jobs')
+              .select('*', { count: 'exact', head: true })
+              .eq('batch_date', activeBatch);
+            if ((c1 || 0) > 0) {
+              batchToUse = activeBatch;
+              batchCount = c1;
             }
           }
+
+          // activeBatch 데이터 없으면 가장 최근 배치로 대체
+          if (!batchToUse) {
+            const { data: latest } = await sb.from('master_jobs')
+              .select('batch_date')
+              .order('batch_date', { ascending: false })
+              .limit(1);
+            const fallback = latest?.[0]?.batch_date;
+            if (fallback) {
+              const { count: c2 } = await sb.from('master_jobs')
+                .select('*', { count: 'exact', head: true })
+                .eq('batch_date', fallback);
+              batchCount = c2 || 0;
+              batchToUse = fallback;   // ← 이 시점부터 batchToUse = fallback
+              console.warn(`[loadData] active batch '${activeBatch}' 없음 → 최근 배치 '${fallback}' 자동 사용 (${batchCount}건)`);
+            }
+          }
+
+          // ── 2단계: master_jobs 페이지네이션 조회 (batchToUse 하나만 사용) ──
+          let masterPromise;
+          if (batchCount > 0 && batchToUse) {
+            const pageCount = Math.ceil(batchCount / PAGE);
+            masterPromise = Promise.all(
+              Array.from({ length: pageCount }, (_, i) =>
+                sb.from('master_jobs')
+                  .select('order_no, pn, sn, po, tkm_no, cln_date, batch_date')
+                  .eq('batch_date', batchToUse)   // ← batchToUse 하나만 사용 (activeBatch 아님)
+                  .range(i * PAGE, (i + 1) * PAGE - 1)
+              )
+            ).then(results => ({ data: results.flatMap(r => r.data || []) }));
+          } else {
+            console.warn('[loadData] 사용 가능한 master_jobs 배치 없음');
+            masterPromise = Promise.resolve({ data: [] });
+          }
+
+          // ── 3단계: shipments 페이지네이션 조회 ──────────────────────────
+          // 누적 건수 많아질 수 있으므로 count 후 전체 조회
+          const { count: shipCount } = await sb.from('shipments')
+            .select('*', { count: 'exact', head: true });
+          const shipPageCount = Math.ceil((shipCount || 0) / PAGE) || 1;
+          const shipPromise = shipCount > 0
+            ? Promise.all(
+                Array.from({ length: shipPageCount }, (_, i) =>
+                  sb.from('shipments').select('*')
+                    .order('id', { ascending: true })
+                    .range(i * PAGE, (i + 1) * PAGE - 1)
+                )
+              ).then(results => ({ data: results.flatMap(r => r.data || []) }))
+            : Promise.resolve({ data: [] });
 
           const [j, s] = await Promise.all([masterPromise, shipPromise]);
           ships = s.data || [];
           const rawJobs = j.data || [];
-          // shipments.notes = 'SHT' 로 SHT 견적 PO 구분 (ext_quote_lines 테이블 불필요)
           shtPoSet = new Set(ships.filter(s => s.notes === 'SHT').map(s => s.po));
-          if (rawJobs.length > 0) {
-            jobs = rawJobs;
-          }
-          console.log(`[loadData] master_jobs ${rawJobs.length}건 로드 (배치: ${activeBatch})`);
+          jobs = rawJobs;
+          console.log(`[loadData] master_jobs ${rawJobs.length}건, shipments ${ships.length}건 (배치: ${batchToUse})`);
         }
       } catch (e) { console.warn('Supabase 로드 실패:', e.message); }
 
-      // Supabase에 데이터 없으면 master-fill.html 또는 quotation.html에서 마스터파일 업로드 필요
-      // (localStorage 폴백 제거 — 다른 기기에서 접근 시 캐시 없음)
-
       try {
-        // shipments → po 기준 Map
+        // ── 4단계: poGroups 구성 ─────────────────────────────────────────
         const shipMap = {};
         ships.forEach(s => { shipMap[s.po] = s; });
 
-        // shipments에만 있는 PO(PTN 업로드된 것)도 jobs에 추가
+        // shipments에만 있는 PO(PTN 업로드된 것)도 목록에 포함
         const masterPoSet = new Set(jobs.map(j => j.po).filter(Boolean));
         ships.forEach(s => {
           if (s.po && !masterPoSet.has(s.po)) {
@@ -859,13 +869,11 @@
           }
         });
 
-        // master_jobs → po 기준 그룹
-        // 동일 PO 여러 행 시 pn/sn/tkm_no 있는 행 우선 (shipments-only 빈 행 덮어쓰기 방지)
+        // PO 기준 그룹핑 (데이터 있는 행 우선, 빈 행은 기존 데이터 행이 있으면 추가 안 함)
         const grpMap = {};
         jobs.forEach(j => {
           const po = j.po || '(PO없음)';
           if (!grpMap[po]) grpMap[po] = { po, tkmNos: new Set(), pns: new Set(), orders: [] };
-          // 이미 데이터 있는 행이 있으면 빈 행은 orders에 추가하지 않음
           const hasData = j.pn || j.sn || j.tkm_no || j.order_no;
           const alreadyHasData = grpMap[po].orders.some(o => o.pn || o.sn || o.tkm_no || o.order_no);
           if (hasData || !alreadyHasData) grpMap[po].orders.push(j);
@@ -884,11 +892,64 @@
           quotSource: amtCache[g.po]?.source
             || (shtPoSet.has(g.po) ? 'sht'
             : (g.orders.some(o => o.sn && amtCache[o.sn]?.source === 'auto') ? 'auto'
-            // PTN 업로드됐고 SHT가 아닌 PO = 국내 견적 대상
-            // (amtCache 미등록 상태에서 PTN 있으면 국내로 처리 — SHT는 notes='SHT'로 명시)
+            // PTN 업로드됐고 SHT가 아닌 PO → 국내 처리
             : (g.shipment?.ptn_uploaded_at && !shtPoSet.has(g.po) ? 'auto' : ''))),
         })).sort((a, b) => a.po.localeCompare(b.po));
-      } catch (e) { poGroups = []; }
+
+        // ── 5단계: PTN PO별 상세 진단 로그 ─────────────────────────────
+        // 콘솔에서 21개 각각의 데이터 상태를 테이블로 확인 가능
+        const ptnTkmMap = (() => { try { return JSON.parse(localStorage.getItem('ptn_tkm_map') || '{}'); } catch { return {}; } })();
+        let masterCacheRows = [];
+        try { masterCacheRows = JSON.parse(localStorage.getItem('master_rows_cache') || '[]'); } catch {}
+        const cacheByPO = {};
+        for (let i = 2; i < masterCacheRows.length; i++) {
+          const r = masterCacheRows[i];
+          const po = String(r[8] || '').trim().toUpperCase();
+          if (po) cacheByPO[po] = r;
+        }
+
+        const ptnGroups = poGroups.filter(g => g.shipment?.ptn_uploaded_at);
+        if (ptnGroups.length > 0) {
+          console.group(`[출하 진단] PTN 등록 PO ${ptnGroups.length}건 — 배치: ${batchToUse}`);
+          const diagRows = ptnGroups.map(g => {
+            const o    = g.orders[0] || {};
+            const cr   = cacheByPO[g.po] || [];
+            const amt  = amtCache[g.po] || (o.sn ? amtCache[o.sn] : null);
+            const snFinal = o.sn || String(cr[7] || '');
+            const pnFinal = o.pn || String(cr[6] || '');
+            const hasMasterDB    = !!(o.pn || o.sn || o.order_no || o.tkm_no);
+            const hasMasterCache = cr.length > 0;
+            const hasTkmPtn      = !!ptnTkmMap[g.po];
+            const canGenerate    = !!(snFinal && amt?.usd);
+            return {
+              'PO':            g.po,
+              'shipments':     g.shipment ? '✅' : '❌',
+              'master_jobs':   hasMasterDB    ? '✅' : '❌',
+              'master_cache':  hasMasterCache ? '✅' : '❌',
+              'quotSource':    g.quotSource   || '❌없음',
+              'SN':            snFinal || '❌없음',
+              'PN':            pnFinal || '❌없음',
+              '0247(PTN)':     hasTkmPtn ? ptnTkmMap[g.po] : '없음',
+              '0247(DB)':      o.tkm_no || '없음',
+              'USD금액':       amt?.usd != null ? String(amt.usd) : '없음',
+              '서류생성가능':  canGenerate ? '✅' : '⚠️부족',
+            };
+          });
+          console.table(diagRows);
+          const cannotGen = diagRows.filter(r => r['서류생성가능'] !== '✅');
+          if (cannotGen.length) {
+            console.warn(`⚠️ 서류 생성 데이터 부족 ${cannotGen.length}건:`, cannotGen.map(r => r['PO']).join(', '));
+            const noSN  = cannotGen.filter(r => r['SN']   === '❌없음').length;
+            const noAmt = cannotGen.filter(r => r['USD금액'] === '없음').length;
+            if (noSN)  console.warn(`  → SN/PN 없음 ${noSN}건: master_rows_cache 또는 master_jobs 필요`);
+            if (noAmt) console.warn(`  → USD 금액 없음 ${noAmt}건: quotation_amounts_cache[PO] 필요`);
+          } else {
+            console.log('✅ 모든 PTN PO 서류 생성 가능');
+          }
+          console.groupEnd();
+        }
+
+      } catch (e) { poGroups = []; console.error('[loadData] poGroups 빌드 오류:', e); }
       finally {
         document.getElementById('loading').classList.add('d-none');
         document.getElementById('po-container').classList.remove('d-none');
