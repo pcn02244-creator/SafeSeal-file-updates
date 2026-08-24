@@ -493,23 +493,18 @@ async function generateQuotation(mesFile, masterFile) {
 
     // ── TSV 라인 감지 → Resistivity Test 항목 추가 ──────────────────────
     // fab 컬럼(마스터 [4]) 에 'TSV' 포함 시 자동 추가
+    // 기본 단가: $60 / ₩90,700 (= round(1511.26 × 60, -2))
+    const RESIST_USD_DEFAULT = 60;
+    const RESIST_KRW_DEFAULT = 90700;
     const addonItems = [];
     const isTsvLine = target.fab && /tsv/i.test(target.fab);
     if (isTsvLine) {
       const resistCost = processCosts['RESISTIVITY_TEST'];
-      if (!resistCost) {
-        issues.push({
-          수주번호: orderNo, po, pn, sn,
-          issue: 'Resistivity Test 단가 미설정',
-          detail: `fab "${target.fab}" — TSV 라인 감지됨. RESISTIVITY_TEST 공정 단가 없음`,
-          action: '공정 단가 설정에서 RESISTIVITY_TEST 키로 단가 등록 후 재생성',
-        });
-      }
       addonItems.push({
-        type:  'RESISTIVITY_TEST',
-        name:  (resistCost && resistCost.name) || 'Resistivity Test',
-        usd:   (resistCost && resistCost.usd)  || 0,
-        krw:   (resistCost && resistCost.krw)  || 0,
+        type: 'RESISTIVITY_TEST',
+        name: (resistCost && resistCost.name) || 'Resistivity Test',
+        usd:  (resistCost && resistCost.usd  != null) ? resistCost.usd  : RESIST_USD_DEFAULT,
+        krw:  (resistCost && resistCost.krw  != null) ? resistCost.krw  : RESIST_KRW_DEFAULT,
       });
     }
     const addonTotalUSD = addonItems.reduce((s, a) => s + a.usd, 0);
