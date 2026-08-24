@@ -388,8 +388,30 @@
             <tbody id="detail-parts-body"></tbody>
           </table>
         </div>
+
+        <!-- Resistivity Test (TSV 라인) 추가 항목 -->
+        <div id="detail-addon-wrap" class="d-none px-4 pb-2">
+          <div class="small fw-bold mb-1" style="color:#7c4dff">
+            <span style="display:inline-block;width:10px;height:10px;background:#7c4dff;border-radius:2px;margin-right:4px"></span>
+            추가 서비스 (TSV 라인)
+          </div>
+          <div style="overflow-x:auto">
+            <table class="table table-sm mb-0" style="font-size:.8rem">
+              <thead style="background:#ede7f6">
+                <tr>
+                  <th style="width:40px">구분</th><th>항목</th>
+                  <th colspan="5"></th>
+                  <th class="text-end">USD</th>
+                  <th class="text-end">KRW</th>
+                </tr>
+              </thead>
+              <tbody id="detail-addon-body"></tbody>
+            </table>
+          </div>
+        </div>
+
         <div class="modal-footer px-4 py-3" style="background:#f8f9fa;border-radius:0 0 12px 12px">
-          <div class="d-flex gap-4 me-auto">
+          <div class="d-flex gap-4 me-auto flex-wrap">
             <div>
               <div class="small text-muted">공정 합계</div>
               <div class="fw-semibold" id="detail-proc-total"></div>
@@ -397,6 +419,10 @@
             <div>
               <div class="small text-muted">교체파트 합계</div>
               <div class="fw-semibold" id="detail-repl-total"></div>
+            </div>
+            <div id="detail-addon-total-wrap">
+              <div class="small text-muted" style="color:#7c4dff">Resistivity Test</div>
+              <div class="fw-semibold" id="detail-addon-total"></div>
             </div>
           </div>
           <div class="text-end">
@@ -672,8 +698,11 @@
             : '<span class="text-muted small">없음</span>';
           const manualBadge = q.manualChecked
             ? `<span class="badge bg-warning text-dark ms-1" title="수동 확인 후 포함">⚠️ 수동확인</span>` : '';
+          const hasTsv = (q.addonItems || []).some(a => a.type === 'RESISTIVITY_TEST');
+          const tsvBadge = hasTsv
+            ? `<span class="badge ms-1" style="background:#7c4dff;color:#fff;font-size:10px" title="TSV 라인 — Resistivity Test 포함">TSV</span>` : '';
           return `<tr class="q-row ${ROW_CLS[q.process]||''}" onclick="showDetail(${realIdx})">
-            <td class="ps-3">${procBadge(q.process)}${manualBadge}</td>
+            <td class="ps-3">${procBadge(q.process)}${manualBadge}${tsvBadge}</td>
             <td class="font-monospace small">${q.수주번호}</td>
             <td class="font-monospace small">${q.pn}</td>
             <td class="font-monospace small">${q.sn}</td>
@@ -759,8 +788,41 @@
         </tr>`).join('');
       }
 
+      // ── Resistivity Test (TSV 라인) 추가 항목 표시 ──────────────────
+      const addonWrap = document.getElementById('detail-addon-wrap');
+      const addonBody = document.getElementById('detail-addon-body');
+      const resistItems = (q.addonItems || []).filter(a => a.type === 'RESISTIVITY_TEST');
+      if (resistItems.length > 0 && addonWrap && addonBody) {
+        addonBody.innerHTML = resistItems.map(a => `<tr>
+          <td><span class="badge" style="background:#7c4dff;color:#fff">TSV</span></td>
+          <td class="small fw-semibold">${a.name}</td>
+          <td colspan="5" class="text-muted small">fab: ${q.fab || '-'}</td>
+          <td class="text-end fw-semibold ${a.usd ? '' : 'text-danger'}">
+            ${a.usd ? '$'+fmt(a.usd) : '<span class="small">단가 미설정</span>'}
+          </td>
+          <td class="text-end fw-semibold ${a.krw ? '' : 'text-danger'}">
+            ${a.krw ? '₩'+fmtKRW(a.krw) : ''}
+          </td>
+        </tr>`).join('');
+        addonWrap.classList.remove('d-none');
+      } else if (addonWrap) {
+        addonBody.innerHTML = '';
+        addonWrap.classList.add('d-none');
+      }
+
       document.getElementById('detail-proc-total').innerHTML  = `$${fmt(q.processUSD)} <span class="text-muted small">/ ₩${fmtKRW(q.processKRW)}</span>`;
       document.getElementById('detail-repl-total').innerHTML  = `$${fmt(q.replTotalUSD)} <span class="text-muted small">/ ₩${fmtKRW(q.replTotalKRW)}</span>`;
+      // addon 합계 표시
+      const addonTotalEl = document.getElementById('detail-addon-total');
+      const addonTotalWrap = document.getElementById('detail-addon-total-wrap');
+      if (addonTotalEl && addonTotalWrap) {
+        const at = q.addonTotalUSD || 0;
+        const ak = q.addonTotalKRW || 0;
+        addonTotalWrap.style.display = (at === 0 && ak === 0) ? 'none' : '';
+        addonTotalEl.innerHTML = at > 0
+          ? `$${fmt(at)} <span class="text-muted small">/ ₩${fmtKRW(ak)}</span>`
+          : '<span class="text-muted small">—</span>';
+      }
       document.getElementById('detail-grand-total').innerHTML = `$${fmt(q.totalUSD)}<br><span class="fs-6">₩${fmtKRW(q.totalKRW)}</span>`;
       detailModal.show();
     }

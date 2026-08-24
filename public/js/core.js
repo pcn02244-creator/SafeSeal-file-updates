@@ -317,6 +317,7 @@ async function generateQuotation(mesFile, masterFile) {
       masterTargets.push({
         orderNo, pn: String(r[6]||'').trim(), sn: String(r[7]||'').trim(),
         po: String(r[8]||'').trim(), tkmNo: String(r[9]||'').trim(),
+        fab: String(r[4]||'').trim(),   // TSV 라인 감지용
         clnDate,
       });
     }
@@ -379,10 +380,21 @@ async function generateQuotation(mesFile, masterFile) {
     // 마스터파일 없음 → Supabase master_jobs에서 직접 로드 (active batch 기준)
     // ※ 배치 필터 필수 — 전체 스캔 시 날짜별 중복 PO 발생
     const allMj = await fetchMasterJobsBatch('order_no, pn, sn, po, tkm_no');
+    // master_rows_cache에서 fab 정보 보충 (master_jobs에는 fab 컬럼 없음)
+    const _fabByOrder = {};
+    try {
+      const mc = JSON.parse(localStorage.getItem('master_rows_cache') || '[]');
+      for (let i = 2; i < mc.length; i++) {
+        const mr = mc[i];
+        const ono = String(mr[10] || '').trim();
+        if (ono) _fabByOrder[ono] = String(mr[4] || '').trim();
+      }
+    } catch {}
     if (allMj.length > 0) {
       masterTargets = allMj.map(r => ({
         orderNo: r.order_no, pn: r.pn || '', sn: r.sn || '',
         po: r.po || '', tkmNo: r.tkm_no || '',
+        fab: _fabByOrder[r.order_no] || '',
       }));
     }
     if (!masterTargets.length) throw new Error('마스터 데이터가 없습니다. 관리자가 마스터파일을 한 번 업로드해야 합니다.');
@@ -478,11 +490,39 @@ async function generateQuotation(mesFile, masterFile) {
     if (hasBlockingIssue) continue;
     const replTotalUSD = replParts.reduce((s, p) => s + p.totalUSD, 0);
     const replTotalKRW = replParts.reduce((s, p) => s + p.totalKRW, 0);
+
+    // ── TSV 라인 감지 → Resistivity Test 항목 추가 ──────────────────────
+    // fab 컬럼(마스터 [4]) 에 'TSV' 포함 시 자동 추가
+    const addonItems = [];
+    const isTsvLine = target.fab && /tsv/i.test(target.fab);
+    if (isTsvLine) {
+      const resistCost = processCosts['RESISTIVITY_TEST'];
+      if (!resistCost) {
+        issues.push({
+          수주번호: orderNo, po, pn, sn,
+          issue: 'Resistivity Test 단가 미설정',
+          detail: `fab "${target.fab}" — TSV 라인 감지됨. RESISTIVITY_TEST 공정 단가 없음`,
+          action: '공정 단가 설정에서 RESISTIVITY_TEST 키로 단가 등록 후 재생성',
+        });
+      }
+      addonItems.push({
+        type:  'RESISTIVITY_TEST',
+        name:  (resistCost && resistCost.name) || 'Resistivity Test',
+        usd:   (resistCost && resistCost.usd)  || 0,
+        krw:   (resistCost && resistCost.krw)  || 0,
+      });
+    }
+    const addonTotalUSD = addonItems.reduce((s, a) => s + a.usd, 0);
+    const addonTotalKRW = addonItems.reduce((s, a) => s + a.krw, 0);
+
     quotation.push({
-      수주번호: orderNo, po, pn, sn, tkmNo, process: mes.processType,
+      수주번호: orderNo, po, pn, sn, tkmNo, fab: target.fab || '',
+      process: mes.processType,
       processName: procCost.name, processUSD: procCost.usd, processKRW: procCost.krw,
       replParts, replTotalUSD, replTotalKRW,
-      totalUSD: procCost.usd + replTotalUSD, totalKRW: procCost.krw + replTotalKRW,
+      addonItems, addonTotalUSD, addonTotalKRW,
+      totalUSD: procCost.usd + replTotalUSD + addonTotalUSD,
+      totalKRW: procCost.krw + replTotalKRW + addonTotalKRW,
     });
   }
 
@@ -975,10 +1015,17 @@ async function downloadQuotationExcel(quotation) {
       .map(p => p.partType)
   );
   const activeParts = PART_ORDER.filter(p => usedTypes.has(p.type));
+
+  // TSV Resistivity Test 컬럼: 해당 항목이 하나라도 있을 때만 컬럼 추가
+  const hasResistivity = quotation.some(q =>
+    (q.addonItems || []).some(a => a.type === 'RESISTIVITY_TEST')
+  );
+
   const headers = [
     'SS P/N', 'SS S/N', 'PO', '0247#', 'Process',
     'Cleaning price\n(USD)', 'Cleaning price\n(KRW)',
     ...activeParts.flatMap(p => [`${p.label}\n(USD)`, `${p.label}\n(KRW)`]),
+    ...(hasResistivity ? ['Resistivity Test\n(USD)', 'Resistivity Test\n(KRW)'] : []),
     'Total\n(USD)', 'Total\n(KRW)', 'Remark',
   ];
 
@@ -991,6 +1038,7 @@ async function downloadQuotationExcel(quotation) {
     const SUM_BG   = 'FFFFF2CC'; // 합계 행 배경 (연노랑)
     const colWidths = [12, 14, 13, 12, 13, 13, 15,
       ...activeParts.flatMap(() => [12, 15]),
+      ...(hasResistivity ? [14, 17] : []),
       12, 15, 26];
 
     const wb = new ExcelJS.Workbook();
@@ -1023,7 +1071,7 @@ async function downloadQuotationExcel(quotation) {
     // Row 2: 헤더행
     const row2 = ws.addRow(headers);
     row2.height = 36;
-    row2.eachCell(cell => {
+    row2.eachCell((cell, c) => {
       cell.font      = { name: 'Calibri', size: 10, bold: true, color: { argb: HDR_FONT } };
       cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: HDR_BG } };
       cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
@@ -1034,6 +1082,15 @@ async function downloadQuotationExcel(quotation) {
         right:  { style: 'thin', color: { argb: BRD_BLUE } },
       };
     });
+    // Resistivity Test 헤더 강조 (TSV 컬럼 — 연보라 배경)
+    if (hasResistivity) {
+      const resistUsdCol = TOTAL_USD - 2;
+      const resistKrwCol = TOTAL_USD - 1;
+      for (const c of [resistUsdCol, resistKrwCol]) {
+        const cell = row2.getCell(c);
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEDE7F6' } };
+      }
+    }
 
     // 데이터 행 (3행부터 시작)
     const DATA_START_ROW = 3;
@@ -1064,7 +1121,16 @@ async function downloadQuotationExcel(quotation) {
         const p = q.replParts.find(r => r.partType === fp.type);
         return p ? [p.totalUSD, p.totalKRW] : [0, 0];
       });
-      const remark = q.replParts.map(p => `${p.pn} ×${p.qty}`).join('\n');
+      // Resistivity Test 컬럼 값
+      const resistItem = hasResistivity
+        ? ((q.addonItems || []).find(a => a.type === 'RESISTIVITY_TEST') || { usd: 0, krw: 0 })
+        : null;
+      const resistCols = hasResistivity ? [resistItem.usd || 0, resistItem.krw || 0] : [];
+
+      const remark = [
+        ...q.replParts.map(p => `${p.pn} ×${p.qty}`),
+        ...(resistItem && (resistItem.usd || resistItem.krw) ? ['Resistivity Test'] : []),
+      ].join('\n');
 
       // Total USD/KRW를 수식으로 — 단가·수량 셀을 직접 수정해도 자동 재계산
       const usdFormula = usdCols.map(c => `${col(c)}${currentRow}`).join('+');
@@ -1072,12 +1138,20 @@ async function downloadQuotationExcel(quotation) {
 
       const row = ws.addRow([
         q.pn, q.sn, q.po, q.tkmNo, q.processName || q.process,
-        q.processUSD, q.processKRW, ...partCols,
+        q.processUSD, q.processKRW, ...partCols, ...resistCols,
         { formula: usdFormula, result: q.totalUSD },
         { formula: krwFormula, result: q.totalKRW },
         remark,
       ]);
       applyDataStyle(row, currentRow);
+      // TSV 행 연한 배경 강조
+      if (hasResistivity && (q.addonItems || []).some(a => a.type === 'RESISTIVITY_TEST')) {
+        row.eachCell(cell => {
+          if (!cell.fill || cell.fill.fgColor?.argb === 'FFFFFFFF' || !cell.fill.fgColor) {
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF8E1' } };
+          }
+        });
+      }
       currentRow++;
     }
 
@@ -1124,8 +1198,15 @@ async function downloadQuotationExcel(quotation) {
   const rows = [new Array(headers.length).fill(''), headers];
   for (const q of quotation) {
     const pc = activeParts.flatMap(fp => { const p = q.replParts.find(r=>r.partType===fp.type); return p?[p.totalUSD,p.totalKRW]:[0,0]; });
-    const rm = q.replParts.map(p=>`${p.pn} ×${p.qty}`).join('\n');
-    rows.push([q.pn,q.sn,q.po,q.tkmNo,q.processName||q.process,q.processUSD,q.processKRW,...pc,q.totalUSD,q.totalKRW,rm]);
+    const resistItem = hasResistivity
+      ? ((q.addonItems || []).find(a => a.type === 'RESISTIVITY_TEST') || { usd: 0, krw: 0 })
+      : null;
+    const resistCols = hasResistivity ? [resistItem.usd || 0, resistItem.krw || 0] : [];
+    const rm = [
+      ...q.replParts.map(p=>`${p.pn} ×${p.qty}`),
+      ...(resistItem && (resistItem.usd || resistItem.krw) ? ['Resistivity Test'] : []),
+    ].join('\n');
+    rows.push([q.pn,q.sn,q.po,q.tkmNo,q.processName||q.process,q.processUSD,q.processKRW,...pc,...resistCols,q.totalUSD,q.totalKRW,rm]);
   }
   const ws = XLSX.utils.aoa_to_sheet(rows);
   ws['!rows'] = [{ hpt: 15 }, { hpt: 32 }];
