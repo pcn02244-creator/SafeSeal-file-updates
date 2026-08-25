@@ -455,8 +455,10 @@ function initDropZone() {
 }
 
 function addFiles(files) {
+  console.log('[RS-OCR] ① 파일 선택됨 — 총', files.length, '개:', [...files].map(f=>f.name).join(', '));
   const imgs = files.filter(f => f.type.startsWith('image/') || /\.(heic|heif)$/i.test(f.name));
   if (!imgs.length) { toast('이미지 파일만 업로드 가능합니다', 'warning'); return; }
+  console.log('[RS-OCR] ① 이미지 파일 필터 후:', imgs.length, '개');
 
   imgs.forEach(f => {
     if (pendingFiles.find(p => p.name === f.name && p.size === f.size)) return;
@@ -651,7 +653,9 @@ async function startUploadAndOCR() {
   hideProgress();
 
   // Step 4: OCR 순차 실행
+  console.log('[RS-OCR] ① 업로드 완료 — OCR 대상:', newRecords.length, '건');
   for (const rec of newRecords) {
+    console.log('[RS-OCR] ① OCR 시작:', rec.filename, '| DB id:', rec.id, '| preview_url:', rec.preview_url ? '있음' : '없음');
     await runOCR(rec);
   }
 
@@ -670,38 +674,56 @@ let _tWorkerInit  = null;   // Promise — 중복 초기화 방지
 
 async function getTesseractWorker() {
   if (_tWorker && _tWorkerReady) return _tWorker;
-  if (_tWorkerInit) { await _tWorkerInit; return _tWorker; }
+  // 이미 초기화 중이면 대기 — 실패했으면 재시도 허용
+  if (_tWorkerInit) {
+    try { await _tWorkerInit; } catch { _tWorkerInit = null; }
+    if (_tWorkerReady) return _tWorker;
+  }
 
   _tWorkerInit = (async () => {
-    toast('OCR 엔진 초기화 중… (첫 실행 시 5~10초 소요)', 'info', 8000);
+    console.log('[RS-OCR] tesseract loading — Tesseract 전역:', typeof Tesseract);
+    if (typeof Tesseract === 'undefined') {
+      throw new Error('Tesseract.js 로드 실패 — 네트워크 또는 CDN 문제');
+    }
+    toast('OCR 엔진 초기화 중… (첫 실행 시 10~30초 소요)', 'info', 20000);
+
     _tWorker = await Tesseract.createWorker('eng', 1, {
-      // workerPath / corePath 는 CDN 기본값 사용
+      logger: m => {
+        if (m.status) console.log('[Tesseract]', m.status, Math.round((m.progress||0)*100) + '%');
+      },
     });
-    await _tWorker.setParameters({
-      // 영숫자 + 구분자만 인식 (한글 등 제외)
-      tessedit_char_whitelist:
-        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_./(): ',
-      preserve_interword_spaces: '1',
-    });
+
+    // 주의: tessedit_char_whitelist 제거 — 너무 엄격하면 인식 차단됨
+    await _tWorker.setParameters({ preserve_interword_spaces: '1' });
+
+    console.log('[RS-OCR] worker ready');
     _tWorkerReady = true;
   })();
 
-  await _tWorkerInit;
+  try {
+    await _tWorkerInit;
+  } catch (e) {
+    _tWorkerInit = null; _tWorker = null; _tWorkerReady = false;
+    throw e;
+  }
   return _tWorker;
 }
 
 // ── 이미지 전처리 (Canvas) ───────────────────────────────
 // 그레이스케일 + 대비 강화 → Tesseract 인식률 향상
 async function preprocessForOCR(imgSrc) {
+  console.log('[RS-OCR] ③ preprocessForOCR 시작 — imgSrc 타입:', imgSrc ? imgSrc.slice(0, 40) : 'null');
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.crossOrigin = 'anonymous';
+    // blob: URL에는 crossOrigin 불필요 (오히려 CORS 오류 유발 가능)
+    if (!imgSrc.startsWith('blob:')) img.crossOrigin = 'anonymous';
     img.onload = () => {
-      // 너무 작으면 업스케일 (최대 2000px)
+      console.log('[RS-OCR] ③ 이미지 로드 성공 — 원본 크기:', img.width, 'x', img.height);
       const MAX   = 2000;
       const scale = Math.min(MAX / Math.max(img.width, img.height, 1), 3);
       const w     = Math.max(1, Math.round(img.width  * scale));
       const h     = Math.max(1, Math.round(img.height * scale));
+      console.log('[RS-OCR] ③ canvas 크기:', w, 'x', h, '(scale:', scale.toFixed(2) + ')');
 
       const canvas = document.createElement('canvas');
       canvas.width  = w;
@@ -714,17 +736,18 @@ async function preprocessForOCR(imgSrc) {
       const CONTRAST = 1.7;
 
       for (let i = 0; i < d.length; i += 4) {
-        // 그레이스케일
         const g = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
-        // 대비 강화
         const c = Math.max(0, Math.min(255, CONTRAST * (g - 128) + 128));
         d[i] = d[i + 1] = d[i + 2] = c;
-        // alpha 유지
       }
       ctx.putImageData(id, 0, 0);
+      console.log('[RS-OCR] ③ 전처리 완료 — canvas 준비됨');
       resolve(canvas);
     };
-    img.onerror = () => reject(new Error('이미지 로드 실패'));
+    img.onerror = (e) => {
+      console.error('[RS-OCR ERROR] ③ 이미지 로드 실패:', e);
+      reject(new Error('이미지 로드 실패'));
+    };
     img.src = imgSrc;
   });
 }
@@ -811,29 +834,51 @@ function extractOCRFields(rawText) {
 
 // ── OCR 실행 (Tesseract.js 브라우저 방식) ────────────────
 async function runOCR(rec) {
+  console.log('[RS-OCR] ① runOCR 시작 —', rec.filename, '| preview_url:', rec.preview_url ? rec.preview_url.slice(0,50) : '없음');
   rec.is_loading = true;
   renderRow(rec);
 
   try {
-    if (!rec.preview_url) throw new Error('이미지 미로드 — 재시도하세요');
+    // ── STEP 1: preview_url 확인
+    if (!rec.preview_url) {
+      console.error('[RS-OCR ERROR] ① preview_url 없음');
+      throw new Error('이미지 미로드 — 재시도하세요');
+    }
+    console.log('[RS-OCR] ② preview_url 확인 ✅');
 
-    // 1. 이미지 전처리
+    // ── STEP 2: Tesseract 로드 확인
+    console.log('[RS-OCR] ② Tesseract 전역 타입:', typeof Tesseract);
+    if (typeof Tesseract === 'undefined') {
+      console.error('[RS-OCR ERROR] ② Tesseract 미로드');
+      throw new Error('Tesseract.js CDN 로드 실패 — 네트워크 확인');
+    }
+    console.log('[RS-OCR] ② Tesseract 로드 ✅');
+
+    // ── STEP 3: 이미지 전처리
+    console.log('[RS-OCR] ③ 이미지 전처리 시작…');
     const canvas = await preprocessForOCR(rec.preview_url);
+    console.log('[RS-OCR] ③ 전처리 ✅ —', canvas.width, 'x', canvas.height);
 
-    // 2. Tesseract 워커 (첫 실행 시 초기화)
+    // ── STEP 4: Tesseract 워커 초기화
+    console.log('[RS-OCR] ④ getTesseractWorker() 호출…');
     const worker = await getTesseractWorker();
+    console.log('[RS-OCR] ④ worker 준비 ✅');
 
-    // 3. OCR 실행
+    // ── STEP 5: OCR 실행
+    console.log('[RS-OCR] ⑤ worker.recognize() 실행…');
     const { data } = await worker.recognize(canvas);
     const rawText  = data.text || '';
     const conf     = Math.round(data.confidence || 0);
+    console.log('[RS-OCR] ⑤ OCR 완료 ✅ — 신뢰도:', conf + '%');
+    console.log('[RS-OCR] ⑤ 원본 텍스트 (앞 500자):\n', rawText.slice(0, 500));
+    console.log('[RS-OCR] ⑤ 전체 텍스트 길이:', rawText.length, '자');
 
-    console.log(`[OCR] ${rec.filename} conf=${conf}%\n`, rawText.slice(0, 300));
-
-    // 4. 필드 추출
+    // ── STEP 6: 필드 추출
+    console.log('[RS-OCR] ⑥ extractOCRFields() 호출…');
     const { po, sn, tkm_no } = extractOCRFields(rawText);
+    console.log('[RS-OCR] ⑥ 추출 결과 — PO:', po, '| SN:', sn, '| 0247:', tkm_no);
 
-    // 5. 결과 저장
+    // ── STEP 7: rec 업데이트
     rec.ocr_po     = po;
     rec.ocr_sn     = sn;
     rec.ocr_tkm_no = tkm_no;
@@ -842,15 +887,17 @@ async function runOCR(rec) {
     rec.tkm_no     = tkm_no || '';
 
     const allNull = !po && !sn && !tkm_no;
+    console.log('[RS-OCR] ⑦ 필드 전부 미인식:', allNull);
 
     if (allNull) {
-      // 아무것도 못 읽었을 때
       rec.match_status = 'ocr_failed';
+      rec.notes = `OCR 미인식 (신뢰도 ${conf}%) — 직접 입력 필요`;
       await updateRS(rec.id, {
         match_status: 'ocr_failed',
         ocr_raw: { text: rawText.slice(0, 500), confidence: conf },
-        notes: `OCR 미인식 (신뢰도 ${conf}%) — 직접 입력 필요`,
+        notes: rec.notes,
       });
+      console.log('[RS-OCR] ⑦ ocr_failed 저장 완료');
     } else {
       rec.match_status = 'ocr_completed';
       await updateRS(rec.id, {
@@ -859,19 +906,23 @@ async function runOCR(rec) {
         po, sn, tkm_no,
         match_status: 'ocr_completed',
       });
-      // OCR 완료 후 자동 매칭
+      console.log('[RS-OCR] ⑦ ocr_completed 저장 완료 — 매칭 시작…');
       await matchMaster(rec);
     }
 
   } catch (e) {
-    console.error('[OCR Error]', rec.filename, e);
+    console.error('[RS-OCR ERROR]', rec.filename, e);
     rec.match_status = 'ocr_failed';
+    rec.notes = 'OCR 오류: ' + e.message;
+    toast('OCR 오류: ' + e.message, 'danger', 8000);
     await updateRS(rec.id, { match_status: 'ocr_failed', notes: e.message });
   }
 
+  console.log('[RS-OCR] ⑧ renderRow 호출 — match_status:', rec.match_status);
   rec.is_loading = false;
   renderRow(rec);
   updateStats();
+  console.log('[RS-OCR] ⑧ 완료 ✅');
 }
 
 // ── Master 매칭 ─────────────────────────────────────────
