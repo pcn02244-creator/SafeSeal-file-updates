@@ -1,0 +1,1497 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Return Sheet | 파트 단가 관리 시스템</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
+  <link href="style.css" rel="stylesheet">
+  <script src="js/supabase.umd.js?v=2385"></script>
+  <script src="js/core.js?v=20260709C"></script>
+  <style>
+    :root {
+      --p:   #004E89; --p-bg: #deeaf5;
+      --s:   #38AECC; --s-bg: #e0f2f7;
+      --g:   #51CB20; --g-bg: #edfbe3;
+      --sur: #ffffff; --bg:  #F8FAFC;
+      --bdr: #e2e8f0; --txt: #0f172a;
+      --mut: #475569; --amb: #b76e00; --amb-bg: #fff8e0;
+      --fn:  'Hanken Grotesk', -apple-system, sans-serif;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    body { font-family: var(--fn); background: var(--bg); color: var(--txt); margin: 0; }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+
+    /* ── TOP HEADER ── */
+    #top-header {
+      position: fixed; top: 0; left: 0; right: 0; height: 48px; z-index: 1050;
+      background: var(--sur); border-bottom: 1px solid var(--bdr);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 24px; box-shadow: 0 1px 4px rgba(0,0,0,.05);
+    }
+    .brand-mark { display: flex; align-items: center; gap: 9px; font-size: 16px; font-weight: 700; color: var(--p); letter-spacing: -.02em; }
+    .brand-box { width: 28px; height: 28px; background: var(--p); border-radius: 6px; display: flex; align-items: center; justify-content: center; }
+    .brand-box .mi { font-size: 17px; color: #fff; font-variation-settings: 'FILL' 1; }
+    .hdr-tag { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--mut); background: var(--bg); border: 1px solid var(--bdr); padding: 3px 10px; border-radius: 4px; }
+    .mi { font-family: 'Material Symbols Outlined'; font-size: 20px; line-height: 1; font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20; user-select: none; }
+
+    /* ── SIDEBAR ── */
+    #sidebar {
+      position: fixed; left: 0; top: 48px; bottom: 0; width: 210px; z-index: 900;
+      background: var(--sur); border-right: 1px solid var(--bdr);
+      display: flex; flex-direction: column; overflow-y: auto;
+    }
+    .sb-lbl { font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--mut); padding: 14px 16px 5px; }
+    .sb-link { display: flex; align-items: center; gap: 9px; padding: 9px 16px; font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--mut); text-decoration: none; border-right: 3px solid transparent; transition: all .15s; }
+    .sb-link:hover { background: #f0f4ff; color: var(--p); text-decoration: none; }
+    .sb-link.active { background: var(--p-bg); color: var(--p); border-right-color: var(--p); }
+    .sb-link .mi { font-size: 17px; }
+    .sb-sep { margin: 8px 14px; border: none; border-top: 1px solid var(--bdr); }
+
+    /* ── MAIN ── */
+    #main-content { margin-left: 210px; margin-top: 48px; min-height: calc(100vh - 48px); padding: 24px 28px; }
+    .pg-hdr { margin-bottom: 18px; display: flex; justify-content: space-between; align-items: flex-end; }
+    .pg-hdr h1 { font-size: 22px; font-weight: 700; color: var(--p); letter-spacing: -.015em; margin: 0 0 2px; }
+    .pg-hdr p  { font-size: 13px; color: var(--mut); margin: 0; }
+
+    /* ── TABS ── */
+    .rs-tabs { display: flex; gap: 4px; border-bottom: 2px solid var(--bdr); margin-bottom: 20px; }
+    .rs-tab  { padding: 8px 18px; font-size: 13px; font-weight: 600; color: var(--mut); cursor: pointer; border: none; background: none; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: color .15s; }
+    .rs-tab.active { color: var(--p); border-bottom-color: var(--p); }
+    .rs-tab:hover:not(.active) { color: var(--txt); }
+
+    /* ── UPLOAD ZONE ── */
+    .drop-zone {
+      border: 2px dashed var(--bdr); border-radius: 10px; padding: 32px 20px;
+      text-align: center; cursor: pointer; background: var(--sur);
+      transition: border-color .2s, background .2s;
+    }
+    .drop-zone:hover, .drop-zone.dragover { border-color: var(--p); background: var(--p-bg); }
+    .drop-zone.has-files { border-color: #198754; background: #f0fff4; }
+    .drop-zone input[type=file] { display: none; }
+
+    /* ── THUMBNAIL GRID ── */
+    .thumb-grid { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+    .thumb-item {
+      width: 90px; height: 90px; border-radius: 8px; overflow: hidden;
+      border: 2px solid var(--bdr); position: relative; cursor: pointer;
+      transition: border-color .15s;
+    }
+    .thumb-item:hover { border-color: var(--p); }
+    .thumb-item img { width: 100%; height: 100%; object-fit: cover; }
+    .thumb-item .thumb-status {
+      position: absolute; bottom: 0; left: 0; right: 0; padding: 3px 4px;
+      font-size: 9px; font-weight: 700; text-align: center; letter-spacing: .04em;
+    }
+    .thumb-item .thumb-rm {
+      position: absolute; top: 2px; right: 2px; width: 18px; height: 18px;
+      background: rgba(0,0,0,.55); border-radius: 50%; border: none;
+      color: #fff; font-size: 11px; cursor: pointer; display: none;
+      align-items: center; justify-content: center; line-height: 1; padding: 0;
+    }
+    .thumb-item:hover .thumb-rm { display: flex; }
+
+    /* ── REVIEW TABLE ── */
+    .review-wrap { background: var(--sur); border: 1px solid var(--bdr); border-radius: 10px; overflow: hidden; }
+    .review-wrap table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .review-wrap thead th { background: #1e2a3a; color: #fff; padding: 10px 12px; font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; }
+    .review-wrap tbody tr { border-bottom: 1px solid var(--bdr); transition: background .1s; }
+    .review-wrap tbody tr:hover { background: #fafbff; }
+    .review-wrap tbody td { padding: 8px 10px; vertical-align: middle; }
+
+    /* Editable cells */
+    .editable-cell {
+      border: 1.5px solid transparent; border-radius: 5px; padding: 4px 7px;
+      min-width: 110px; font-family: monospace; font-size: 11px; outline: none;
+      transition: border-color .15s, background .15s;
+    }
+    .editable-cell:focus { border-color: var(--p); background: #fff; box-shadow: 0 0 0 2px rgba(0,78,137,.15); }
+    .editable-cell.changed { border-color: #e67e22 !important; background: #fffbf5; }
+    .editable-cell:empty:before { content: attr(data-placeholder); color: #adb5bd; }
+
+    /* Status badges */
+    .st-badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 20px; font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
+    .st-badge .mi { font-size: 13px; }
+
+    /* Action buttons */
+    .btn-xs { padding: 3px 9px; font-size: 11px; font-weight: 600; border-radius: 5px; border: none; cursor: pointer; transition: opacity .15s; font-family: var(--fn); }
+    .btn-xs:hover { opacity: .82; }
+    .btn-verify { background: #e8eaf6; color: #1a237e; }
+    .btn-apply  { background: var(--p); color: #fff; }
+    .btn-force  { background: #dc3545; color: #fff; font-size: 10px; }
+    .btn-skip   { background: var(--bg); color: var(--mut); border: 1px solid var(--bdr) !important; }
+
+    /* Candidates dropdown */
+    .cand-select { font-size: 11px; padding: 3px 6px; border: 1px solid var(--bdr); border-radius: 5px; max-width: 200px; }
+
+    /* ── PROGRESS BAR ── */
+    .ocr-progress { background: var(--sur); border: 1px solid var(--bdr); border-radius: 8px; padding: 12px 16px; margin-bottom: 14px; }
+    .ocr-progress .prog-bar { height: 6px; background: var(--bdr); border-radius: 3px; overflow: hidden; margin-top: 6px; }
+    .ocr-progress .prog-fill { height: 100%; background: var(--p); border-radius: 3px; transition: width .3s; }
+
+    /* ── STAT CHIPS ── */
+    .stat-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+    .stat-chip { padding: 5px 12px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+
+    /* ── HISTORY TABLE ── */
+    .hist-img-thumb { width: 40px; height: 40px; object-fit: cover; border-radius: 5px; border: 1px solid var(--bdr); cursor: pointer; }
+
+    /* ── TOAST ── */
+    #toast-wrap { position: fixed; top: 58px; right: 16px; z-index: 9999; display: flex; flex-direction: column; gap: 6px; }
+    .toast-msg { padding: 10px 16px; border-radius: 8px; font-size: 12px; font-weight: 600; color: #fff; box-shadow: 0 4px 14px rgba(0,0,0,.18); animation: toast-in .2s ease; max-width: 320px; white-space: pre-line; }
+    @keyframes toast-in { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: none; } }
+
+    /* ── RESUME BANNER ── */
+    .resume-banner { background: var(--amb-bg); border: 1px solid #f5c842; border-radius: 8px; padding: 11px 16px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; }
+
+    /* ── IMAGE MODAL ── */
+    #img-modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 9998; display: none; align-items: center; justify-content: center; }
+    #img-modal-bg.open { display: flex; }
+    #img-modal-img { max-width: 90vw; max-height: 90vh; border-radius: 8px; box-shadow: 0 8px 32px rgba(0,0,0,.4); }
+  </style>
+</head>
+<body>
+
+<!-- ══ TOP HEADER ══ -->
+<header id="top-header">
+  <div class="brand-mark">
+    <div class="brand-box"><span class="mi">assignment_return</span></div>
+    Return Sheet
+  </div>
+  <span class="hdr-tag">Return Sheet</span>
+</header>
+
+<!-- ══ SIDEBAR ══ -->
+<nav id="sidebar">
+  <div class="sb-lbl">메뉴</div>
+  <a href="parts-mgmt.html"  class="sb-link"><span class="mi">sell</span>파트 단가 관리</a>
+  <a href="quotation.html"   class="sb-link"><span class="mi">request_quote</span>견적 생성</a>
+  <a href="master-fill.html" class="sb-link"><span class="mi">upload_file</span>마스터 업데이트</a>
+  <a href="shipment.html"    class="sb-link"><span class="mi">inventory</span>출하관리</a>
+  <a href="data-mgmt.html"   class="sb-link"><span class="mi">calendar_view_month</span>데이터 관리</a>
+  <hr class="sb-sep">
+  <a href="return-sheet.html" class="sb-link active">
+    <span class="mi" style="font-variation-settings:'FILL' 1">assignment_return</span>Return Sheet
+  </a>
+</nav>
+
+<!-- ══ MAIN ══ -->
+<main id="main-content">
+  <div class="pg-hdr">
+    <div>
+      <h1>Return Sheet 업로드</h1>
+      <p>이미지 업로드 → OCR → Master 매칭 → 검토 → Master 반영</p>
+    </div>
+  </div>
+
+  <!-- 탭 -->
+  <div class="rs-tabs">
+    <button class="rs-tab active" onclick="switchTab('upload')">
+      <span class="mi" style="font-size:15px;vertical-align:middle">upload</span> 업로드 &amp; 검증
+    </button>
+    <button class="rs-tab" onclick="switchTab('history')">
+      <span class="mi" style="font-size:15px;vertical-align:middle">history</span> 이력 조회
+    </button>
+  </div>
+
+  <!-- ══ 탭 1: 업로드 & 검증 ══ -->
+  <div id="tab-upload">
+
+    <!-- 미완료 작업 복원 배너 -->
+    <div class="resume-banner d-none" id="resume-banner">
+      <div>
+        <strong>⚠️ 미완료 작업이 있습니다.</strong>
+        <span id="resume-count" class="ms-2 text-muted small"></span>
+      </div>
+      <div class="d-flex gap-2">
+        <button class="btn-xs btn-apply" onclick="loadPendingRecords()">이어서 작업</button>
+        <button class="btn-xs btn-skip" onclick="document.getElementById('resume-banner').classList.add('d-none')">무시</button>
+      </div>
+    </div>
+
+    <!-- 업로드 영역 -->
+    <div class="card mb-3" style="border:none;border-radius:10px;box-shadow:0 1px 6px rgba(0,0,0,.07)">
+      <div class="card-body">
+        <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+          <input type="file" id="file-input" accept="image/*" multiple>
+          <span class="mi" style="font-size:36px;color:var(--mut)">cloud_upload</span>
+          <div class="mt-2 fw-semibold" style="color:var(--p)">Return Sheet 이미지 업로드</div>
+          <div class="small text-muted mt-1">클릭 또는 드래그 &amp; 드롭 (JPG, PNG, HEIC 등 다중 선택 가능)</div>
+        </div>
+        <div class="thumb-grid" id="thumb-grid"></div>
+        <div class="d-flex gap-2 mt-3 align-items-center" id="upload-actions" style="display:none!important">
+          <button class="btn btn-primary btn-sm fw-semibold" onclick="startUploadAndOCR()" id="btn-start">
+            <span class="mi" style="font-size:15px;vertical-align:middle">play_arrow</span> 업로드 &amp; OCR 분석 시작
+          </button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="clearFiles()">초기화</button>
+          <span class="small text-muted ms-2" id="file-count-label"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- OCR 진행 -->
+    <div class="ocr-progress d-none" id="ocr-progress">
+      <div class="d-flex justify-content-between align-items-center">
+        <span class="fw-semibold small" id="prog-label">OCR 분석 중...</span>
+        <span class="small text-muted" id="prog-count"></span>
+      </div>
+      <div class="prog-bar"><div class="prog-fill" id="prog-fill" style="width:0%"></div></div>
+    </div>
+
+    <!-- 통계 칩 -->
+    <div class="stat-chips d-none" id="stat-chips"></div>
+
+    <!-- 검토 테이블 -->
+    <div class="d-none" id="review-section">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <span class="fw-semibold" style="font-size:13px">검토 결과</span>
+        <div class="d-flex gap-2">
+          <button class="btn-xs btn-apply" onclick="applySelected()" id="btn-apply-sel">
+            <span class="mi" style="font-size:13px;vertical-align:middle">task_alt</span>
+            선택 항목 Master 반영
+          </button>
+          <button class="btn-xs" style="background:#f8f9fa;color:var(--mut);border:1px solid var(--bdr)" onclick="reVerifyAll()">
+            <span class="mi" style="font-size:13px;vertical-align:middle">refresh</span> 전체 재검증
+          </button>
+        </div>
+      </div>
+      <div class="review-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:34px"><input type="checkbox" id="chk-all" onchange="toggleAllCheck(this.checked)"></th>
+              <th style="width:48px">이미지</th>
+              <th>파일명</th>
+              <th>PO</th>
+              <th>SN</th>
+              <th>0247#</th>
+              <th>매칭 결과</th>
+              <th>상태</th>
+              <th style="width:120px">작업</th>
+            </tr>
+          </thead>
+          <tbody id="review-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div><!-- /tab-upload -->
+
+  <!-- ══ 탭 2: 이력 조회 ══ -->
+  <div id="tab-history" class="d-none">
+    <div class="card mb-3" style="border:none;border-radius:10px;box-shadow:0 1px 6px rgba(0,0,0,.07)">
+      <div class="card-body">
+        <div class="row g-2 align-items-end">
+          <div class="col-auto">
+            <label class="form-label small fw-semibold mb-1">PO</label>
+            <input class="form-control form-control-sm" id="hist-po" placeholder="PO 번호" style="width:160px" oninput="debounceHist()">
+          </div>
+          <div class="col-auto">
+            <label class="form-label small fw-semibold mb-1">SN</label>
+            <input class="form-control form-control-sm" id="hist-sn" placeholder="Serial Number" style="width:160px" oninput="debounceHist()">
+          </div>
+          <div class="col-auto">
+            <label class="form-label small fw-semibold mb-1">상태</label>
+            <select class="form-select form-select-sm" id="hist-status" onchange="loadHistory()" style="width:140px">
+              <option value="">전체</option>
+              <option value="applied">반영 완료</option>
+              <option value="matched">매칭됨</option>
+              <option value="review_required">검토 필요</option>
+              <option value="mismatch_sn">SN 불일치</option>
+              <option value="mismatch_tkm">0247 불일치</option>
+              <option value="not_found">PO 없음</option>
+            </select>
+          </div>
+          <div class="col-auto">
+            <button class="btn btn-sm btn-outline-primary" onclick="loadHistory()">🔍 조회</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="review-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:50px">이미지</th>
+            <th>파일명</th>
+            <th>PO</th>
+            <th>SN</th>
+            <th>0247#</th>
+            <th>Master 매칭</th>
+            <th>상태</th>
+            <th>Master 반영 변경 내역</th>
+            <th>등록일</th>
+          </tr>
+        </thead>
+        <tbody id="hist-tbody"><tr><td colspan="9" class="text-center text-muted py-4">검색 조건을 입력하고 조회하세요</td></tr></tbody>
+      </table>
+    </div>
+    <div class="d-flex justify-content-between align-items-center mt-2">
+      <span class="small text-muted" id="hist-count"></span>
+      <button class="btn btn-sm btn-outline-secondary d-none" id="hist-more" onclick="loadHistoryMore()">더 보기</button>
+    </div>
+  </div><!-- /tab-history -->
+</main>
+
+<!-- ══ TOAST ══ -->
+<div id="toast-wrap"></div>
+
+<!-- ══ 이미지 확대 모달 ══ -->
+<div id="img-modal-bg" onclick="closeImgModal()">
+  <img id="img-modal-img" src="" alt="" onclick="event.stopPropagation()">
+</div>
+
+<!-- ══ Master 반영 Preview 모달 ══ -->
+<div id="apply-modal-bg" onclick="if(event.target===this)closeApplyModal()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9990;align-items:center;justify-content:center">
+  <div style="background:var(--sur);border-radius:12px;border:1px solid var(--bdr);box-shadow:0 20px 60px rgba(0,0,0,.25);width:640px;max-width:95vw;max-height:90vh;display:flex;flex-direction:column">
+    <!-- 헤더 -->
+    <div style="background:#1e2a3a;color:#f1f5f9;padding:14px 20px;border-radius:12px 12px 0 0;display:flex;align-items:center;gap:8px;font-size:14px;font-weight:700">
+      <span class="mi" style="font-variation-settings:'FILL' 1;color:#51CB20">task_alt</span>
+      Master 반영 전 최종 확인
+    </div>
+    <!-- 본문 -->
+    <div style="padding:20px;overflow-y:auto;flex:1">
+      <!-- 요약 숫자 -->
+      <div style="display:flex;gap:14px;margin-bottom:16px" id="apply-modal-stats"></div>
+      <!-- Before/After 테이블 -->
+      <div style="border-radius:8px;overflow:hidden;border:1px solid var(--bdr)">
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead>
+            <tr style="background:#1e2a3a;color:#f1f5f9">
+              <th style="padding:9px 12px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;text-align:left">PO</th>
+              <th style="padding:9px 12px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;text-align:left">SN</th>
+              <th style="padding:9px 12px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;text-align:left">0247# 변경 내용</th>
+              <th style="padding:9px 12px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;text-align:left">비고</th>
+            </tr>
+          </thead>
+          <tbody id="apply-modal-tbody"></tbody>
+        </table>
+      </div>
+      <!-- 안내 -->
+      <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:8px 12px;font-size:11px;color:#92400e;margin-top:12px;display:flex;gap:6px;align-items:flex-start">
+        <span class="mi" style="font-size:14px;flex-shrink:0">shield</span>
+        기존 Master 값이 있는 경우 자동으로 덮어쓰지 않습니다. 충돌이 감지되면 해당 건만 제외하고 처리됩니다.
+      </div>
+    </div>
+    <!-- 푸터 -->
+    <div style="padding:14px 20px;border-top:1px solid var(--bdr);display:flex;justify-content:flex-end;gap:8px;background:var(--bg);border-radius:0 0 12px 12px">
+      <button class="btn-xs btn-skip" onclick="closeApplyModal()" style="padding:7px 16px;font-size:12px">취소</button>
+      <button class="btn-xs btn-apply" id="apply-modal-confirm-btn" onclick="confirmApplySelected()" style="padding:7px 18px;font-size:13px">
+        <span class="mi" style="font-size:14px;vertical-align:middle">task_alt</span>
+        <span id="apply-modal-confirm-label">최종 반영</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script>
+/* ══════════════════════════════════════════════════════
+   return-sheet.html — 메인 스크립트
+   core.js의 getSB(), SB_URL, SB_KEY 사용
+══════════════════════════════════════════════════════ */
+
+// ── 상수 ────────────────────────────────────────────────
+const BUCKET       = 'return-sheets';
+const PENDING_DAYS = 7;   // 미완료 작업 표시 기간
+
+// 상태별 표시 설정
+const ST = {
+  ocr_pending:     { label: 'OCR 대기',    color: '#6c757d', bg: '#f8f9fa', icon: 'hourglass_empty' },
+  ocr_failed:      { label: 'OCR 실패',    color: '#dc3545', bg: '#fff5f5', icon: 'error' },
+  ocr_completed:   { label: '검증 중',     color: '#0d6efd', bg: '#e7f0ff', icon: 'search' },
+  not_found:       { label: 'PO 없음',     color: '#dc3545', bg: '#fff5f5', icon: 'search_off' },
+  mismatch_sn:     { label: 'SN 불일치',   color: '#e67e22', bg: '#fff8f0', icon: 'warning' },
+  mismatch_tkm:    { label: '0247 불일치', color: '#e67e22', bg: '#fff8f0', icon: 'warning' },
+  ambiguous:       { label: '복수 후보',   color: '#e67e22', bg: '#fff8f0', icon: 'help' },
+  matched:         { label: '매칭됨',      color: '#198754', bg: '#f0fff4', icon: 'check_circle' },
+  duplicate:       { label: '중복 등록',   color: '#6c757d', bg: '#f8f9fa', icon: 'content_copy' },
+  review_required: { label: '검토 필요',   color: '#856404', bg: '#fff3cd', icon: 'edit_note' },
+  applied:         { label: '반영 완료',   color: '#004E89', bg: '#deeaf5', icon: 'task_alt' },
+};
+
+// ── 세션 상태 ────────────────────────────────────────────
+let reviewRecords = [];   // 현재 검토 중인 레코드 배열
+let pendingFiles  = [];   // 아직 업로드 안 된 파일 객체 배열
+let histOffset    = 0;
+let histDebounce  = null;
+
+// ── 초기화 ──────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', async () => {
+  await initData();
+  initDropZone();
+  await checkPendingRecords();
+});
+
+function switchTab(tab) {
+  document.querySelectorAll('.rs-tab').forEach((el, i) => {
+    const tabs = ['upload', 'history'];
+    el.classList.toggle('active', tabs[i] === tab);
+  });
+  document.getElementById('tab-upload').classList.toggle('d-none', tab !== 'upload');
+  document.getElementById('tab-history').classList.toggle('d-none', tab !== 'history');
+  if (tab === 'history') loadHistory();
+}
+
+// ── 드래그&드롭 초기화 ──────────────────────────────────
+function initDropZone() {
+  const dz  = document.getElementById('drop-zone');
+  const inp = document.getElementById('file-input');
+
+  inp.addEventListener('change', () => addFiles([...inp.files]));
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dragover'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
+  dz.addEventListener('drop', e => {
+    e.preventDefault(); dz.classList.remove('dragover');
+    addFiles([...e.dataTransfer.files]);
+  });
+}
+
+function addFiles(files) {
+  const imgs = files.filter(f => f.type.startsWith('image/') || /\.(heic|heif)$/i.test(f.name));
+  if (!imgs.length) { toast('이미지 파일만 업로드 가능합니다', 'warning'); return; }
+
+  imgs.forEach(f => {
+    if (pendingFiles.find(p => p.name === f.name && p.size === f.size)) return;
+    pendingFiles.push(f);
+    addThumb(f);
+  });
+
+  document.getElementById('upload-actions').style.removeProperty('display');
+  document.getElementById('file-count-label').textContent = `${pendingFiles.length}개 파일 선택됨`;
+  document.getElementById('drop-zone').classList.toggle('has-files', pendingFiles.length > 0);
+}
+
+function addThumb(file) {
+  const grid = document.getElementById('thumb-grid');
+  const item = document.createElement('div');
+  item.className = 'thumb-item';
+  item.dataset.name = file.name;
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    item.innerHTML = `
+      <img src="${e.target.result}" alt="${file.name}">
+      <button class="thumb-rm" onclick="removeFile('${CSS.escape(file.name)}',${file.size},event)" title="제거">×</button>
+      <div class="thumb-status" style="background:rgba(108,117,125,.8);color:#fff">대기</div>`;
+  };
+  reader.readAsDataURL(file);
+  grid.appendChild(item);
+}
+
+function removeFile(name, size, e) {
+  e.stopPropagation();
+  pendingFiles = pendingFiles.filter(f => !(f.name === name && f.size === size));
+  document.querySelector(`[data-name="${name}"]`)?.remove();
+  document.getElementById('file-count-label').textContent = `${pendingFiles.length}개 파일 선택됨`;
+  if (!pendingFiles.length) document.getElementById('upload-actions').style.display = 'none';
+}
+
+function clearFiles() {
+  pendingFiles = [];
+  document.getElementById('thumb-grid').innerHTML = '';
+  document.getElementById('upload-actions').style.display = 'none';
+  document.getElementById('file-input').value = '';
+  document.getElementById('drop-zone').classList.remove('has-files');
+}
+
+// ── 미완료 작업 확인 ─────────────────────────────────────
+async function checkPendingRecords() {
+  const sb = getSB(); if (!sb) return;
+  try {
+    const cutoff = new Date(Date.now() - PENDING_DAYS * 864e5).toISOString();
+    const { data } = await sb.from('return_sheets')
+      .select('id')
+      .eq('applied', false)
+      .neq('match_status', 'duplicate')
+      .gt('created_at', cutoff)
+      .limit(1);
+    if (data && data.length > 0) {
+      const { count } = await sb.from('return_sheets')
+        .select('*', { count: 'exact', head: true })
+        .eq('applied', false)
+        .neq('match_status', 'duplicate')
+        .gt('created_at', cutoff);
+      document.getElementById('resume-count').textContent = `미완료 ${count || '?'}건`;
+      document.getElementById('resume-banner').classList.remove('d-none');
+    }
+  } catch (e) { console.warn('미완료 확인 오류:', e.message); }
+}
+
+async function loadPendingRecords() {
+  const sb = getSB(); if (!sb) return;
+  document.getElementById('resume-banner').classList.add('d-none');
+  try {
+    const cutoff = new Date(Date.now() - PENDING_DAYS * 864e5).toISOString();
+    const { data, error } = await sb.from('return_sheets')
+      .select('*, return_sheet_images(storage_path, filename)')
+      .eq('applied', false)
+      .neq('match_status', 'duplicate')
+      .gt('created_at', cutoff)
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (error) throw error;
+    if (!data || !data.length) { toast('미완료 작업이 없습니다', 'info'); return; }
+
+    reviewRecords = data.map(r => ({
+      id:               r.id,
+      image_id:         r.image_id,
+      storage_path:     r.return_sheet_images?.storage_path || '',
+      filename:         r.return_sheet_images?.filename || '-',
+      preview_url:      null,  // DB 복원 시 Signed URL로 별도 로드
+      ocr_po:           r.ocr_po,   ocr_sn: r.ocr_sn,   ocr_tkm_no: r.ocr_tkm_no,
+      po:               r.po || '', sn: r.sn || '',      tkm_no:     r.tkm_no || '',
+      matched_order_no: r.matched_order_no,
+      matched_pn:       r.matched_pn,
+      matched_batch_date: r.matched_batch_date,
+      match_candidates: r.match_candidates,
+      master_tkm_was_empty: r.master_tkm_was_empty,
+      match_status:     r.match_status,
+      is_loading:       false,
+    }));
+
+    // Signed URL 비동기 로드
+    reviewRecords.forEach(rec => loadSignedUrl(rec));
+    showReviewSection();
+    renderTable();
+    toast(`${reviewRecords.length}건 복원됨`, 'success');
+  } catch (e) { toast('복원 오류: ' + e.message, 'danger'); }
+}
+
+async function loadSignedUrl(rec) {
+  const sb = getSB(); if (!sb || !rec.storage_path) return;
+  try {
+    const { data } = await sb.storage.from(BUCKET).createSignedUrl(rec.storage_path, 3600);
+    if (data?.signedUrl) {
+      rec.preview_url = data.signedUrl;
+      // 썸네일만 업데이트
+      const tr = document.querySelector(`tr[data-id="${rec.id}"]`);
+      if (tr) {
+        const img = tr.querySelector('.hist-img-thumb');
+        if (img) img.src = data.signedUrl;
+      }
+    }
+  } catch {}
+}
+
+// ── 업로드 & OCR 시작 ────────────────────────────────────
+async function startUploadAndOCR() {
+  if (!pendingFiles.length) { toast('파일을 먼저 선택하세요', 'warning'); return; }
+  const sb = getSB();
+  if (!sb) { toast('Supabase 연결 오류', 'danger'); return; }
+
+  document.getElementById('btn-start').disabled = true;
+  showProgress(0, pendingFiles.length);
+
+  let done = 0;
+  const newRecords = [];
+
+  for (const file of pendingFiles) {
+    updateThumbStatus(file.name, '업로드 중', '#0d6efd');
+    try {
+      // Step 1: Storage 업로드
+      const year   = new Date().getFullYear();
+      const month  = String(new Date().getMonth() + 1).padStart(2, '0');
+      const uid    = crypto.randomUUID().slice(0, 8);
+      const safe   = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const path   = `${year}/${month}/${uid}_${safe}`;
+
+      const { error: upErr } = await sb.storage.from(BUCKET).upload(path, file, { upsert: false });
+      if (upErr) throw new Error('Storage 업로드: ' + upErr.message);
+
+      // Step 2: return_sheet_images INSERT
+      const { data: imgRec, error: imgErr } = await sb.from('return_sheet_images')
+        .insert({ storage_path: path, filename: file.name, file_size: file.size })
+        .select().single();
+      if (imgErr) throw new Error('images 저장: ' + imgErr.message);
+
+      // Step 3: return_sheets INSERT (ocr_pending)
+      const { data: rsRec, error: rsErr } = await sb.from('return_sheets')
+        .insert({ image_id: imgRec.id, match_status: 'ocr_pending' })
+        .select().single();
+      if (rsErr) throw new Error('return_sheets 생성: ' + rsErr.message);
+
+      const rec = {
+        id:           rsRec.id,
+        image_id:     imgRec.id,
+        storage_path: path,
+        filename:     file.name,
+        preview_url:  URL.createObjectURL(file),
+        ocr_po: null, ocr_sn: null, ocr_tkm_no: null,
+        po: '', sn: '', tkm_no: '',
+        matched_order_no: null, matched_pn: null, matched_batch_date: null,
+        match_candidates: null, master_tkm_was_empty: false,
+        match_status: 'ocr_pending',
+        is_loading: false,
+      };
+      newRecords.push(rec);
+      reviewRecords.push(rec);
+      updateThumbStatus(file.name, 'OCR 대기', '#6c757d');
+
+    } catch (e) {
+      console.error(`[upload] ${file.name}:`, e.message);
+      toast(`❌ ${file.name} — ${e.message}`, 'danger');
+      updateThumbStatus(file.name, '실패', '#dc3545');
+    }
+
+    done++;
+    updateProgress(done, pendingFiles.length);
+  }
+
+  clearFiles();
+  showReviewSection();
+  renderTable();
+  hideProgress();
+
+  // Step 4: OCR 순차 실행
+  for (const rec of newRecords) {
+    await runOCR(rec);
+  }
+
+  document.getElementById('btn-start').disabled = false;
+  updateStats();
+}
+
+// ══════════════════════════════════════════════════════════
+// 브라우저 OCR (Tesseract.js) — API Key 불필요
+// ══════════════════════════════════════════════════════════
+
+// ── Tesseract 워커 싱글턴 ─────────────────────────────────
+let _tWorker      = null;
+let _tWorkerReady = false;
+let _tWorkerInit  = null;   // Promise — 중복 초기화 방지
+
+async function getTesseractWorker() {
+  if (_tWorker && _tWorkerReady) return _tWorker;
+  if (_tWorkerInit) { await _tWorkerInit; return _tWorker; }
+
+  _tWorkerInit = (async () => {
+    toast('OCR 엔진 초기화 중… (첫 실행 시 5~10초 소요)', 'info', 8000);
+    _tWorker = await Tesseract.createWorker('eng', 1, {
+      // workerPath / corePath 는 CDN 기본값 사용
+    });
+    await _tWorker.setParameters({
+      // 영숫자 + 구분자만 인식 (한글 등 제외)
+      tessedit_char_whitelist:
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_./(): ',
+      preserve_interword_spaces: '1',
+    });
+    _tWorkerReady = true;
+  })();
+
+  await _tWorkerInit;
+  return _tWorker;
+}
+
+// ── 이미지 전처리 (Canvas) ───────────────────────────────
+// 그레이스케일 + 대비 강화 → Tesseract 인식률 향상
+async function preprocessForOCR(imgSrc) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      // 너무 작으면 업스케일 (최대 2000px)
+      const MAX   = 2000;
+      const scale = Math.min(MAX / Math.max(img.width, img.height, 1), 3);
+      const w     = Math.max(1, Math.round(img.width  * scale));
+      const h     = Math.max(1, Math.round(img.height * scale));
+
+      const canvas = document.createElement('canvas');
+      canvas.width  = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+
+      const id = ctx.getImageData(0, 0, w, h);
+      const d  = id.data;
+      const CONTRAST = 1.7;
+
+      for (let i = 0; i < d.length; i += 4) {
+        // 그레이스케일
+        const g = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
+        // 대비 강화
+        const c = Math.max(0, Math.min(255, CONTRAST * (g - 128) + 128));
+        d[i] = d[i + 1] = d[i + 2] = c;
+        // alpha 유지
+      }
+      ctx.putImageData(id, 0, 0);
+      resolve(canvas);
+    };
+    img.onerror = () => reject(new Error('이미지 로드 실패'));
+    img.src = imgSrc;
+  });
+}
+
+// ── OCR 텍스트에서 PO / SN / 0247 추출 ──────────────────
+function extractOCRFields(rawText) {
+  // 줄바꿈 → 공백, 연속 공백 → 단일 공백
+  const t = rawText.replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim();
+
+  // PO: 9~11자리 숫자 (10자리가 표준)
+  const poAll = [...t.matchAll(/\b(\d{9,11})\b/g)].map(m => m[1]);
+  const po = poAll.length ? poAll[0] : null;
+
+  // 0247 번호: 0247로 시작하는 숫자열
+  const tkmAll = [...t.matchAll(/\b(0247[-\s]?\d{2,8})\b/gi)]
+    .map(m => m[1].replace(/\s/g, ''));
+  const tkm_no = tkmAll.length ? tkmAll[0] : null;
+
+  // SN: 영문+숫자 조합의 시리얼 넘버 (패턴 순서대로 시도)
+  const snPatterns = [
+    /\b([A-Z]{1,4}[-][A-Z0-9]{1,8}[-]\d{1,6})\b/gi,   // SS-A01-001
+    /\b([A-Z]{1,4}[_][A-Z0-9]{1,8}[_]\d{1,6})\b/gi,   // SS_A01_001
+    /\b([A-Z]{2,5}\d{3,8}[-]\d{2,6})\b/gi,             // AB12345-001
+  ];
+  let sn = null;
+  for (const pat of snPatterns) {
+    const m = [...t.matchAll(pat)];
+    if (m.length) { sn = m[0][1].toUpperCase(); break; }
+  }
+
+  return { po, sn, tkm_no };
+}
+
+// ── OCR 실행 (Tesseract.js 브라우저 방식) ────────────────
+async function runOCR(rec) {
+  rec.is_loading = true;
+  renderRow(rec);
+
+  try {
+    if (!rec.preview_url) throw new Error('이미지 미로드 — 재시도하세요');
+
+    // 1. 이미지 전처리
+    const canvas = await preprocessForOCR(rec.preview_url);
+
+    // 2. Tesseract 워커 (첫 실행 시 초기화)
+    const worker = await getTesseractWorker();
+
+    // 3. OCR 실행
+    const { data } = await worker.recognize(canvas);
+    const rawText  = data.text || '';
+    const conf     = Math.round(data.confidence || 0);
+
+    console.log(`[OCR] ${rec.filename} conf=${conf}%\n`, rawText.slice(0, 300));
+
+    // 4. 필드 추출
+    const { po, sn, tkm_no } = extractOCRFields(rawText);
+
+    // 5. 결과 저장
+    rec.ocr_po     = po;
+    rec.ocr_sn     = sn;
+    rec.ocr_tkm_no = tkm_no;
+    rec.po         = po     || '';
+    rec.sn         = sn     || '';
+    rec.tkm_no     = tkm_no || '';
+
+    const allNull = !po && !sn && !tkm_no;
+
+    if (allNull) {
+      // 아무것도 못 읽었을 때
+      rec.match_status = 'ocr_failed';
+      await updateRS(rec.id, {
+        match_status: 'ocr_failed',
+        ocr_raw: { text: rawText.slice(0, 500), confidence: conf },
+        notes: `OCR 미인식 (신뢰도 ${conf}%) — 직접 입력 필요`,
+      });
+    } else {
+      rec.match_status = 'ocr_completed';
+      await updateRS(rec.id, {
+        ocr_po: po, ocr_sn: sn, ocr_tkm_no: tkm_no,
+        ocr_raw: { text: rawText.slice(0, 500), confidence: conf },
+        po, sn, tkm_no,
+        match_status: 'ocr_completed',
+      });
+      // OCR 완료 후 자동 매칭
+      await matchMaster(rec);
+    }
+
+  } catch (e) {
+    console.error('[OCR Error]', rec.filename, e);
+    rec.match_status = 'ocr_failed';
+    await updateRS(rec.id, { match_status: 'ocr_failed', notes: e.message });
+  }
+
+  rec.is_loading = false;
+  renderRow(rec);
+  updateStats();
+}
+
+// ── Master 매칭 ─────────────────────────────────────────
+async function matchMaster(rec) {
+  const sb = getSB(); if (!sb) return;
+  const po = (rec.po || '').trim();
+
+  if (!po) {
+    rec.match_status = 'not_found';
+    await updateRS(rec.id, { match_status: 'not_found' });
+    return;
+  }
+
+  // 중복 체크
+  try {
+    const { data: dup } = await sb.from('return_sheets')
+      .select('id')
+      .eq('po', po)
+      .eq('sn', (rec.sn || '').trim())
+      .eq('applied', true)
+      .neq('id', rec.id)
+      .limit(1);
+    if (dup && dup.length > 0) {
+      rec.match_status = 'duplicate';
+      await updateRS(rec.id, { po, sn: rec.sn, tkm_no: rec.tkm_no, match_status: 'duplicate' });
+      return;
+    }
+  } catch {}
+
+  // master_jobs 전체 배치 조회 (배치 무관)
+  const { data: candidates } = await sb.from('master_jobs')
+    .select('order_no, pn, sn, tkm_no, batch_date')
+    .eq('po', po)
+    .order('batch_date', { ascending: false });
+
+  if (!candidates || candidates.length === 0) {
+    rec.match_status = 'not_found';
+    await updateRS(rec.id, { po, sn: rec.sn, tkm_no: rec.tkm_no, match_status: 'not_found' });
+    return;
+  }
+
+  // SN 후보 필터
+  const ocrSn = (rec.sn || '').trim().replace(/\s/g, '').toUpperCase();
+  const snMatches = ocrSn
+    ? candidates.filter(r => (r.sn || '').replace(/\s/g, '').toUpperCase() === ocrSn)
+    : candidates;
+
+  if (ocrSn && snMatches.length === 0) {
+    rec.match_status  = 'mismatch_sn';
+    rec.match_candidates = candidates;
+    await updateRS(rec.id, { po, sn: rec.sn, tkm_no: rec.tkm_no, match_status: 'mismatch_sn', match_candidates: candidates });
+    return;
+  }
+
+  // tkm_no 후보 필터
+  const ocrTkm     = (rec.tkm_no || '').trim();
+  const tkmMatches  = ocrTkm ? snMatches.filter(r => (r.tkm_no || '').trim() === ocrTkm) : [];
+  const emptyTkm    = snMatches.filter(r => !r.tkm_no);
+
+  let hit = null;
+  let masterTkmWasEmpty = false;
+
+  if (tkmMatches.length === 1) {
+    hit = tkmMatches[0];
+  } else if (tkmMatches.length > 1) {
+    rec.match_status = 'ambiguous';
+    rec.match_candidates = snMatches;
+    await updateRS(rec.id, { po, sn: rec.sn, tkm_no: rec.tkm_no, match_status: 'ambiguous', match_candidates: snMatches });
+    return;
+  } else if (emptyTkm.length >= 1) {
+    hit = emptyTkm[0];
+    masterTkmWasEmpty = true;
+  } else if (!ocrTkm && snMatches.length === 1) {
+    hit = snMatches[0];
+  } else if (!ocrTkm && snMatches.length > 1) {
+    rec.match_status = 'ambiguous';
+    rec.match_candidates = snMatches;
+    await updateRS(rec.id, { po, sn: rec.sn, tkm_no: rec.tkm_no, match_status: 'ambiguous', match_candidates: snMatches });
+    return;
+  } else {
+    rec.match_status = 'mismatch_tkm';
+    rec.match_candidates = snMatches;
+    await updateRS(rec.id, { po, sn: rec.sn, tkm_no: rec.tkm_no, match_status: 'mismatch_tkm', match_candidates: snMatches });
+    return;
+  }
+
+  rec.match_status       = 'matched';
+  rec.matched_order_no   = hit.order_no;
+  rec.matched_pn         = hit.pn;
+  rec.matched_batch_date = hit.batch_date;
+  rec.master_tkm_was_empty = masterTkmWasEmpty;
+  rec.match_candidates   = snMatches.length > 1 ? snMatches : null;
+
+  await updateRS(rec.id, {
+    po, sn: rec.sn, tkm_no: rec.tkm_no,
+    match_status: 'matched',
+    matched_order_no: hit.order_no, matched_pn: hit.pn, matched_batch_date: hit.batch_date,
+    match_candidates: snMatches.length > 1 ? snMatches : null,
+    master_tkm_was_empty: masterTkmWasEmpty,
+  });
+}
+
+// ── 단일 레코드 재검증 (사용자가 값 수정 후) ─────────────
+async function reVerify(id) {
+  const rec = reviewRecords.find(r => r.id === id);
+  if (!rec) return;
+
+  // 편집 중인 값 읽기
+  const tr = document.querySelector(`tr[data-id="${id}"]`);
+  if (tr) {
+    rec.po     = (tr.querySelector('[data-field="po"]')?.innerText     || '').trim();
+    rec.sn     = (tr.querySelector('[data-field="sn"]')?.innerText     || '').trim();
+    rec.tkm_no = (tr.querySelector('[data-field="tkm_no"]')?.innerText || '').trim();
+  }
+
+  rec.match_status       = 'ocr_completed';
+  rec.matched_order_no   = null;
+  rec.matched_pn         = null;
+  rec.matched_batch_date = null;
+  rec.match_candidates   = null;
+  rec.is_loading         = true;
+  renderRow(rec);
+
+  await matchMaster(rec);
+  rec.is_loading = false;
+  renderRow(rec);
+  updateStats();
+}
+
+async function reVerifyAll() {
+  for (const rec of reviewRecords.filter(r => r.match_status !== 'applied')) {
+    await reVerify(rec.id);
+  }
+}
+
+// ── Master 반영 (안전 조건 포함) ─────────────────────────
+async function applyRecord(id) {
+  const sb  = getSB(); if (!sb) return;
+  const rec = reviewRecords.find(r => r.id === id);
+  if (!rec || rec.match_status !== 'matched') { toast('matched 상태만 반영 가능합니다', 'warning'); return; }
+
+  rec.is_loading = true;
+  renderRow(rec);
+
+  try {
+    // ① 최종 검증: 현재 DB 값 재조회
+    const { data: cur, error: selErr } = await sb.from('master_jobs')
+      .select('order_no, po, sn, tkm_no, batch_date')
+      .eq('order_no', rec.matched_order_no)
+      .eq('batch_date', rec.matched_batch_date)
+      .single();
+
+    if (selErr || !cur) {
+      toast('❌ Master 데이터 재조회 실패 — 적용 취소', 'danger');
+      rec.is_loading = false; renderRow(rec); return;
+    }
+
+    const masterBefore = { po: cur.po, sn: cur.sn, tkm_no: cur.tkm_no };
+    const payload      = {};
+    const conflicts    = [];
+
+    // ② 필드별 안전 조건 체크
+    // tkm_no
+    if (!cur.tkm_no) {
+      if (rec.tkm_no) payload.tkm_no = rec.tkm_no;
+    } else if (rec.tkm_no && cur.tkm_no !== rec.tkm_no) {
+      conflicts.push(`0247: DB="${cur.tkm_no}" ↔ Return="${rec.tkm_no}"`);
+    }
+    // sn
+    if (!cur.sn) {
+      if (rec.sn) payload.sn = rec.sn;
+    } else if (rec.sn && cur.sn.replace(/\s/g,'').toUpperCase() !== rec.sn.replace(/\s/g,'').toUpperCase()) {
+      conflicts.push(`SN: DB="${cur.sn}" ↔ Return="${rec.sn}"`);
+    }
+    // po (보통 이미 있지만 방어)
+    if (!cur.po) {
+      if (rec.po) payload.po = rec.po;
+    } else if (rec.po && cur.po !== rec.po) {
+      conflicts.push(`PO: DB="${cur.po}" ↔ Return="${rec.po}"`);
+    }
+
+    // ③ 충돌 있으면 review_required 처리 (덮어쓰기 금지)
+    if (conflicts.length > 0) {
+      const note = '기존값 충돌:\n' + conflicts.join('\n');
+      rec.match_status = 'review_required';
+      await updateRS(rec.id, { match_status: 'review_required', notes: note });
+      toast('⚠️ 기존 값과 충돌 — 수동 확인 필요\n' + conflicts.join('\n'), 'warning', 6000);
+      rec.is_loading = false; renderRow(rec); updateStats(); return;
+    }
+
+    const masterAfter = { ...masterBefore, ...payload };
+
+    // ④ 변경할 내용 없으면 (기존 값이 이미 올바름) 그냥 applied 처리
+    if (Object.keys(payload).length === 0) {
+      await updateRS(rec.id, {
+        match_status: 'applied', applied: true, applied_at: new Date().toISOString(),
+        master_before: masterBefore, master_after: masterAfter,
+        notes: 'Master 기존 값과 일치 — 변경 없음',
+      });
+      rec.match_status = 'applied';
+      toast('✅ Return Sheet 등록 완료 (Master 변경 없음 — 기존 값과 일치)', 'success');
+      rec.is_loading = false; renderRow(rec); updateStats(); return;
+    }
+
+    // ⑤ Atomic UPDATE (tkm_no가 NULL인 경우에만 업데이트)
+    payload.synced_at = new Date().toISOString();
+    let q = sb.from('master_jobs')
+      .update(payload)
+      .eq('order_no', rec.matched_order_no)
+      .eq('batch_date', rec.matched_batch_date);
+
+    // tkm_no를 채우려는 경우: 여전히 NULL인지 원자적 조건 추가
+    if (payload.tkm_no && !cur.tkm_no) {
+      q = q.is('tkm_no', null);
+    }
+
+    const { error: updErr } = await q;
+    if (updErr) {
+      toast('❌ Master UPDATE 실패: ' + updErr.message, 'danger');
+      rec.is_loading = false; renderRow(rec); return;
+    }
+
+    // ⑥ 업데이트 검증 (동시 변경 감지)
+    const { data: verified } = await sb.from('master_jobs')
+      .select('tkm_no, po, sn')
+      .eq('order_no', rec.matched_order_no)
+      .eq('batch_date', rec.matched_batch_date)
+      .single();
+
+    const ok = verified && (!payload.tkm_no || verified.tkm_no === payload.tkm_no);
+    if (!ok) {
+      rec.match_status = 'review_required';
+      await updateRS(rec.id, { match_status: 'review_required', notes: '동시 변경 감지 — 재검증 필요' });
+      toast('⚠️ 동시 변경 감지 — 재검증이 필요합니다', 'warning');
+      rec.is_loading = false; renderRow(rec); updateStats(); return;
+    }
+
+    // ⑦ 성공: applied 처리 + 감사 기록
+    await updateRS(rec.id, {
+      match_status: 'applied', applied: true, applied_at: new Date().toISOString(),
+      master_before: masterBefore, master_after: masterAfter,
+    });
+    rec.match_status = 'applied';
+    const changed = Object.entries(payload)
+      .filter(([k]) => k !== 'synced_at')
+      .map(([k, v]) => `${k}: ${masterBefore[k] || '(비어있음)'} → ${v}`)
+      .join(', ');
+    toast(`✅ Master 반영 완료\n${changed}`, 'success', 5000);
+
+  } catch (e) {
+    toast('❌ 오류: ' + e.message, 'danger');
+  }
+
+  rec.is_loading = false;
+  renderRow(rec);
+  updateStats();
+}
+
+// 선택된 matched 레코드 일괄 반영 — Preview 모달 표시
+let _pendingApplyIds = [];
+async function applySelected() {
+  const checked = [...document.querySelectorAll('#review-tbody .row-chk:checked')]
+    .map(el => parseInt(el.dataset.id));
+  if (!checked.length) { toast('항목을 선택하세요', 'warning'); return; }
+
+  const toApply = checked.filter(id => {
+    const rec = reviewRecords.find(r => r.id === id);
+    return rec && rec.match_status === 'matched';
+  });
+  if (!toApply.length) { toast('matched 상태인 항목만 반영 가능합니다', 'warning'); return; }
+
+  // Preview 모달 데이터 구성
+  const sb = getSB(); if (!sb) return;
+  _pendingApplyIds = toApply;
+
+  const previewRows = toApply.map(id => {
+    const rec = reviewRecords.find(r => r.id === id);
+    return rec;
+  }).filter(Boolean);
+
+  // 요약 숫자
+  const statsEl = document.getElementById('apply-modal-stats');
+  statsEl.innerHTML = `
+    <div style="background:var(--g-bg);border-radius:8px;padding:10px 20px;text-align:center;flex:1;border:1px solid #86efac">
+      <div style="font-size:26px;font-weight:800;color:var(--g)">${previewRows.length}</div>
+      <div style="font-size:11px;color:var(--mut);font-weight:600">반영 예정</div>
+    </div>
+    <div style="background:var(--bg);border-radius:8px;padding:10px 20px;text-align:center;flex:1;border:1px solid var(--bdr)">
+      <div style="font-size:26px;font-weight:800;color:var(--mut)">${reviewRecords.filter(r => r.match_status !== 'matched' && r.match_status !== 'applied').length}</div>
+      <div style="font-size:11px;color:var(--mut);font-weight:600">제외 (오류/미검증)</div>
+    </div>`;
+
+  // Before/After 행 구성
+  const tbody = document.getElementById('apply-modal-tbody');
+  tbody.innerHTML = previewRows.map(rec => {
+    const tkmChange = rec.tkm_no
+      ? `<span style="text-decoration:line-through;color:#dc3545;background:#fff5f5;padding:1px 4px;border-radius:3px;font-family:monospace;font-size:11px">(없음)</span>
+         &nbsp;→&nbsp;
+         <span style="color:#198754;background:#f0fff4;padding:1px 4px;border-radius:3px;font-family:monospace;font-size:11px">${rec.tkm_no}</span>`
+      : '<span style="color:var(--mut);font-size:11px">변경 없음</span>';
+    return `<tr style="border-bottom:1px solid var(--bdr)">
+      <td style="padding:9px 12px;font-family:monospace;font-size:11px">${rec.po||'-'}</td>
+      <td style="padding:9px 12px;font-family:monospace;font-size:11px">${rec.sn||'-'}</td>
+      <td style="padding:9px 12px">${tkmChange}</td>
+      <td style="padding:9px 12px;font-size:11px;color:var(--g)">신규 입력</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('apply-modal-confirm-label').textContent = `최종 반영 (${previewRows.length}건)`;
+
+  // 모달 표시
+  const modal = document.getElementById('apply-modal-bg');
+  modal.style.display = 'flex';
+}
+
+async function confirmApplySelected() {
+  closeApplyModal();
+  const ids = _pendingApplyIds;
+  _pendingApplyIds = [];
+  for (const id of ids) await applyRecord(id);
+}
+
+function closeApplyModal() {
+  document.getElementById('apply-modal-bg').style.display = 'none';
+}
+
+// ── 사용자 강제 덮어쓰기 (review_required 상태에서) ──────
+async function forceApply(id) {
+  const sb  = getSB(); if (!sb) return;
+  const rec = reviewRecords.find(r => r.id === id);
+  if (!rec) return;
+
+  if (!confirm('주의: 기존 Master 값을 Return Sheet 값으로 강제 덮어씁니다.\n계속하시겠습니까?')) return;
+
+  const { data: cur } = await sb.from('master_jobs')
+    .select('order_no, po, sn, tkm_no, batch_date')
+    .eq('order_no', rec.matched_order_no)
+    .eq('batch_date', rec.matched_batch_date)
+    .single();
+  if (!cur) { toast('Master 데이터 재조회 실패', 'danger'); return; }
+
+  const masterBefore = { po: cur.po, sn: cur.sn, tkm_no: cur.tkm_no };
+  const payload = { synced_at: new Date().toISOString() };
+  if (rec.tkm_no) payload.tkm_no = rec.tkm_no;
+  if (rec.sn)     payload.sn     = rec.sn;
+
+  const { error } = await sb.from('master_jobs')
+    .update(payload)
+    .eq('order_no', rec.matched_order_no)
+    .eq('batch_date', rec.matched_batch_date);
+
+  if (error) { toast('❌ 강제 업데이트 실패: ' + error.message, 'danger'); return; }
+
+  const masterAfter = { ...masterBefore, ...payload };
+  await updateRS(rec.id, {
+    match_status: 'applied', applied: true, applied_at: new Date().toISOString(),
+    master_before: masterBefore, master_after: masterAfter,
+    notes: '사용자 강제 덮어쓰기',
+  });
+  rec.match_status = 'applied';
+  renderRow(rec);
+  updateStats();
+  toast('✅ 강제 반영 완료', 'success');
+}
+
+// ── ambiguous 레코드: 후보 수동 선택 ─────────────────────
+function selectCandidate(id, orderNo) {
+  const rec = reviewRecords.find(r => r.id === id);
+  if (!rec || !rec.match_candidates) return;
+  const hit = rec.match_candidates.find(c => c.order_no === orderNo);
+  if (!hit) return;
+
+  rec.matched_order_no   = hit.order_no;
+  rec.matched_pn         = hit.pn;
+  rec.matched_batch_date = hit.batch_date;
+  rec.master_tkm_was_empty = !hit.tkm_no;
+  rec.match_status       = 'matched';
+
+  updateRS(rec.id, {
+    match_status: 'matched',
+    matched_order_no: hit.order_no, matched_pn: hit.pn, matched_batch_date: hit.batch_date,
+    master_tkm_was_empty: !hit.tkm_no,
+  });
+  renderRow(rec);
+  updateStats();
+}
+
+// ── DB 업데이트 헬퍼 ─────────────────────────────────────
+async function updateRS(id, data) {
+  const sb = getSB(); if (!sb) return;
+  try {
+    await sb.from('return_sheets')
+      .update({ ...data, updated_at: new Date().toISOString() })
+      .eq('id', id);
+  } catch (e) { console.warn('[updateRS]', id, e.message); }
+}
+
+// ── 렌더링 ────────────────────────────────────────────────
+function showReviewSection() {
+  document.getElementById('review-section').classList.remove('d-none');
+  document.getElementById('stat-chips').classList.remove('d-none');
+}
+
+function renderTable() {
+  const tbody = document.getElementById('review-tbody');
+  tbody.innerHTML = '';
+  reviewRecords.forEach(rec => {
+    const tr = document.createElement('tr');
+    tr.dataset.id = rec.id;
+    tbody.appendChild(tr);
+    renderRowInto(rec, tr);
+  });
+  updateStats();
+}
+
+function renderRow(rec) {
+  let tr = document.querySelector(`tr[data-id="${rec.id}"]`);
+  if (!tr) {
+    tr = document.createElement('tr');
+    tr.dataset.id = rec.id;
+    document.getElementById('review-tbody').appendChild(tr);
+  }
+  renderRowInto(rec, tr);
+}
+
+function renderRowInto(rec, tr) {
+  const st  = ST[rec.match_status] || ST.ocr_pending;
+  const isMatched  = rec.match_status === 'matched';
+  const isApplied  = rec.match_status === 'applied';
+  const isAmbig    = rec.match_status === 'ambiguous';
+  const isRevReq   = rec.match_status === 'review_required';
+  const canCheck   = isMatched;
+
+  const imgSrc = rec.preview_url || 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
+  // OCR vs confirmed 변경 감지
+  const poChanged  = rec.po  && rec.ocr_po  && rec.po  !== rec.ocr_po;
+  const snChanged  = rec.sn  && rec.ocr_sn  && rec.sn  !== rec.ocr_sn;
+  const tkmChanged = rec.tkm_no && rec.ocr_tkm_no && rec.tkm_no !== rec.ocr_tkm_no;
+
+  // 후보 드롭다운 (ambiguous)
+  let candHtml = '';
+  if (isAmbig && rec.match_candidates) {
+    candHtml = `<select class="cand-select mt-1" onchange="selectCandidate(${rec.id}, this.value)">
+      <option value="">— 후보 선택 —</option>
+      ${rec.match_candidates.map(c =>
+        `<option value="${c.order_no}">${c.order_no} / SN:${c.sn||'-'} / 배치:${c.batch_date}</option>`
+      ).join('')}
+    </select>`;
+  }
+
+  // 매칭 결과 텍스트
+  let matchText = '';
+  if (rec.matched_order_no) {
+    matchText = `<span class="font-monospace" style="font-size:10px">${rec.matched_order_no}</span>`;
+    if (rec.matched_pn) matchText += `<br><span class="text-muted" style="font-size:10px">${rec.matched_pn}</span>`;
+    if (rec.master_tkm_was_empty) matchText += `<br><span style="font-size:9px;color:#e67e22">0247 비어있어 채울 예정</span>`;
+  }
+
+  // 상태 배지
+  const badge = `<span class="st-badge" style="color:${st.color};background:${st.bg}">
+    <span class="mi">${st.icon}</span>${st.label}</span>`;
+
+  // 작업 버튼
+  let actions = '';
+  if (rec.is_loading) {
+    actions = '<span class="spinner-border spinner-border-sm"></span>';
+  } else if (isApplied) {
+    actions = '<span class="text-muted small">완료</span>';
+  } else if (isMatched) {
+    actions = `<button class="btn-xs btn-apply" onclick="applyRecord(${rec.id})">반영</button>`;
+  } else if (isRevReq) {
+    actions = `<button class="btn-xs btn-force" onclick="forceApply(${rec.id})" title="기존값 강제 덮어쓰기">강제 반영</button>`;
+  } else if (['ocr_failed','not_found','mismatch_sn','mismatch_tkm','ambiguous'].includes(rec.match_status)) {
+    actions = `<button class="btn-xs btn-verify" onclick="reVerify(${rec.id})">재검증</button>`;
+  }
+
+  tr.innerHTML = `
+    <td><input type="checkbox" class="row-chk" data-id="${rec.id}" ${canCheck?'':'disabled'} ${canCheck?'checked':''}></td>
+    <td>
+      <img class="hist-img-thumb" src="${imgSrc}" alt="${rec.filename}"
+           onclick="openImgModal('${imgSrc}','${rec.storage_path}')" title="이미지 확대">
+    </td>
+    <td style="font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${rec.filename}">${rec.filename}</td>
+    <td>
+      <div contenteditable="true" class="editable-cell ${poChanged?'changed':''}" data-field="po"
+           data-placeholder="PO 번호" spellcheck="false">${rec.po||''}</div>
+    </td>
+    <td>
+      <div contenteditable="true" class="editable-cell ${snChanged?'changed':''}" data-field="sn"
+           data-placeholder="SN" spellcheck="false">${rec.sn||''}</div>
+    </td>
+    <td>
+      <div contenteditable="true" class="editable-cell ${tkmChanged?'changed':''}" data-field="tkm_no"
+           data-placeholder="0247-#####" spellcheck="false">${rec.tkm_no||''}</div>
+    </td>
+    <td>${matchText}${candHtml}</td>
+    <td>${badge}</td>
+    <td>${actions}</td>`;
+}
+
+function toggleAllCheck(checked) {
+  document.querySelectorAll('#review-tbody .row-chk:not(:disabled)').forEach(el => el.checked = checked);
+}
+
+function updateStats() {
+  const counts = {};
+  reviewRecords.forEach(r => { counts[r.match_status] = (counts[r.match_status]||0) + 1; });
+  const chips = document.getElementById('stat-chips');
+  chips.innerHTML = Object.entries(counts).map(([k, v]) => {
+    const s = ST[k] || { label: k, color: '#6c757d', bg: '#f8f9fa' };
+    return `<span class="stat-chip" style="color:${s.color};background:${s.bg}">${s.label}: ${v}</span>`;
+  }).join('');
+}
+
+// ── 진행바 ─────────────────────────────────────────────
+function showProgress(done, total) {
+  const el = document.getElementById('ocr-progress');
+  el.classList.remove('d-none');
+  document.getElementById('prog-label').textContent = '업로드 & OCR 분석 중...';
+  document.getElementById('prog-count').textContent = `${done} / ${total}`;
+  document.getElementById('prog-fill').style.width = `${total ? (done/total*100) : 0}%`;
+}
+function updateProgress(done, total) {
+  document.getElementById('prog-count').textContent = `${done} / ${total}`;
+  document.getElementById('prog-fill').style.width = `${total ? (done/total*100) : 0}%`;
+}
+function hideProgress() {
+  document.getElementById('ocr-progress').classList.add('d-none');
+}
+
+// ── 썸네일 상태 업데이트 ─────────────────────────────────
+function updateThumbStatus(filename, label, color) {
+  const item = document.querySelector(`[data-name="${filename}"] .thumb-status`);
+  if (item) { item.textContent = label; item.style.background = `${color}cc`; item.style.color = '#fff'; }
+}
+
+// ── 이미지 모달 ─────────────────────────────────────────
+async function openImgModal(src, storagePath) {
+  const sb = getSB();
+  let url = src;
+
+  // storage_path가 있으면 새 Signed URL 생성
+  if (storagePath && sb) {
+    try {
+      const { data } = await sb.storage.from(BUCKET).createSignedUrl(storagePath, 3600);
+      if (data?.signedUrl) url = data.signedUrl;
+    } catch {}
+  }
+
+  document.getElementById('img-modal-img').src = url;
+  document.getElementById('img-modal-bg').classList.add('open');
+}
+function closeImgModal() {
+  document.getElementById('img-modal-bg').classList.remove('open');
+  document.getElementById('img-modal-img').src = '';
+}
+
+// ── 이력 조회 ─────────────────────────────────────────
+let histTotal = 0;
+async function loadHistory(reset = true) {
+  const sb = getSB(); if (!sb) return;
+  if (reset) histOffset = 0;
+
+  const po     = document.getElementById('hist-po').value.trim();
+  const sn     = document.getElementById('hist-sn').value.trim();
+  const status = document.getElementById('hist-status').value;
+  const LIMIT  = 30;
+
+  try {
+    let q = sb.from('return_sheets')
+      .select('*, return_sheet_images(storage_path, filename)', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(histOffset, histOffset + LIMIT - 1);
+
+    if (po)     q = q.ilike('po', `%${po}%`);
+    if (sn)     q = q.ilike('sn', `%${sn}%`);
+    if (status) q = q.eq('match_status', status);
+
+    const { data, count, error } = await q;
+    if (error) throw error;
+
+    histTotal = count || 0;
+    histOffset = reset ? LIMIT : histOffset + LIMIT;
+
+    const tbody = document.getElementById('hist-tbody');
+    if (reset) tbody.innerHTML = '';
+
+    if (!data || !data.length) {
+      if (reset) tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">결과 없음</td></tr>';
+      document.getElementById('hist-more').classList.add('d-none');
+      document.getElementById('hist-count').textContent = '';
+      return;
+    }
+
+    data.forEach(r => {
+      const st = ST[r.match_status] || { label: r.match_status, color: '#6c757d', bg: '#f8f9fa' };
+      const imgPath = r.return_sheet_images?.storage_path || '';
+      const fname   = r.return_sheet_images?.filename || '-';
+
+      // before/after diff
+      let diffHtml = '-';
+      if (r.master_before || r.master_after) {
+        const b = r.master_before || {};
+        const a = r.master_after  || {};
+        const diffs = [];
+        ['tkm_no','sn','po'].forEach(k => {
+          if (b[k] !== a[k]) diffs.push(`${k}: <del style="color:#dc3545">${b[k]||'(없음)'}</del> → <ins style="color:#198754;text-decoration:none">${a[k]||'(없음)'}</ins>`);
+        });
+        diffHtml = diffs.length ? diffs.join('<br>') : '변경 없음';
+      }
+
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>
+          <img class="hist-img-thumb" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+               data-path="${imgPath}" alt="${fname}"
+               onclick="openImgModal(this.src,'${imgPath}')" title="이미지 보기">
+        </td>
+        <td style="font-size:11px;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${fname}">${fname}</td>
+        <td class="font-monospace small">${r.po||'-'}</td>
+        <td class="font-monospace small">${r.sn||'-'}</td>
+        <td class="font-monospace small">${r.tkm_no||'-'}</td>
+        <td style="font-size:11px">${r.matched_order_no ? `${r.matched_order_no}<br><span class="text-muted">${r.matched_pn||''}</span>` : '-'}</td>
+        <td><span class="st-badge" style="color:${st.color};background:${st.bg}">${st.label}</span></td>
+        <td style="font-size:11px">${diffHtml}</td>
+        <td style="font-size:11px;white-space:nowrap">${(r.created_at||'').slice(0,10)}</td>`;
+      tbody.appendChild(tr);
+
+      // 비동기로 Signed URL 로드
+      if (imgPath) {
+        (async () => {
+          const sbInner = getSB(); if (!sbInner) return;
+          try {
+            const { data: su } = await sbInner.storage.from(BUCKET).createSignedUrl(imgPath, 3600);
+            if (su?.signedUrl) {
+              const img = tr.querySelector(`img[data-path="${imgPath}"]`);
+              if (img) img.src = su.signedUrl;
+            }
+          } catch {}
+        })();
+      }
+    });
+
+    document.getElementById('hist-count').textContent = `총 ${histTotal}건`;
+    const hasMore = histOffset < histTotal;
+    document.getElementById('hist-more').classList.toggle('d-none', !hasMore);
+
+  } catch (e) { toast('이력 조회 오류: ' + e.message, 'danger'); }
+}
+
+async function loadHistoryMore() { await loadHistory(false); }
+
+function debounceHist() {
+  clearTimeout(histDebounce);
+  histDebounce = setTimeout(loadHistory, 400);
+}
+
+// ── 토스트 ───────────────────────────────────────────────
+function toast(msg, type = 'info', duration = 3500) {
+  const colors = { success: '#198754', danger: '#dc3545', warning: '#856404', info: '#0d6efd' };
+  const bgs    = { success: '#f0fff4', danger: '#fff5f5', warning: '#fff3cd', info: '#e7f0ff' };
+  const el = document.createElement('div');
+  el.className = 'toast-msg';
+  el.style.background   = bgs[type]  || '#fff';
+  el.style.color        = colors[type] || '#333';
+  el.style.border       = `1px solid ${colors[type]}44`;
+  el.textContent = msg;
+  document.getElementById('toast-wrap').appendChild(el);
+  setTimeout(() => el.remove(), duration);
+}
+</script>
+</body>
+</html>
