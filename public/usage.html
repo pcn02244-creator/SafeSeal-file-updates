@@ -65,13 +65,31 @@
     <div id="result" class="d-none"></div>
   </div>
 
+  <!-- Supabase + core.js (다중 PC 공유 데이터) -->
+  <script src="js/supabase.umd.js?v=2385"></script>
+  <script src="js/core.js?v=20260911"></script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <script>
     let partsData = [];
 
+    // ── 파트 목록 로드 (Supabase → localStorage 캐시 기반) ──
     async function loadParts() {
-      const res = await fetch('/api/dashboard');
-      partsData = await res.json();
+      // Supabase에서 최신 데이터 로드 후 localStorage 캐시 갱신
+      await initData();
+
+      const parts    = DB.parts.get();
+      const usageAll = DB.usage.get();
+
+      // 파트별 누적 사용량 계산
+      const cumMap = {};
+      usageAll.forEach(u => {
+        cumMap[u.part_number] = (cumMap[u.part_number] || 0) + u.quantity;
+      });
+
+      partsData = parts
+        .map(p => ({ ...p, cumulative: cumMap[p.part_number] || 0 }))
+        .sort((a, b) => (a.type + a.part_number).localeCompare(b.type + b.part_number));
+
       const sel = document.getElementById('f-pn');
       sel.innerHTML = '<option value="">-- 파트 선택 --</option>';
       partsData.forEach(p => {
@@ -80,12 +98,12 @@
         opt.textContent = `${p.part_number} (${p.type || ''}) - 현재 누적: ${p.cumulative}개`;
         sel.appendChild(opt);
       });
-      // 오늘 날짜 기본값
-      document.getElementById('f-date').value = new Date().toISOString().slice(0,10);
+
+      document.getElementById('f-date').value = new Date().toISOString().slice(0, 10);
     }
 
     function updatePreview() {
-      const pn = document.getElementById('f-pn').value;
+      const pn  = document.getElementById('f-pn').value;
       const qty = parseInt(document.getElementById('f-qty').value) || 0;
       if (!pn || !qty) { document.getElementById('preview').classList.add('d-none'); return; }
 
@@ -93,7 +111,7 @@
       if (!part) return;
 
       const newCumulative = part.cumulative + qty;
-      const threshold = part.qty_threshold;
+      const threshold     = part.qty_threshold || 0;
 
       let html = `<table class="table table-sm mb-0">`;
       html += `<tr><td>현재 누적 수량</td><td class="fw-bold">${part.cumulative.toLocaleString()}개</td></tr>`;
@@ -101,18 +119,18 @@
       html += `<tr><td>입력 후 누적</td><td class="fw-bold">${newCumulative.toLocaleString()}개</td></tr>`;
       html += `<tr><td>Q'ty 기준</td><td>${threshold.toLocaleString()}개</td></tr>`;
 
-      if (part.cumulative <= threshold && newCumulative > threshold) {
+      if (threshold > 0 && part.cumulative <= threshold && newCumulative > threshold) {
         const asIsQty = threshold - part.cumulative;
         const toBeQty = qty - asIsQty;
         html += `<tr class="table-warning"><td colspan="2">⚠️ 이번 입력으로 단가 전환 발생!</td></tr>`;
-        html += `<tr><td>&nbsp;&nbsp;As-is 적용 수량</td><td>${asIsQty}개 × $${part.price_as_is.toFixed(2)} = $${(asIsQty*part.price_as_is).toLocaleString('en',{minimumFractionDigits:2})}</td></tr>`;
-        html += `<tr><td>&nbsp;&nbsp;To-be 적용 수량</td><td>${toBeQty}개 × $${part.price_to_be.toFixed(2)} = $${(toBeQty*part.price_to_be).toLocaleString('en',{minimumFractionDigits:2})}</td></tr>`;
+        html += `<tr><td>&nbsp;&nbsp;As-is 적용 수량</td><td>${asIsQty}개 × $${(part.price_as_is||0).toFixed(2)} = $${(asIsQty*(part.price_as_is||0)).toLocaleString('en',{minimumFractionDigits:2})}</td></tr>`;
+        html += `<tr><td>&nbsp;&nbsp;To-be 적용 수량</td><td>${toBeQty}개 × $${(part.price_to_be||0).toFixed(2)} = $${(toBeQty*(part.price_to_be||0)).toLocaleString('en',{minimumFractionDigits:2})}</td></tr>`;
       } else {
-        const appliedPrice = newCumulative > threshold ? part.price_to_be : part.price_as_is;
-        const priceType = newCumulative > threshold ? 'To-be' : 'As-is';
-        const badgeClass = newCumulative > threshold ? 'bg-danger' : 'bg-success';
-        html += `<tr><td>적용 단가</td><td><span class="badge ${badgeClass}">${priceType}</span> $${appliedPrice.toFixed(2)}</td></tr>`;
-        html += `<tr><td>이번 청구 금액</td><td class="fw-bold text-primary">$${(qty * appliedPrice).toLocaleString('en',{minimumFractionDigits:2})}</td></tr>`;
+        const appliedPrice = (threshold > 0 && newCumulative > threshold) ? part.price_to_be : part.price_as_is;
+        const priceType    = (threshold > 0 && newCumulative > threshold) ? 'To-be' : 'As-is';
+        const badgeClass   = (threshold > 0 && newCumulative > threshold) ? 'bg-danger' : 'bg-success';
+        html += `<tr><td>적용 단가</td><td><span class="badge ${badgeClass}">${priceType}</span> $${(appliedPrice||0).toFixed(2)}</td></tr>`;
+        html += `<tr><td>이번 청구 금액</td><td class="fw-bold text-primary">$${(qty*(appliedPrice||0)).toLocaleString('en',{minimumFractionDigits:2})}</td></tr>`;
       }
       html += `</table>`;
 
@@ -122,33 +140,62 @@
 
     async function submit() {
       const date = document.getElementById('f-date').value;
-      const pn = document.getElementById('f-pn').value;
-      const qty = document.getElementById('f-qty').value;
+      const pn   = document.getElementById('f-pn').value;
+      const qty  = document.getElementById('f-qty').value;
       const team = document.getElementById('f-team').value;
       const note = document.getElementById('f-note').value;
 
-      if (!date || !pn || !qty) { alert('날짜, Part Number, 수량은 필수 입력 항목입니다.'); return; }
+      if (!date || !pn || !qty) {
+        alert('날짜, Part Number, 수량은 필수 입력 항목입니다.');
+        return;
+      }
 
-      const res = await fetch('/api/usage', {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ date, part_number: pn, quantity: parseInt(qty), note, team })
-      });
-      const data = await res.json();
-      if (data.error) { alert(data.error); return; }
+      const btn = document.querySelector('button[onclick="submit()"]');
+      if (btn) { btn.disabled = true; btn.textContent = '저장 중…'; }
 
-      const resultDiv = document.getElementById('result');
-      resultDiv.className = 'alert alert-success';
-      resultDiv.innerHTML = `✅ 저장 완료! (${pn} / ${qty}개 / ${date})`;
-      resultDiv.classList.remove('d-none');
+      try {
+        const nowStr   = new Date().toLocaleString('ko-KR');
+        const usageAll = DB.usage.get();
+        const newId    = usageAll.length ? Math.max(...usageAll.map(u => u.id)) + 1 : 1;
+        const newRec   = {
+          id: newId, date, part_number: pn,
+          quantity: parseInt(qty), note: note || '',
+          team: team || '', source: 'manual', created_at: nowStr,
+        };
 
-      document.getElementById('f-pn').value = '';
-      document.getElementById('f-qty').value = '';
-      document.getElementById('f-note').value = '';
-      document.getElementById('preview').classList.add('d-none');
-      loadParts();
+        const sb = getSB();
+        if (sb) {
+          // ── Supabase에 저장 (중앙 DB) ──
+          const { error } = await sb.from('usage').upsert(newRec, { onConflict: 'id' });
+          if (error) throw new Error(error.message);
+          // 캐시 갱신
+          await initData();
+        } else {
+          // ── Supabase 미연결 시 로컬 저장 (다른 PC에서 볼 수 없음) ──
+          DB.usage.set([...usageAll, newRec]);
+          console.warn('[usage] Supabase 미연결 — 로컬 저장만 됨');
+        }
 
-      setTimeout(() => resultDiv.classList.add('d-none'), 3000);
+        const resultDiv = document.getElementById('result');
+        resultDiv.className = 'alert alert-' + (sb ? 'success' : 'warning');
+        resultDiv.innerHTML  = sb
+          ? `✅ 저장 완료! (${pn} / ${qty}개 / ${date}) — 모든 PC에서 공유됩니다`
+          : `⚠️ 저장됨 (로컬 전용) — Supabase 미연결, 다른 PC에서 보이지 않습니다`;
+        resultDiv.classList.remove('d-none');
+
+        document.getElementById('f-pn').value  = '';
+        document.getElementById('f-qty').value  = '';
+        document.getElementById('f-note').value = '';
+        document.getElementById('preview').classList.add('d-none');
+        loadParts();
+        setTimeout(() => resultDiv.classList.add('d-none'), 4000);
+
+      } catch(e) {
+        alert('❌ 저장 실패: ' + e.message);
+        console.error('[usage] submit 오류:', e);
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = '저장'; }
+      }
     }
 
     loadParts();
