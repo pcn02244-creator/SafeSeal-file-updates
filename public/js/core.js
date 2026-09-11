@@ -87,7 +87,9 @@ async function fetchAllBatchDates() {
   }
 }
 
-// ── localStorage 캐시 래퍼 ────────────────────────────
+// ── localStorage 읽기 캐시 래퍼 ─────────────────────────
+// ⚠️ DB.xxx.get() : Supabase에서 initData()로 채운 읽기 전용 캐시
+// ⚠️ DB.xxx.set() : 캐시 갱신 + Supabase 백그라운드 동기화 (쓰기는 각 페이지에서 Supabase 직접 호출)
 const DB = {
   _g: k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
   _s: (k, v) => localStorage.setItem(k, JSON.stringify(v)),
@@ -97,20 +99,27 @@ const DB = {
   processCosts: { get: () => DB._g('process_costs') || {}, set: v => { DB._s('process_costs', v); _sbSync('process_costs', v); } },
 };
 
-// Supabase에 백그라운드 동기화 (fire & forget)
+// Supabase 동기화 (백그라운드, 캐시 갱신용)
+// 이 함수는 직접 쓰기가 아닌 캐시 → Supabase 미러링 용도
 async function _sbSync(table, data) {
   const sb = getSB();
-  if (!sb) return;
+  if (!sb) {
+    console.warn('[core] _sbSync 스킵 — Supabase 미연결, 테이블:', table);
+    return;
+  }
   try {
     if (table === 'process_costs') {
       const rows = Object.entries(data).map(([key, v]) => ({ key, name: v.name, usd: v.usd, krw: v.krw }));
-      await sb.from('process_costs').upsert(rows, { onConflict: 'key' });
+      const { error } = await sb.from('process_costs').upsert(rows, { onConflict: 'key' });
+      if (error) console.warn('[core] _sbSync process_costs 실패:', error.message);
     } else if (table === 'parts') {
-      await sb.from('parts').upsert(data, { onConflict: 'part_number' });
+      const { error } = await sb.from('parts').upsert(data, { onConflict: 'part_number' });
+      if (error) console.warn('[core] _sbSync parts 실패:', error.message);
     } else {
-      await sb.from(table).upsert(data, { onConflict: 'id' });
+      const { error } = await sb.from(table).upsert(data, { onConflict: 'id' });
+      if (error) console.warn('[core] _sbSync ' + table + ' 실패:', error.message);
     }
-  } catch(e) { console.warn('Supabase sync 오류:', e.message); }
+  } catch(e) { console.warn('[core] _sbSync 오류 (table=' + table + '):', e.message); }
 }
 
 // ── 초기화: Supabase에서 읽어 로컬 캐시 갱신 ─────────
@@ -165,7 +174,9 @@ async function initData() {
       DB._s('process_costs', obj);
     }
     if (!p.data?.length) try { await _uploadBackupData(sb); } catch(e) { console.warn('backup upload 실패:', e.message); }
-  } catch(e) { console.warn('initData Supabase 로드 실패:', e.message); }
+  } catch(e) {
+    console.error('[core] initData Supabase 로드 실패 — 테이블이 존재하는지 확인하세요 (parts/usage/lots/process_costs):', e.message);
+  }
 }
 
 async function _uploadBackupData(sb) {

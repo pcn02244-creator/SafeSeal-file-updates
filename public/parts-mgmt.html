@@ -492,6 +492,10 @@
       const pn   = document.getElementById('p-f-pn').value.trim();
       const asis = document.getElementById('p-f-asis').value;
       if (!pn || !asis) { alert('Part Number와 As-is 단가는 필수입니다.'); return; }
+
+      const sb = getSB();
+      if (!sb) { alert('❌ Supabase 미연결 — 저장 불가\n페이지를 새로고침하거나 네트워크를 확인하세요.'); return; }
+
       const body = {
         type:          document.getElementById('p-f-type').value,
         part_number:   pn,
@@ -502,43 +506,42 @@
         price_as_is:   parseFloat(asis) || 0,
         price_to_be:   parseFloat(document.getElementById('p-f-tobe').value) || 0,
       };
-      const sb = getSB();
-      if (sb) {
+      try {
         if (editingPartId) {
-          await sb.from('parts').update(body).eq('id', editingPartId);
+          const { error } = await sb.from('parts').update(body).eq('id', editingPartId);
+          if (error) throw new Error(error.message);
         } else {
           const parts = DB.parts.get();
           const newId = parts.length ? Math.max(...parts.map(p => p.id)) + 1 : 1;
-          await sb.from('parts').insert({ id: newId, ...body });
+          const { error } = await sb.from('parts').insert({ id: newId, ...body });
+          if (error) throw new Error(error.message);
         }
-        const { data } = await sb.from('parts').select('*').order('id');
+        const { data, error: selErr } = await sb.from('parts').select('*').order('id');
+        if (selErr) throw new Error(selErr.message);
         if (data) { DB._s('parts', data); populatePartSelects(); }
-      } else {
-        const parts = DB.parts.get();
-        if (editingPartId) {
-          const idx = parts.findIndex(p => p.id === editingPartId);
-          if (idx >= 0) parts[idx] = { ...parts[idx], ...body };
-        } else {
-          const newId = parts.length ? Math.max(...parts.map(p => p.id)) + 1 : 1;
-          parts.push({ id: newId, ...body });
-        }
-        DB._s('parts', parts); populatePartSelects();
+        partModal.hide();
+        loadPartsTab(); loadDashboard();
+      } catch(e) {
+        alert('❌ 파트 저장 실패: ' + e.message + '\nSupabase 테이블이 생성되어 있는지 확인하세요.');
+        console.error('[parts-mgmt] savePart 오류:', e);
       }
-      partModal.hide();
-      loadPartsTab(); loadDashboard();
     }
 
     async function deletePart(id, pn) {
       if (!confirm(`"${pn}" 파트를 삭제하시겠습니까?\n이력 데이터는 유지됩니다.`)) return;
       const sb = getSB();
-      if (sb) {
-        await sb.from('parts').delete().eq('id', id);
-        const { data } = await sb.from('parts').select('*').order('id');
+      if (!sb) { alert('❌ Supabase 미연결 — 삭제 불가'); return; }
+      try {
+        const { error } = await sb.from('parts').delete().eq('id', id);
+        if (error) throw new Error(error.message);
+        const { data, error: selErr } = await sb.from('parts').select('*').order('id');
+        if (selErr) throw new Error(selErr.message);
         if (data) { DB._s('parts', data); populatePartSelects(); }
-      } else {
-        DB._s('parts', DB.parts.get().filter(p => p.id !== id)); populatePartSelects();
+        loadPartsTab(); loadDashboard();
+      } catch(e) {
+        alert('❌ 파트 삭제 실패: ' + e.message);
+        console.error('[parts-mgmt] deletePart 오류:', e);
       }
-      loadPartsTab(); loadDashboard();
     }
 
     /* ══════ 배치 관리 탭 ══════ */
@@ -627,17 +630,18 @@
       const price = parseFloat(document.getElementById('l-f-selling-price').value);
       if (!price) { alert('판가를 입력해 주세요.'); return; }
       const sb = getSB();
-      if (sb) {
-        await sb.from('lots').update({ selling_price: price }).eq('id', id);
-        const { data } = await sb.from('lots').select('*').order('id');
+      if (!sb) { alert('❌ Supabase 미연결 — 저장 불가'); return; }
+      try {
+        const { error } = await sb.from('lots').update({ selling_price: price }).eq('id', id);
+        if (error) throw new Error(error.message);
+        const { data, error: selErr } = await sb.from('lots').select('*').order('id');
+        if (selErr) throw new Error(selErr.message);
         if (data) DB._s('lots', data);
-      } else {
-        const lots = DB.lots.get();
-        const idx  = lots.findIndex(l => l.id === id);
-        if (idx >= 0) lots[idx].selling_price = price;
-        DB._s('lots', lots);
+        priceModal.hide(); loadLotsTab();
+      } catch(e) {
+        alert('❌ 판가 저장 실패: ' + e.message);
+        console.error('[parts-mgmt] savePrice 오류:', e);
       }
-      priceModal.hide(); loadLotsTab();
     }
 
     function openAddLotModal() {
@@ -649,6 +653,8 @@
       const pn  = document.getElementById('l-add-pn').value;
       const qty = document.getElementById('l-add-qty').value;
       if (!pn || !qty) { alert('Part Number와 발주수량은 필수입니다.'); return; }
+      const sb = getSB();
+      if (!sb) { alert('❌ Supabase 미연결 — 저장 불가'); return; }
       const body = {
         part_number:    pn,
         po_number:      document.getElementById('l-add-po').value.trim(),
@@ -660,30 +666,36 @@
         order_date:     document.getElementById('l-add-date').value,
         lot_status:     'pending',
       };
-      const sb   = getSB();
-      const lots = DB.lots.get();
-      const newId = lots.length ? Math.max(...lots.map(l => l.id)) + 1 : 1;
-      if (sb) {
-        await sb.from('lots').insert({ id: newId, ...body });
-        const { data } = await sb.from('lots').select('*').order('id');
+      try {
+        const lots  = DB.lots.get();
+        const newId = lots.length ? Math.max(...lots.map(l => l.id)) + 1 : 1;
+        const { error } = await sb.from('lots').insert({ id: newId, ...body });
+        if (error) throw new Error(error.message);
+        const { data, error: selErr } = await sb.from('lots').select('*').order('id');
+        if (selErr) throw new Error(selErr.message);
         if (data) DB._s('lots', data);
-      } else {
-        lots.push({ id: newId, ...body }); DB._s('lots', lots);
+        addLotModal.hide(); loadLotsTab();
+      } catch(e) {
+        alert('❌ 배치 저장 실패: ' + e.message);
+        console.error('[parts-mgmt] addLot 오류:', e);
       }
-      addLotModal.hide(); loadLotsTab();
     }
 
     async function deleteLot(id) {
       if (!confirm('이 배치를 삭제하시겠습니까?')) return;
       const sb = getSB();
-      if (sb) {
-        await sb.from('lots').delete().eq('id', id);
-        const { data } = await sb.from('lots').select('*').order('id');
+      if (!sb) { alert('❌ Supabase 미연결 — 삭제 불가'); return; }
+      try {
+        const { error } = await sb.from('lots').delete().eq('id', id);
+        if (error) throw new Error(error.message);
+        const { data, error: selErr } = await sb.from('lots').select('*').order('id');
+        if (selErr) throw new Error(selErr.message);
         if (data) DB._s('lots', data);
-      } else {
-        DB._s('lots', DB.lots.get().filter(l => l.id !== id));
+        loadLotsTab();
+      } catch(e) {
+        alert('❌ 배치 삭제 실패: ' + e.message);
+        console.error('[parts-mgmt] deleteLot 오류:', e);
       }
-      loadLotsTab();
     }
 
     /* ══════ 이력 조회 탭 ══════ */
@@ -739,14 +751,18 @@
     async function deleteUsage(id) {
       if (!confirm('이 이력을 삭제하시겠습니까?')) return;
       const sb = getSB();
-      if (sb) {
-        await sb.from('usage').delete().eq('id', id);
-        const { data } = await sb.from('usage').select('*').order('id');
+      if (!sb) { alert('❌ Supabase 미연결 — 삭제 불가'); return; }
+      try {
+        const { error } = await sb.from('usage').delete().eq('id', id);
+        if (error) throw new Error(error.message);
+        const { data, error: selErr } = await sb.from('usage').select('*').order('id');
+        if (selErr) throw new Error(selErr.message);
         if (data) DB._s('usage', data);
-      } else {
-        DB._s('usage', DB.usage.get().filter(r => r.id !== id));
+        loadHistoryTab();
+      } catch(e) {
+        alert('❌ 이력 삭제 실패: ' + e.message);
+        console.error('[parts-mgmt] deleteUsage 오류:', e);
       }
-      loadHistoryTab();
     }
   </script>
 </body>

@@ -164,23 +164,17 @@
         };
 
         const sb = getSB();
-        if (sb) {
-          // ── Supabase에 저장 (중앙 DB) ──
-          const { error } = await sb.from('usage').upsert(newRec, { onConflict: 'id' });
-          if (error) throw new Error(error.message);
-          // 캐시 갱신
-          await initData();
-        } else {
-          // ── Supabase 미연결 시 로컬 저장 (다른 PC에서 볼 수 없음) ──
-          DB.usage.set([...usageAll, newRec]);
-          console.warn('[usage] Supabase 미연결 — 로컬 저장만 됨');
-        }
+        if (!sb) throw new Error('Supabase 미연결 — 네트워크 또는 페이지를 새로고침하세요');
+
+        // ── Supabase에 저장 (중앙 DB) ──
+        const { error } = await sb.from('usage').upsert(newRec, { onConflict: 'id' });
+        if (error) throw new Error(error.message);
+        // 캐시 갱신
+        await initData();
 
         const resultDiv = document.getElementById('result');
-        resultDiv.className = 'alert alert-' + (sb ? 'success' : 'warning');
-        resultDiv.innerHTML  = sb
-          ? `✅ 저장 완료! (${pn} / ${qty}개 / ${date}) — 모든 PC에서 공유됩니다`
-          : `⚠️ 저장됨 (로컬 전용) — Supabase 미연결, 다른 PC에서 보이지 않습니다`;
+        resultDiv.className = 'alert alert-success';
+        resultDiv.innerHTML  = `✅ 저장 완료! (${pn} / ${qty}개 / ${date}) — 모든 PC에서 공유됩니다`;
         resultDiv.classList.remove('d-none');
 
         document.getElementById('f-pn').value  = '';
