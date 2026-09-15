@@ -1009,11 +1009,12 @@ async function buildMasterFillResult(mesFile, masterFile) {
 // ── 클라이언트 Excel 다운로드 (견적) ─────────────────
 async function downloadQuotationExcel(quotation) {
   const PART_ORDER = [
-    { type: 'Wafer Seal',  label: 'Wafer Seal'   },
-    { type: 'Contact Pin', label: 'Contact Pin'   },
-    { type: 'Retainer',    label: 'Retainer ring' },
-    { type: 'Screw',       label: 'Screw'         },
-    { type: 'Lead In',     label: 'Lead In'       },
+    { type: 'Wafer Seal',     label: 'Wafer Seal'     },
+    { type: 'Wafer Shipping', label: 'Wafer Shipping'  },
+    { type: 'Contact Pin',    label: 'Contact Pin'     },
+    { type: 'Retainer',       label: 'Retainer ring'   },
+    { type: 'Screw',          label: 'Screw'           },
+    { type: 'Lead In',        label: 'Lead In'         },
   ];
   const usedTypes = new Set(
     quotation.flatMap(q => q.replParts)
@@ -1128,6 +1129,21 @@ async function downloadQuotationExcel(quotation) {
         if (!ps.length) return [0, 0];
         return [ps.reduce((s,p) => s + p.totalUSD, 0), ps.reduce((s,p) => s + p.totalKRW, 0)];
       });
+
+      // ── 자동 검증: breakdown 합계 ≠ totalKRW/USD이면 생성 차단 ──
+      const _knownTypes = new Set(PART_ORDER.map(p => p.type));
+      const _unknownParts = q.replParts.filter(p => p.totalUSD > 0 && !_knownTypes.has(p.partType));
+      if (_unknownParts.length) {
+        throw new Error(`견적서 생성 오류 (PO ${q.po}): PART_ORDER에 등록되지 않은 파트 타입 "${_unknownParts.map(p=>p.partType).join(', ')}" — js/core.js의 PART_ORDER에 추가 필요`);
+      }
+      const _bdUSD = partCols.filter((_,i)=>i%2===0).reduce((s,v)=>s+v,0);
+      const _bdKRW = partCols.filter((_,i)=>i%2===1).reduce((s,v)=>s+v,0);
+      const _expectUSD = +(q.totalUSD - q.processUSD - ((q.addonItems||[]).reduce((s,a)=>s+(a.usd||0),0))).toFixed(2);
+      const _expectKRW = q.totalKRW - q.processKRW - ((q.addonItems||[]).reduce((s,a)=>s+(a.krw||0),0));
+      if (Math.abs(_bdKRW - _expectKRW) > 1 || Math.abs(_bdUSD - _expectUSD) > 0.01) {
+        throw new Error(`견적서 생성 오류 (PO ${q.po}): Breakdown 합계(KRW ${_bdKRW.toLocaleString()})가 부품 합계(KRW ${_expectKRW.toLocaleString()})와 불일치 — 데이터 확인 필요`);
+      }
+
       // Resistivity Test 컬럼 값
       const resistItem = hasResistivity
         ? ((q.addonItems || []).find(a => a.type === 'RESISTIVITY_TEST') || { usd: 0, krw: 0 })
@@ -1205,6 +1221,14 @@ async function downloadQuotationExcel(quotation) {
   const rows = [new Array(headers.length).fill(''), headers];
   for (const q of quotation) {
     const pc = activeParts.flatMap(fp => { const ps = q.replParts.filter(r=>r.partType===fp.type); if(!ps.length) return [0,0]; return [ps.reduce((s,p)=>s+p.totalUSD,0), ps.reduce((s,p)=>s+p.totalKRW,0)]; });
+    // ── 자동 검증 (SheetJS 경로) ──
+    const _knownT = new Set(PART_ORDER.map(p=>p.type));
+    const _unk = q.replParts.filter(p=>p.totalUSD>0 && !_knownT.has(p.partType));
+    if (_unk.length) throw new Error(`견적서 생성 오류 (PO ${q.po}): 미등록 타입 "${_unk.map(p=>p.partType).join(', ')}" — PART_ORDER 추가 필요`);
+    const _bu=pc.filter((_,i)=>i%2===0).reduce((s,v)=>s+v,0), _bk=pc.filter((_,i)=>i%2===1).reduce((s,v)=>s+v,0);
+    const _eu=+(q.totalUSD-q.processUSD-((q.addonItems||[]).reduce((s,a)=>s+(a.usd||0),0))).toFixed(2);
+    const _ek=q.totalKRW-q.processKRW-((q.addonItems||[]).reduce((s,a)=>s+(a.krw||0),0));
+    if (Math.abs(_bk-_ek)>1||Math.abs(_bu-_eu)>0.01) throw new Error(`견적서 생성 오류 (PO ${q.po}): Breakdown KRW ${_bk.toLocaleString()} ≠ 부품합계 KRW ${_ek.toLocaleString()}`);
     const resistItem = hasResistivity
       ? ((q.addonItems || []).find(a => a.type === 'RESISTIVITY_TEST') || { usd: 0, krw: 0 })
       : null;
