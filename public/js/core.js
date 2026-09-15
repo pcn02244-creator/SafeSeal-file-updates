@@ -1124,8 +1124,9 @@ async function downloadQuotationExcel(quotation) {
     let currentRow = DATA_START_ROW;
     for (const q of quotation) {
       const partCols = activeParts.flatMap(fp => {
-        const p = q.replParts.find(r => r.partType === fp.type);
-        return p ? [p.totalUSD, p.totalKRW] : [0, 0];
+        const ps = q.replParts.filter(r => r.partType === fp.type);
+        if (!ps.length) return [0, 0];
+        return [ps.reduce((s,p) => s + p.totalUSD, 0), ps.reduce((s,p) => s + p.totalKRW, 0)];
       });
       // Resistivity Test 컬럼 값
       const resistItem = hasResistivity
@@ -1203,7 +1204,7 @@ async function downloadQuotationExcel(quotation) {
   // ExcelJS 미로드 시 SheetJS 폴백
   const rows = [new Array(headers.length).fill(''), headers];
   for (const q of quotation) {
-    const pc = activeParts.flatMap(fp => { const p = q.replParts.find(r=>r.partType===fp.type); return p?[p.totalUSD,p.totalKRW]:[0,0]; });
+    const pc = activeParts.flatMap(fp => { const ps = q.replParts.filter(r=>r.partType===fp.type); if(!ps.length) return [0,0]; return [ps.reduce((s,p)=>s+p.totalUSD,0), ps.reduce((s,p)=>s+p.totalKRW,0)]; });
     const resistItem = hasResistivity
       ? ((q.addonItems || []).find(a => a.type === 'RESISTIVITY_TEST') || { usd: 0, krw: 0 })
       : null;
