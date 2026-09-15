@@ -1544,7 +1544,9 @@
         const snIdx  = hdr.findIndex(h => n(h).includes('s/n') || n(h) === 'ss sn');
         const poIdx  = hdr.findIndex(h => /^PO$/i.test(String(h).trim()));  // 정확히 "PO" 컬럼
         const poIdx2 = poIdx >= 0 ? poIdx : hdr.findIndex(h => n(h).includes('po') && !n(h).includes('price'));
-        const krwIdx = hdr.findIndex(h => n(h).includes('krw'));
+        // Total KRW 우선 탐색, 없으면 첫 번째 KRW 컬럼으로 fallback
+        const krwIdxTotal = hdr.findIndex(h => n(h).includes('krw') && n(h).includes('total'));
+        const krwIdx = krwIdxTotal >= 0 ? krwIdxTotal : hdr.findIndex(h => n(h).includes('krw'));
         const usdIdx = hdr.findIndex(h => n(h).includes('usd') && n(h).includes('total'));
 
         if (snIdx < 0 && poIdx2 < 0) throw new Error('SN 또는 PO 열을 찾을 수 없습니다.');
