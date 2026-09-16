@@ -534,9 +534,24 @@ async function generateQuotation(mesFile, masterFile) {
 
   // quotation_amounts_cache save for shipment auto-load (기존 캐시에 병합)
   try {
+    const _BREAKDOWN_TYPES = ['Wafer Seal','Wafer Shipping','Contact Pin','Retainer','Screw','Lead In'];
     const amtCache = JSON.parse(localStorage.getItem('quotation_amounts_cache') || '{}');
     for (const q of quotation) {
-      const entry = { usd: q.totalUSD, krw: q.totalKRW, source: 'auto' };
+      const breakdown = {};
+      _BREAKDOWN_TYPES.forEach(type => {
+        const ps = q.replParts.filter(p => p.partType === type);
+        if (ps.length) {
+          breakdown[type] = {
+            usd: ps.reduce((s,p) => s + p.totalUSD, 0),
+            krw: ps.reduce((s,p) => s + p.totalKRW, 0),
+          };
+        }
+      });
+      const entry = {
+        usd: q.totalUSD, krw: q.totalKRW, source: 'auto',
+        processUSD: q.processUSD, processKRW: q.processKRW,
+        breakdown,
+      };
       amtCache[q.sn] = entry;
       if (q.po) amtCache[q.po] = entry;
     }
