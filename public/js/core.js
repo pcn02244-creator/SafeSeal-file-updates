@@ -550,6 +550,7 @@ async function generateQuotation(mesFile, masterFile) {
       const entry = {
         usd: q.totalUSD, krw: q.totalKRW, source: 'auto',
         processUSD: q.processUSD, processKRW: q.processKRW,
+        sn: q.sn, po: q.po, tkmNo: q.tkmNo,
         breakdown,
       };
       amtCache[q.sn] = entry;

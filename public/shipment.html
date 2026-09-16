@@ -1996,134 +1996,91 @@
       // ── XML 셀 헬퍼 ──────────────────────────────────────────────────────
       const sC  = (col, r, v) => `<c r="${col}${r}" t="inlineStr"><is><t>${escXml(String(v??''))}</t></is></c>`;
       const nC  = (col, r, v) => `<c r="${col}${r}"><v>${v}</v></c>`;
-      const bFm = (col, r, formula, cached) =>
-        `<c r="${col}${r}" t="b"><f>${formula}</f><v>${cached ? 1 : 0}</v></c>`;
+      const bFm = (col, r, f, cached) => `<c r="${col}${r}" t="b"><f>${f}</f><v>${cached?1:0}</v></c>`;
+      // 숫자→엑셀 컬럼 문자(A=1, Z=26, AA=27 …)
+      const colLetter = n => { let s=''; while(n>0){s=String.fromCharCode(64+(n-1)%26+1)+s;n=Math.floor((n-1)/26);} return s; };
 
-      // ── Section 1: PO 목록 (기존 구조 유지) ─────────────────────────────
-      const HDR = ['No', 'PO', 'SN', 'TKM No', 'Amount (KRW)', 'Date'];
+      const toNum = v => typeof v === 'number' ? v : Number(String(v||'').replace(/[^0-9.-]/g,''))||0;
+
+      // ── 헤더 행 ──────────────────────────────────────────────────────────
+      // 거래명세서 열: A=No B=PO C=SN D=TKM No E=Amount(KRW) F=Date
+      // 견적서 검증 열 (G~N): 견적서SN H=Match  견적서PO J=Match  견적서0247 L=Match  견적서금액 N=Match
+      const STMT_HDR = ['No','PO','SN','TKM No','Amount (KRW)','Date'];
+      const QUOT_HDR = ['견적서 SN','','견적서 PO','','견적서 0247','','견적서 금액',''];
+      // G=7,H=8,I=9,J=10,K=11,L=12,M=13,N=14
+
       let xmlRows = `<row r="1">`;
-      HDR.forEach((h, ci) => {
-        xmlRows += `<c r="${String.fromCharCode(65+ci)}1" t="inlineStr"><is><t>${escXml(h)}</t></is></c>`;
+      STMT_HDR.forEach((h, ci) => {
+        xmlRows += `<c r="${colLetter(ci+1)}1" t="inlineStr"><is><t>${escXml(h)}</t></is></c>`;
+      });
+      QUOT_HDR.forEach((h, ci) => {
+        if (h) xmlRows += `<c r="${colLetter(7+ci)}1" t="inlineStr"><is><t>${escXml(h)}</t></is></c>`;
       });
       xmlRows += `</row>`;
 
+      // ── 데이터 행: 거래명세서 + 견적서 검증 한 행에 ──────────────────────
       pos.forEach((po, i) => {
-        const rowData = yjleeRows.filter(r => r.po === po);
+        const rowData  = yjleeRows.filter(r => r.po === po);
         const firstRow = rowData[0] || {};
-        const amount = rowData.reduce((sum, r) => {
-          return sum + (typeof r.krw === 'number' ? r.krw
-            : Number(String(r.krw||'').replace(/[^0-9.-]/g, '')) || 0);
-        }, 0);
+        const stmtSN   = String(firstRow.sn || '');
+        const stmtTKM  = firstRow.tkm_no || '';
+        const stmtKRW  = Math.round(rowData.reduce((s,r) => s + toNum(r.krw), 0));
+
+        const qc       = quotCacheMap[po] || null;
+        const quotSN   = qc && qc.sn   ? String(qc.sn)   : null;
+        const quotPO   = qc && qc.po   ? String(qc.po)   : null;
+        const quotTKM  = qc && qc.tkmNo? String(qc.tkmNo): null;
+        const quotKRW  = qc ? Math.round(qc.krw || 0) : null;
+
         const rn = i + 2;
         xmlRows += `<row r="${rn}">`;
+
+        // 거래명세서 컬럼 A~F
         xmlRows += nC('A', rn, i + 1);
         xmlRows += sC('B', rn, po);
-        xmlRows += sC('C', rn, String(firstRow.sn || ''));
-        xmlRows += sC('D', rn, firstRow.tkm_no || '');
-        xmlRows += nC('E', rn, Math.round(amount));
+        xmlRows += sC('C', rn, stmtSN);
+        xmlRows += sC('D', rn, stmtTKM);
+        xmlRows += nC('E', rn, stmtKRW);
         xmlRows += sC('F', rn, dateStr);
+
+        // 견적서 검증 컬럼 G~N (캐시 있을 때만)
+        if (qc) {
+          // G: 견적서 SN  H: Match(SN)
+          xmlRows += quotSN ? sC('G', rn, quotSN) : sC('G', rn, '(캐시없음)');
+          xmlRows += quotSN ? bFm('H', rn, `C${rn}=G${rn}`, stmtSN === quotSN) : sC('H', rn, 'N/A');
+          // I: 견적서 PO  J: Match(PO)
+          xmlRows += quotPO ? sC('I', rn, quotPO) : sC('I', rn, '');
+          xmlRows += quotPO ? bFm('J', rn, `B${rn}=I${rn}`, po === quotPO) : sC('J', rn, 'N/A');
+          // K: 견적서 0247  L: Match(0247)
+          xmlRows += quotTKM ? sC('K', rn, quotTKM) : sC('K', rn, '');
+          xmlRows += quotTKM ? bFm('L', rn, `D${rn}=K${rn}`, stmtTKM === quotTKM) : sC('L', rn, 'N/A');
+          // M: 견적서 금액  N: Match(금액)
+          xmlRows += nC('M', rn, quotKRW);
+          xmlRows += bFm('N', rn, `E${rn}=M${rn}`, stmtKRW === quotKRW);
+        } else {
+          // 캐시 없는 PO: 견적서 열은 빈 값
+          xmlRows += sC('G', rn, '(견적 미생성)');
+        }
+
         xmlRows += `</row>`;
       });
 
-      // ── Section 2: 견적서 vs 거래명세서 검증 ────────────────────────────
-      const PART_ORDER_VER = [
-        { type: 'Wafer Seal',     label: 'Wafer Seal'    },
-        { type: 'Wafer Shipping', label: 'Wafer Shipping' },
-        { type: 'Contact Pin',    label: 'Contact Pin'    },
-        { type: 'Retainer',       label: 'Retainer ring'  },
-        { type: 'Screw',          label: 'Screw'          },
-        { type: 'Lead In',        label: 'Lead In'        },
-      ];
-
-      // 검증 데이터 계산
-      const toNum = v => typeof v === 'number' ? v : Number(String(v||'').replace(/[^0-9.-]/g,''))||0;
-      const verData = pos.map(po => {
-        const rowData  = yjleeRows.filter(r => r.po === po);
-        const stmtKRW  = Math.round(rowData.reduce((s,r) => s + toNum(r.krw), 0));
-        const stmtUSD  = +rowData.reduce((s,r) => s + toNum(r.usd), 0).toFixed(2);
-        const qc       = quotCacheMap[po] || null;
-        const quotKRW  = qc ? Math.round(qc.krw || 0) : null;
-        const quotUSD  = qc ? +(qc.usd || 0).toFixed(2) : null;
-        const kMatch   = qc != null ? (quotKRW === stmtKRW) : null;
-        const uMatch   = qc != null && stmtUSD > 0 ? (Math.abs(quotUSD - stmtUSD) < 0.01) : null;
-        return { po, stmtKRW, stmtUSD, qc, quotKRW, quotUSD, kMatch, uMatch };
-      });
-
-      // 전체 불일치 항목 집계
-      const mismatches = [];
-      verData.forEach(({po, kMatch, uMatch}) => {
-        if (kMatch === false) mismatches.push(`PO ${po} Total KRW`);
-        if (uMatch === false) mismatches.push(`PO ${po} Total USD`);
-      });
-      const overallMatch = mismatches.length === 0;
-
-      // 검증 영역 시작 행
-      let vr = pos.length + 2;
-
-      // 빈 행
-      xmlRows += `<row r="${vr}"></row>`; vr++;
-
-      // 섹션 제목
-      xmlRows += `<row r="${vr}">${sC('A', vr, '=== 견적서 vs 거래명세서 검증 ===')}</row>`; vr++;
-
-      // 종합 결과
-      xmlRows += `<row r="${vr}">${sC('A', vr, 'Overall Match')}${sC('B', vr, overallMatch ? 'TRUE' : 'FALSE')}</row>`; vr++;
-      xmlRows += `<row r="${vr}">${sC('A', vr, 'Mismatch Count')}${nC('B', vr, mismatches.length)}</row>`; vr++;
-      xmlRows += `<row r="${vr}">${sC('A', vr, 'Mismatch Items')}${sC('B', vr, mismatches.length ? mismatches.join(', ') : '없음')}</row>`; vr++;
-
-      // 빈 행 + 컬럼 헤더
-      xmlRows += `<row r="${vr}"></row>`; vr++;
-      xmlRows += `<row r="${vr}">${sC('A',vr,'Item')}${sC('B',vr,'Quotation (견적서)')}${sC('C',vr,'Transaction (거래명세서)')}${sC('D',vr,'Match')}</row>`; vr++;
-
-      // PO별 검증 블록
-      for (const {po, stmtKRW, stmtUSD, qc, quotKRW, quotUSD, kMatch, uMatch} of verData) {
-        // PO 헤더
-        xmlRows += `<row r="${vr}">${sC('A', vr, `PO: ${po}`)}</row>`; vr++;
-
-        // Total KRW — 수식 비교
-        xmlRows += `<row r="${vr}">` +
-          sC('A', vr, 'Total KRW') +
-          (qc != null ? nC('B', vr, quotKRW) : sC('B', vr, 'N/A(캐시없음)')) +
-          nC('C', vr, stmtKRW) +
-          (qc != null ? bFm('D', vr, `B${vr}=C${vr}`, kMatch) : sC('D', vr, 'N/A')) +
-          `</row>`; vr++;
-
-        // Total USD — 수식 비교 (stmt에 USD 있을 때만)
-        xmlRows += `<row r="${vr}">` +
-          sC('A', vr, 'Total USD') +
-          (qc != null ? nC('B', vr, quotUSD) : sC('B', vr, 'N/A')) +
-          (stmtUSD > 0 ? nC('C', vr, stmtUSD) : sC('C', vr, '(USD 미기재)')) +
-          (qc != null && stmtUSD > 0 ? bFm('D', vr, `B${vr}=C${vr}`, uMatch) : sC('D', vr, 'N/A')) +
-          `</row>`; vr++;
-
-        // Cleaning KRW (견적서 breakdown 있는 경우만)
-        if (qc && qc.processKRW != null) {
-          xmlRows += `<row r="${vr}">${sC('A',vr,'Cleaning')}${nC('B',vr,Math.round(qc.processKRW))}${sC('C',vr,'합계에 포함')}${sC('D',vr,'N/A')}</row>`; vr++;
-        }
-
-        // partType별 KRW
-        if (qc && qc.breakdown) {
-          for (const {type, label} of PART_ORDER_VER) {
-            const bd = qc.breakdown[type];
-            if (!bd) continue;
-            xmlRows += `<row r="${vr}">${sC('A',vr,label)}${nC('B',vr,Math.round(bd.krw))}${sC('C',vr,'합계에 포함')}${sC('D',vr,'N/A')}</row>`; vr++;
-          }
-        } else if (qc && qc.source === 'sht') {
-          xmlRows += `<row r="${vr}">${sC('A',vr,'[SHT 견적 — 파트별 breakdown 없음]')}${sC('C',vr,'')}${sC('D',vr,'N/A')}</row>`; vr++;
-        }
-
-        // PO 간 구분 빈 행
-        xmlRows += `<row r="${vr}"></row>`; vr++;
-      }
-
-      // 컬럼 폭 설정
+      // ── 컬럼 폭 설정 ─────────────────────────────────────────────────────
       const colDefs = `<cols>` +
-        `<col min="1" max="1" width="24" customWidth="1"/>` +
-        `<col min="2" max="2" width="18" customWidth="1"/>` +
-        `<col min="3" max="3" width="25" customWidth="1"/>` +
-        `<col min="4" max="4" width="10" customWidth="1"/>` +
-        `<col min="5" max="5" width="16" customWidth="1"/>` +
-        `<col min="6" max="6" width="13" customWidth="1"/>` +
+        `<col min="1"  max="1"  width="5"  customWidth="1"/>` +  // A: No
+        `<col min="2"  max="2"  width="14" customWidth="1"/>` +  // B: PO
+        `<col min="3"  max="3"  width="13" customWidth="1"/>` +  // C: SN
+        `<col min="4"  max="4"  width="13" customWidth="1"/>` +  // D: TKM No
+        `<col min="5"  max="5"  width="14" customWidth="1"/>` +  // E: Amount KRW
+        `<col min="6"  max="6"  width="12" customWidth="1"/>` +  // F: Date
+        `<col min="7"  max="7"  width="13" customWidth="1"/>` +  // G: 견적서 SN
+        `<col min="8"  max="8"  width="7"  customWidth="1"/>` +  // H: Match
+        `<col min="9"  max="9"  width="13" customWidth="1"/>` +  // I: 견적서 PO
+        `<col min="10" max="10" width="7"  customWidth="1"/>` +  // J: Match
+        `<col min="11" max="11" width="13" customWidth="1"/>` +  // K: 견적서 0247
+        `<col min="12" max="12" width="7"  customWidth="1"/>` +  // L: Match
+        `<col min="13" max="13" width="14" customWidth="1"/>` +  // M: 견적서 금액
+        `<col min="14" max="14" width="7"  customWidth="1"/>` +  // N: Match
         `</cols>`;
 
       return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
