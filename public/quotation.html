@@ -1111,12 +1111,106 @@
       });
     })();
 
+    // Excel 복사 텍스트(TSV) 파서
+    // 셀 안에 줄바꿈이 있으면 Excel은 "..." 로 감싸서 복사함 → 단순 split('\n') 하면 한 행이 여러 행으로 쪼개짐
+    function parseClipboardTsv(text) {
+      const rows = [];
+      let row = [], cell = '', inQ = false;
+      text = text.replace(/\r\n?/g, '\n');
+      for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        if (inQ) {
+          if (ch === '"') {
+            if (text[i + 1] === '"') { cell += '"'; i++; }   // "" → "
+            else inQ = false;
+          } else cell += ch;
+        } else if (ch === '"' && cell === '') inQ = true;
+        else if (ch === '\t') { row.push(cell.trim()); cell = ''; }
+        else if (ch === '\n') { row.push(cell.trim()); rows.push(row); row = []; cell = ''; }
+        else cell += ch;
+      }
+      if (cell !== '' || row.length) { row.push(cell.trim()); rows.push(row); }
+      return rows.filter(r => r.some(c => c));
+    }
+
+    // ── SHT 단계별 추적 (RAW → PARSED → TRANSFORMED → SAVED → DISPLAYED) ──
+    const SHT_BUILD = '2026-10-02 trace-v1';
+    let _shtTrace = {};
+    const _TRACE_ORDER = ['RAW', 'PARSED', 'TRANSFORMED', 'SAVED', 'DISPLAYED'];
+    const _krwNum = v => parseFloat(String(v ?? '').replace(/[^0-9.]/g, '')) || 0;
+    function shtTraceStage(name, rows, extra = '') {
+      const pos  = new Set(rows.map(r => r.po).filter(Boolean));
+      const prev = _TRACE_ORDER.slice(0, _TRACE_ORDER.indexOf(name)).reverse().find(k => _shtTrace[k]);
+      const lost  = prev ? [..._shtTrace[prev].pos].filter(p => !pos.has(p)) : [];
+      const added = prev ? [...pos].filter(p => !_shtTrace[prev].pos.has(p)) : [];
+      const n494  = rows.filter(r => Math.abs(_krwNum(r.krw) - 494.43) < 0.01).length;
+      _shtTrace[name] = { rows: rows.length, pos, lost, added, prev, n494 };
+      console.group(`[SHT-TRACE] ${name}: rows=${rows.length} PO=${pos.size}` +
+        (prev ? ` (vs ${prev}: 누락 ${lost.length} / 추가 ${added.length})` : '') + (extra ? ` · ${extra}` : ''));
+      console.table(rows.map(r => ({ PO: r.po || '', SN: r.sn || '', Part: r.pn || '', KRW: r.krw ?? '', 비고: r.note || '' })));
+      if (lost.length)  console.warn(`❌ 누락 PO (${prev} − ${name}) ${lost.length}개:`, lost.join(', '));
+      if (added.length) console.warn(`➕ 추가 PO (${name} − ${prev}) ${added.length}개:`, added.join(', '));
+      if (n494) console.warn(`⚠ KRW=494.43 행 ${n494}건 — Logi Fee 열을 KRW로 참조 중일 가능성`);
+      console.groupEnd();
+    }
+    function shtTraceSummaryHtml() {
+      const done = _TRACE_ORDER.filter(k => _shtTrace[k]);
+      console.log('[SHT-TRACE] 요약\n' + done.map(k => `${k.padEnd(12)} PO: ${_shtTrace[k].pos.size}  (rows ${_shtTrace[k].rows})` +
+        (_shtTrace[k].lost.length ? `  ← 누락 ${_shtTrace[k].lost.join(', ')}` : '')).join('\n'));
+      return `<div style="border:1px solid #cfe2ff;background:#f4f8ff;border-radius:6px;padding:8px;font-size:11px">
+        <div style="font-weight:700;margin-bottom:4px">🔎 단계별 추적 <span style="color:#6c757d;font-weight:400">(build ${SHT_BUILD})</span></div>
+        <table style="width:100%;border-collapse:collapse">
+          <tr style="background:#e7f0ff"><th style="text-align:left;padding:2px 4px">단계</th><th>rows</th><th>PO</th><th>KRW=494.43</th><th style="text-align:left">이전 단계 대비 누락 PO</th></tr>
+          ${done.map(k => { const t = _shtTrace[k]; return `<tr style="border-top:1px solid #dbe6ff">
+            <td style="padding:2px 4px;font-weight:600">${k}</td><td style="text-align:center">${t.rows}</td>
+            <td style="text-align:center">${t.pos.size}</td>
+            <td style="text-align:center;${t.n494 ? 'color:#dc3545;font-weight:700' : ''}">${t.n494}</td>
+            <td style="font-family:monospace;${t.lost.length ? 'color:#dc3545' : ''}">${t.lost.length ? `${t.lost.length}개: ${t.lost.join(', ')}` : '-'}</td></tr>`; }).join('')}
+        </table>
+        <div style="color:#6c757d;margin-top:4px">DISPLAYED 단계는 출하관리 화면 콘솔에서 확인 ([SHT-TRACE] DISPLAYED)</div>
+      </div>`;
+    }
+    // RAW 단계: 파서와 무관하게 원본에서 10~11자리 숫자(PO 형식)를 직접 찾음
+    function shtTraceRaw(lines, srcLabel) {
+      const rows = [];
+      lines.forEach((ln, i) => {
+        (ln.match(/(?<!\d)\d{10,11}(?!\d)/g) || []).forEach(po => rows.push({
+          po, sn: (ln.match(/(?<!\d)\d{8,9}(?!\d)/) || [''])[0], pn: '',
+          krw: (ln.match(/₩\s?[\d,]+/g) || []).pop() || '(이 줄에 ₩ 없음)', note: `${srcLabel} ${i + 1}번째 줄`,
+        }));
+      });
+      shtTraceStage('RAW', rows);
+    }
+    // PARSED 단계: 파서 결과 행을 감지된 열 번호로 읽음
+    function shtTraceParsed() {
+      const c = _shtColMap;
+      console.log(`[SHT-TRACE] 헤더: ${_shtHeaders.map((h, i) => `[${i}]${String(h).replace(/\n/g, '↵')}`).join(' | ')}`);
+      console.log(`[SHT-TRACE] 열 매핑: PO=[${c.po}]"${_shtHeaders[c.po] ?? ''}" SN=[${c.sn}]"${_shtHeaders[c.sn] ?? ''}" PN=[${c.pn}]"${_shtHeaders[c.pn] ?? ''}" KRW=[${c.price}]"${_shtHeaders[c.price] ?? ''}"`);
+      if (!/krw/i.test(String(_shtHeaders[c.price] ?? ''))) console.warn(`⚠ KRW 열 [${c.price}]의 헤더가 "${_shtHeaders[c.price]}" — Total KRW Price 아님`);
+      const lens = {};
+      _shtRawRows.forEach(r => { lens[r.length] = (lens[r.length] || 0) + 1; });
+      shtTraceStage('PARSED', _shtRawRows.map((r, i) => {
+        const v = k => (c[k] >= 0 ? String(r[c[k]] ?? '').trim() : '');
+        const elsewhere = r.map((x, ci) => ci !== c.po && /^\d{10,11}$/.test(String(x).replace(/[,\s]/g, '')) ? `col${ci}` : null).filter(Boolean);
+        return { po: v('po').replace(/[,\s]/g, ''), sn: v('sn'), pn: v('pn'), krw: v('price'),
+          note: `행${i} 열수=${r.length}${elsewhere.length ? ` ⚠PO형 숫자가 PO열 밖(${elsewhere.join(',')})` : ''}` };
+      }), `열수 분포 ${JSON.stringify(lens)}`);
+    }
+
     async function pasteFromClipboard() {
       const statusEl = document.getElementById('sht-load-status');
       try {
         const text = await navigator.clipboard.readText();
         if (!text.trim()) { statusEl.innerHTML = '<span style="color:#dc3545">클립보드가 비어있습니다. Excel에서 Ctrl+A → Ctrl+C 후 다시 시도하세요.</span>'; return; }
-        const rows = text.trim().split('\n').map(r => r.split('\t').map(c => c.trim()));
+        _shtTrace = {};
+        console.log(`[SHT-TRACE] build=${SHT_BUILD} · 입력=clipboard`);
+        {
+          const _rl = text.replace(/\r\n?/g, '\n').split('\n');
+          console.log(`[SHT-TRACE] RAW 원본: 글자수=${text.length} 줄수(줄바꿈 기준)=${_rl.length} 첫줄 열수(탭 기준)=${_rl[0].split('\t').length} 따옴표로 감싼 셀=${(text.match(/(^|\t)"/gm) || []).length}개`);
+          shtTraceRaw(_rl, 'clipboard');
+        }
+        const rows = parseClipboardTsv(text);
+        console.log(`[SHT-TRACE] parseClipboardTsv 반환 rows=${rows.length}`);
         if (rows.length < 2) { statusEl.innerHTML = '<span style="color:#dc3545">데이터가 부족합니다. Excel에서 전체 선택(Ctrl+A) 후 복사하세요.</span>'; return; }
         _shtSrcFile = 'clipboard_paste';
         const _det = detectShtCols(rows, 0);
@@ -1124,7 +1218,7 @@
         _shtHeaderRowIdx = _det.headerRowIdx;
         { const _af = rows.slice(_det.headerRowIdx + 1).map((r, i) => ({ r, xl: _det.headerRowIdx + 2 + i })).filter(x => x.r.some(c => c));
           _shtRawRows = _af.map(x => x.r); _shtRawRowXlRow = _af.map(x => x.xl); }
-        _shtColMap  = { po: _det.po, sn: _det.sn, pn: _det.pn, price: _det.price };
+        _shtColMap  = { po: _det.po, sn: _det.sn, pn: _det.pn, price: _det.price }; shtTraceParsed();
 
         const hdrs = _shtHeaders.map((h, i) => `[${i}] ${h}`).filter(s => !s.endsWith('] ')).join(' | ');
         statusEl.innerHTML = `<span style="color:#28a745">✅ ${_shtRawRows.length}행 읽힘</span><br>
@@ -1165,6 +1259,9 @@
       const wb  = XLSX.read(buf, { type: 'array' });
       const ws  = wb.Sheets[wb.SheetNames[0]];
       const all = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      _shtTrace = {};
+      console.log(`[SHT-TRACE] build=${SHT_BUILD} · 입력=file(${file.name}) · 시트 행수=${all.length}`);
+      shtTraceRaw(all.map(r => r.join('\t')), 'sheet');
       console.log('[SHT 파일 읽기] 시트명:', wb.SheetNames[0], '/ 총 행수:', all.length);
       all.slice(0, 10).forEach((r, i) => console.log(`  행${i}:`, JSON.stringify(r).slice(0, 200)));
 
@@ -1185,7 +1282,7 @@
       _shtHeaderRowIdx = _det.headerRowIdx;
       { const _af = all.slice(_det.headerRowIdx + 1).map((r, i) => ({ r, xl: _det.headerRowIdx + 2 + i })).filter(x => x.r.some(c => String(c).trim()));
         _shtRawRows = _af.map(x => x.r); _shtRawRowXlRow = _af.map(x => x.xl); }
-      _shtColMap  = { po: _det.po, sn: _det.sn, pn: _det.pn, price: _det.price };
+      _shtColMap  = { po: _det.po, sn: _det.sn, pn: _det.pn, price: _det.price }; shtTraceParsed();
 
       const hdrs = _shtHeaders.map((h, i) => `[${i}]${h}`).filter(s => s.length > 3).join(' | ');
       document.getElementById('sht-load-status').innerHTML =
@@ -1420,6 +1517,17 @@
           return { po, sn, pn, krw, order_no, reason };
         })
         .filter(Boolean);
+
+      // [SHT-TRACE] TRANSFORMED: map/filter 전후 건수 + 제외 사유별 건수
+      {
+        const byOutcome = {};
+        _shtRowDiag.forEach(d => { const k = String(d.outcome).replace(/\(.*$/, '') + (String(d.outcome).startsWith('mapped') ? '' : String(d.outcome).match(/\(.*\)/)?.[0] || ''); byOutcome[k] = (byOutcome[k] || 0) + 1; });
+        console.log(`[SHT-TRACE] TRANSFORMED 과정: 입력 rows=${_shtRawRows.length} → map 후 null 아닌 행=${_shtMapped.length} (filter(Boolean) 후) · 사유별 ${JSON.stringify(byOutcome)}`);
+        const fd = _shtRowDiag.filter(d => d.isFillDown || d.isBwdFill);
+        if (fd.length) console.warn(`⚠ PO 빈칸 → 이웃 행 PO로 채워진 행 ${fd.length}건:`, fd.map(d => `Excel행${d.xlRow}→${d.filledPo}`).join(', '));
+        shtTraceStage('TRANSFORMED', _shtMapped.map(r => ({ ...r,
+          note: (r.order_no || `미매칭: ${r.reason}`) + (_shtRowDiag.find(d => d.filledPo === r.po && !d.origPo && (d.isFillDown || d.isBwdFill) && d.sn === r.sn) ? ' ⚠PO채움' : '') })));
+      }
 
       // quotation_amounts_cache: PO 키로 저장 (SN도 보조로 함께 저장)
       try {
@@ -1736,15 +1844,47 @@
         dbgLines.push(`✅ 저장된 고유 PO: ${shtPos.length}개`);
         dbgLines.push(`🔑 PO 목록: ${shtPos.join(', ')}`);
         dbgLines.push(`📋 전체 행: ${priceOk}건 | PO 없는 행: ${_shtMapped.filter(r => !r.po).length}건`);
-        const shipNotesErr = [];
+        const shipNotesErr = [], shipNotesMiss = [];
         for (const po of shtPos) {
-          const { error: ne } = await sb.from('shipments').update({ notes: 'SHT' }).eq('po', po);
+          // .select() 로 실제 갱신된 행을 받아야 0건 갱신(PTN 미등록)을 구분할 수 있음
+          const { data: nd, error: ne } = await sb.from('shipments').update({ notes: 'SHT' }).eq('po', po).select('po');
           if (ne) shipNotesErr.push(`${po}: ${ne.message}`);
+          else if (!nd || !nd.length) shipNotesMiss.push(po);
           else shipNotesOk++;
         }
         extOk = shipNotesOk;
-        dbgLines.push(`✅ shipments.notes=SHT 업데이트: ${shipNotesOk}건 성공`);
-        if (shipNotesErr.length) dbgLines.push(`⚠ 업데이트 실패(PTN 미등록 PO는 정상): ${shipNotesErr.join(' | ')}`);
+        dbgLines.push(`✅ shipments.notes=SHT 업데이트: ${shipNotesOk}건 성공 / 대상없음 ${shipNotesMiss.length}건`);
+        if (shipNotesMiss.length) dbgLines.push(`⚠ shipments에 PO 없음(PTN 미등록): ${shipNotesMiss.join(', ')}`);
+        if (shipNotesErr.length) dbgLines.push(`⚠ 업데이트 실패: ${shipNotesErr.join(' | ')}`);
+
+        // ── 행별 문제 목록 (화면 표시용) ─────────────────────────────
+        const _issues = [];
+        _missingPOs.forEach(po => _issues.push({ po, sn: '', type: '파싱 누락',
+          msg: 'SHT 파일에는 있지만 견적 라인으로 인식되지 않음 (상세 로그 "누락 PO 탈락 위치 분석" 참고)' }));
+        _shtRowDiag.filter(d => d.isFillDown || d.isBwdFill).forEach(d => _issues.push({ po: d.filledPo, sn: d.sn, type: 'PO 빈칸',
+          msg: `Excel ${d.xlRow}행의 PO 칸이 비어 있어 ${d.isBwdFill ? '아래' : '위'} 행 PO(${d.filledPo})를 대신 사용 → 다른 PO와 섞임` }));
+        _diag_noOrder.forEach(r => _issues.push({ po: r.po, sn: r.sn, type: '수주번호 미매칭', msg: r.reason || '알수없음' }));
+        vsRowsRaw.filter(r => !vsRows.includes(r)).forEach(r => {
+          const w = vsRows.find(v => v.order_no === r.order_no);
+          _issues.push({ po: r.po, sn: r.sn, type: '수주번호 중복',
+            msg: `수주번호 ${r.order_no}가 PO ${w?.po || '-'} / SN ${w?.sn || '-'} 행과 같아 바코드 검증에서 제외` });
+        });
+        shipNotesMiss.forEach(po => _issues.push({ po, sn: '', type: 'PTN 미등록',
+          msg: '출하관리(shipments)에 이 PO가 없어 SHT 마킹 안 됨 → PTN 업로드 후 SHT 재임포트 필요' }));
+        shipNotesErr.forEach(e => _issues.push({ po: e.split(':')[0], sn: '', type: '마킹 오류', msg: e }));
+        if (_issues.length) console.table(_issues);
+        const _issueHtml = !_issues.length
+          ? `<div style="color:#28a745;font-weight:600">✅ 행별 문제 없음 (원본 PO ${_rawPOsUniq.length}개 = 인식 PO ${_mappedPOsUniq.length}개)</div>`
+          : `<div style="border:1px solid #f5c2c7;background:#fff5f5;border-radius:6px;padding:8px">
+              <div style="color:#dc3545;font-weight:700;margin-bottom:6px">⚠ 확인 필요 ${_issues.length}건 · 원본 PO ${_rawPOsUniq.length}개 → 인식 PO ${_mappedPOsUniq.length}개 → 출하관리 마킹 ${shipNotesOk}개</div>
+              <table style="width:100%;font-size:11px;border-collapse:collapse">
+                <tr style="background:#f8d7da"><th style="padding:3px">#</th><th>유형</th><th>PO</th><th>SN</th><th style="text-align:left">원인</th></tr>
+                ${_issues.map((x, i) => `<tr style="border-top:1px solid #f1c0c5">
+                  <td style="padding:3px;text-align:center">${i + 1}</td><td style="white-space:nowrap">${x.type}</td>
+                  <td style="font-family:monospace">${x.po || '-'}</td><td style="font-family:monospace">${x.sn || '-'}</td>
+                  <td>${x.msg}</td></tr>`).join('')}
+              </table>
+            </div>`;
 
         try {
           const extRows = _shtMapped.map(r => ({
@@ -1771,6 +1911,21 @@
           }
         } catch(e) { extErr = e.message; dbgLines.push(`ℹ ext_quote_lines 없음 (무시): ${extErr}`); }
 
+        // [SHT-TRACE] SAVED: 저장소를 다시 읽어서 실제 들어간 값 확인
+        {
+          console.log(`[SHT-TRACE] SAVED 과정: verification_sets ${vsRowsRaw.length}→dedupe ${vsRows.length}건 · shipments 마킹 ${shipNotesOk}/${shtPos.length} PO (대상없음 ${shipNotesMiss.length}, 오류 ${shipNotesErr.length}) · ext_quote_lines ${extErr ? '실패→localStorage' : 'DB 저장'}`);
+          const vsPos  = new Set(vsRows.map(r => r.po));
+          const vsLost = [...new Set(_shtMapped.map(r => r.po))].filter(p => !vsPos.has(p));
+          if (vsLost.length) console.warn('verification_sets에 없는 PO:', vsLost.join(', '));
+          if (shipNotesMiss.length) console.warn('shipments 마킹 안 된 PO(출하관리에 없음):', shipNotesMiss.join(', '));
+          let saved = [];
+          try { saved = JSON.parse(localStorage.getItem('sht_quote_lines_cache') || '[]'); } catch {}
+          const amt = (() => { try { return JSON.parse(localStorage.getItem('quotation_amounts_cache') || '{}'); } catch { return {}; } })();
+          shtTraceStage('SAVED', saved.map(l => ({ po: l.po, sn: l.sn, pn: l.pn, krw: l.unit_price,
+            note: `order=${l.order_no || '-'} · amtCache[PO]=${amt[l.po]?.krw ?? '없음'}${amt[l.po] && amt[l.po].krw !== l.unit_price ? ' ⚠PO키 금액 다름' : ''}` })),
+            'sht_quote_lines_cache 재조회 (거래명세서가 읽는 값)');
+        }
+
         const _qlOk  = extOk || _shtMapped.length;   // ext_quote_lines 저장 건수 (실패 시 파싱 건수)
         const _qlSrc = extErr ? '(캐시 저장)' : '(DB 저장)';
         document.getElementById('sht-result').style.display = 'block';
@@ -1780,9 +1935,11 @@
               📋 SHT quotation lines: ${_shtMapped.length}건 파싱 완료
             </div>
             <div>✅ <b>KRW 금액</b>: ${priceOk}건 캐시 저장 · 컬럼[PO=${_shtColMap.po} SN=${_shtColMap.sn} KRW=${_shtColMap.price}]</div>
-            <div>✅ <b>quotation_lines DB</b>: ${_qlOk}건 ${_qlSrc}${extErr ? ` — <span style="color:#dc3545">${extErr.substring(0,60)}</span>` : ''}</div>
-            <div>✅ <b>바코드 검증 데이터</b> (verification_sets): ${vsOk}건 저장${vsSkip ? ` · ${vsSkip}건 미매칭 제외` : ''}</div>
-            <div>✅ <b>SHT 견적 마킹</b>: ${shipNotesOk}개 PO → 출하관리 즉시 SHT로 인식</div>
+            <div>${extErr ? '⚠️' : '✅'} <b>quotation_lines DB</b>: ${_qlOk}건 ${_qlSrc}${extErr ? ` — <span style="color:#dc3545">${extErr.substring(0,60)}</span>` : ''}</div>
+            <div>${vsOk < _shtMapped.length ? '⚠️' : '✅'} <b>바코드 검증 데이터</b> (verification_sets): ${vsOk}건 저장${vsSkip ? ` · ${vsSkip}건 미매칭 제외` : ''}${vsRowsRaw.length > vsRows.length ? ` · ${vsRowsRaw.length - vsRows.length}건 수주번호 중복 제외` : ''}</div>
+            <div>${shipNotesMiss.length || shipNotesErr.length ? '⚠️' : '✅'} <b>SHT 견적 마킹</b>: ${shipNotesOk}개 PO → 출하관리 즉시 SHT로 인식${shipNotesMiss.length ? ` · <span style="color:#dc3545">${shipNotesMiss.length}개 PO는 출하관리에 없음</span>` : ''}</div>
+            ${shtTraceSummaryHtml()}
+            ${_issueHtml}
             <details style="margin-top:8px"><summary style="cursor:pointer;font-size:11px;color:#6c757d">▶ 상세 로그</summary>
               <pre style="font-size:10px;background:#f8f9fa;padding:8px;border-radius:4px;margin-top:4px;white-space:pre-wrap">${dbgLines.join('\n')}</pre>
             </details>
