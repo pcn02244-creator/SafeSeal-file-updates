@@ -225,6 +225,7 @@
               <tr>
                 <th class="ps-3" style="width:80px">공정</th>
                 <th style="width:160px">수주번호</th>
+                <th style="width:120px">Customer</th>
                 <th style="width:120px">PN</th>
                 <th style="width:110px">SN</th>
                 <th>교체파트</th>
@@ -704,6 +705,7 @@
           return `<tr class="q-row ${ROW_CLS[q.process]||''}" onclick="showDetail(${realIdx})">
             <td class="ps-3">${procBadge(q.process)}${manualBadge}${tsvBadge}</td>
             <td class="font-monospace small">${q.수주번호}</td>
+            <td class="small">${q.customer||'—'}</td>
             <td class="font-monospace small">${q.pn}</td>
             <td class="font-monospace small">${q.sn}</td>
             <td class="small">${replText}</td>
@@ -755,7 +757,7 @@
         `&nbsp;<span class="text-white-50 small ms-2">PO: ${q.po||'누락'}</span>`;
 
       document.getElementById('detail-product').innerHTML = [
-        ['PN', q.pn], ['SN', q.sn], ['TKM No.', q.tkmNo||'-'], ['PO No.', q.po||'<span class="text-danger">누락</span>'],
+        ['Customer', q.customer||'—'], ['PN', q.pn], ['SN', q.sn], ['TKM No.', q.tkmNo||'-'], ['PO No.', q.po||'<span class="text-danger">누락</span>'],
       ].map(([k,v]) => `<div class="col-6 col-md-3">
         <div class="info-tile"><div class="t-lbl">${k}</div><div class="t-val font-monospace">${v}</div></div>
       </div>`).join('');
@@ -908,13 +910,13 @@
     function exportCSV() {
       const src = filteredData.length ? filteredData : quotationData;
       if (!src.length) { alert('내보낼 데이터가 없습니다.'); return; }
-      const rows = [['수주번호','PO No.','PN','SN','TKM No.','공정','공정 USD','공정 KRW','교체파트 PN','교체파트 설명','수량','단가 USD','단가 KRW','소계 USD','소계 KRW','교체파트 합계 USD','교체파트 합계 KRW','Total USD','Total KRW']];
+      const rows = [['수주번호','Customer','PO No.','PN','SN','TKM No.','공정','공정 USD','공정 KRW','교체파트 PN','교체파트 설명','수량','단가 USD','단가 KRW','소계 USD','소계 KRW','교체파트 합계 USD','교체파트 합계 KRW','Total USD','Total KRW']];
       for (const q of src) {
         if (!q.replParts.length) {
-          rows.push([q.수주번호,q.po,q.pn,q.sn,q.tkmNo,q.process,q.processUSD,q.processKRW,'','','','','','','',0,0,q.totalUSD,q.totalKRW]);
+          rows.push([q.수주번호,q.customer||'',q.po,q.pn,q.sn,q.tkmNo,q.process,q.processUSD,q.processKRW,'','','','','','','',0,0,q.totalUSD,q.totalKRW]);
         } else {
           q.replParts.forEach((p,i) => rows.push([
-            i===0?q.수주번호:'',i===0?q.po:'',i===0?q.pn:'',i===0?q.sn:'',
+            i===0?q.수주번호:'',i===0?(q.customer||''):'',i===0?q.po:'',i===0?q.pn:'',i===0?q.sn:'',
             i===0?q.tkmNo:'',i===0?q.process:'',i===0?q.processUSD:'',i===0?q.processKRW:'',
             p.pn,p.description,p.qty,p.unitPriceUSD,p.unitPriceKRW,p.totalUSD,p.totalKRW,
             i===0?q.replTotalUSD:'',i===0?q.replTotalKRW:'',i===0?q.totalUSD:'',i===0?q.totalKRW:''
@@ -1854,7 +1856,7 @@
         }
         extOk = shipNotesOk;
         dbgLines.push(`✅ shipments.notes=SHT 업데이트: ${shipNotesOk}건 성공 / 대상없음 ${shipNotesMiss.length}건`);
-        if (shipNotesMiss.length) dbgLines.push(`⚠ shipments에 PO 없음(PTN 미등록): ${shipNotesMiss.join(', ')}`);
+        if (shipNotesMiss.length) dbgLines.push(`ℹ PTN 업로드 전 정상 상태 — shipments에 아직 없는 PO (${shipNotesMiss.length}건): ${shipNotesMiss.join(', ')}`);
         if (shipNotesErr.length) dbgLines.push(`⚠ 업데이트 실패: ${shipNotesErr.join(' | ')}`);
 
         // ── 행별 문제 목록 (화면 표시용) ─────────────────────────────
@@ -1869,8 +1871,8 @@
           _issues.push({ po: r.po, sn: r.sn, type: '수주번호 중복',
             msg: `수주번호 ${r.order_no}가 PO ${w?.po || '-'} / SN ${w?.sn || '-'} 행과 같아 바코드 검증에서 제외` });
         });
-        shipNotesMiss.forEach(po => _issues.push({ po, sn: '', type: 'PTN 미등록',
-          msg: '출하관리(shipments)에 이 PO가 없어 SHT 마킹 안 됨 → PTN 업로드 후 SHT 재임포트 필요' }));
+        // shipNotesMiss(PTN 미등록)는 SHT 생성 시점에 PTN 미업로드가 정상이므로 오류 목록에서 제외
+        // (dbgLines에 건수는 기록되므로 디버그 로그에서 확인 가능)
         shipNotesErr.forEach(e => _issues.push({ po: e.split(':')[0], sn: '', type: '마킹 오류', msg: e }));
         if (_issues.length) console.table(_issues);
         const _issueHtml = !_issues.length
@@ -1917,7 +1919,7 @@
           const vsPos  = new Set(vsRows.map(r => r.po));
           const vsLost = [...new Set(_shtMapped.map(r => r.po))].filter(p => !vsPos.has(p));
           if (vsLost.length) console.warn('verification_sets에 없는 PO:', vsLost.join(', '));
-          if (shipNotesMiss.length) console.warn('shipments 마킹 안 된 PO(출하관리에 없음):', shipNotesMiss.join(', '));
+          if (shipNotesMiss.length) console.log('PTN 업로드 전 정상 상태 — shipments에 아직 없는 PO:', shipNotesMiss.join(', '));
           let saved = [];
           try { saved = JSON.parse(localStorage.getItem('sht_quote_lines_cache') || '[]'); } catch {}
           const amt = (() => { try { return JSON.parse(localStorage.getItem('quotation_amounts_cache') || '{}'); } catch { return {}; } })();

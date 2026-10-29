@@ -623,12 +623,14 @@
             카메라로 바코드를 비춰주세요
           </div>
         </div>
-        <div class="modal-footer py-2 gap-2">
+        <div class="modal-footer py-2 gap-2 flex-wrap">
           <div id="barcode-result" class="me-auto font-monospace text-success fw-semibold small"></div>
           <div id="barcode-manual-wrap" class="d-none me-auto">
             <input type="text" class="form-control form-control-sm font-monospace" id="barcode-manual-input" placeholder="바코드 직접 입력" style="width:200px">
             <button class="btn btn-sm btn-primary ms-2" onclick="applyManualBarcode()">검색</button>
           </div>
+          <input type="file" id="barcode-photo-input" accept="image/*" capture="environment" class="d-none" onchange="onBarcodePhotoSelected(this)">
+          <button class="btn btn-outline-light btn-sm" onclick="document.getElementById('barcode-photo-input').click()" title="카메라 앱으로 사진 찍어서 인식 (자동초점 지원)">📸 사진으로 스캔</button>
           <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal" onclick="stopBarcodeScanner()">닫기</button>
         </div>
       </div>
@@ -695,12 +697,16 @@
             <div class="col-auto"><span id="v-pn-badge" class="badge fs-6" style="min-width:3rem"></span></div>
           </div>
 
-          <div id="verify-cam-wrap" class="d-none mb-3 position-relative" style="border-radius:8px;overflow:hidden;background:#000">
-            <video id="verify-cam-video" playsinline autoplay muted style="width:100%;max-height:220px;object-fit:cover;display:block"></video>
-            <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:70%;height:2px;background:rgba(255,100,100,.8);pointer-events:none"></div>
-            <div id="verify-cam-status" class="text-center text-white py-1 small" style="position:absolute;bottom:0;width:100%;background:rgba(0,0,0,.6)">
-              스캔 대기 중...
+          <div id="verify-cam-wrap" class="d-none mb-3">
+            <div class="position-relative" style="border-radius:8px;overflow:hidden;background:#000">
+              <video id="verify-cam-video" playsinline autoplay muted style="width:100%;max-height:220px;object-fit:cover;display:block"></video>
+              <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:70%;height:2px;background:rgba(255,100,100,.8);pointer-events:none"></div>
+              <div id="verify-cam-status" class="text-center text-white py-1 small" style="position:absolute;bottom:0;width:100%;background:rgba(0,0,0,.6)">
+                스캔 대기 중...
+              </div>
             </div>
+            <input type="file" id="verify-photo-input" accept="image/*" capture="environment" class="d-none" onchange="onVerifyPhotoSelected(this)">
+            <button class="btn btn-outline-secondary btn-sm w-100 mt-1" onclick="document.getElementById('verify-photo-input').click()">📸 사진으로 스캔 (자동초점)</button>
           </div>
 
           <div id="verify-result" class="d-none"></div>
@@ -715,6 +721,13 @@
     </div>
   </div>
 
+  <!-- zxing-wasm: BarcodeDetector 미지원 브라우저(삼성 인터넷 등) 대응 -->
+  <script src="js/zxing-wasm.js"></script>
+  <script>
+    if (window.ZXingWASM && ZXingWASM.setZXingModuleOverrides) {
+      ZXingWASM.setZXingModuleOverrides({ locateFile: (p) => 'js/' + p });
+    }
+  </script>
   <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
@@ -898,6 +911,32 @@
             // PTN 업로드됐고 SHT가 아닌 PO → 국내 처리
             : (g.shipment?.ptn_uploaded_at && !shtPoSet.has(g.po) ? 'auto' : ''))),
         })).sort((a, b) => a.po.localeCompare(b.po));
+
+        // [SHT-TRACE] DISPLAYED: 저장된 SHT 견적 PO가 출하관리 목록에 어떻게 보이는지
+        try {
+          const _sc = JSON.parse(localStorage.getItem('sht_quote_lines_cache') || '[]');
+          if (_sc.length) {
+            const savedPos = [...new Set(_sc.map(l => l.po).filter(Boolean))];
+            const grpByPo  = Object.fromEntries(poGroups.map(g => [g.po, g]));
+            const notInList = savedPos.filter(p => !grpByPo[p]);
+            const notSht    = savedPos.filter(p => grpByPo[p] && grpByPo[p].quotSource !== 'sht');
+            const shownSht  = savedPos.length - notInList.length - notSht.length;
+            console.group(`[SHT-TRACE] DISPLAYED (출하관리 목록): SAVED PO=${savedPos.length} → 목록에 있음 ${savedPos.length - notInList.length} → SHT 배지 ${shownSht}`);
+            console.table(savedPos.map(p => ({
+              PO: p,
+              목록: grpByPo[p] ? '있음' : '없음',
+              배지: grpByPo[p] ? (grpByPo[p].quotSource || '견적없음') : '-',
+              shipments: grpByPo[p]?.shipment ? (grpByPo[p].shipment.notes || '(notes 없음)') : '행 없음',
+              KRW: _sc.filter(l => l.po === p).map(l => l.unit_price).join(', '),
+              amtCache: amtCache[p] ? `${amtCache[p].krw} (${amtCache[p].source})` : '없음',
+            })));
+            if (notInList.length) console.warn(`❌ 목록에 없는 PO (SAVED − DISPLAYED) ${notInList.length}개:`, notInList.join(', '));
+            if (notSht.length)    console.warn(`⚠ 목록에는 있지만 SHT 배지 아님 ${notSht.length}개:`, notSht.map(p => `${p}(${grpByPo[p].quotSource || '견적없음'})`).join(', '));
+            const n494 = _sc.filter(l => Math.abs((l.unit_price || 0) - 494.43) < 0.01).length;
+            if (n494) console.warn(`⚠ KRW=494.43 견적 라인 ${n494}건 — 잘못된 열에서 읽힌 금액`);
+            console.groupEnd();
+          }
+        } catch (te) { console.warn('[SHT-TRACE] DISPLAYED 추적 실패:', te.message); }
 
         // ── 5단계: PTN PO별 상세 진단 로그 ─────────────────────────────
         // 콘솔에서 21개 각각의 데이터 상태를 테이블로 확인 가능
@@ -1544,6 +1583,8 @@
         const snIdx  = hdr.findIndex(h => n(h).includes('s/n') || n(h) === 'ss sn');
         const poIdx  = hdr.findIndex(h => /^PO$/i.test(String(h).trim()));  // 정확히 "PO" 컬럼
         const poIdx2 = poIdx >= 0 ? poIdx : hdr.findIndex(h => n(h).includes('po') && !n(h).includes('price'));
+        // 0247# (tkmNo) 컬럼 탐색
+        const tkmIdx = hdr.findIndex(h => n(h).includes('0247') || n(h).includes('tkm'));
         // Total KRW 우선 탐색, 없으면 첫 번째 KRW 컬럼으로 fallback
         const krwIdxTotal = hdr.findIndex(h => n(h).includes('krw') && n(h).includes('total'));
         const krwIdx = krwIdxTotal >= 0 ? krwIdxTotal : hdr.findIndex(h => n(h).includes('krw'));
@@ -1556,16 +1597,17 @@
         quotAmounts = { ...amtCache };
         let matched = 0;
         for (let i = hdrIdx + 1; i < rows.length; i++) {
-          const r   = rows[i];
-          const sn  = snIdx  >= 0 ? String(r[snIdx]  || '').trim() : '';
-          const po  = poIdx2 >= 0 ? String(r[poIdx2] || '').trim() : '';
+          const r     = rows[i];
+          const sn    = snIdx  >= 0 ? String(r[snIdx]  || '').trim() : '';
+          const po    = poIdx2 >= 0 ? String(r[poIdx2] || '').trim() : '';
+          const tkmNo = tkmIdx >= 0 ? String(r[tkmIdx] || '').trim() : '';
           if (!sn && !po) continue;
 
           const krwRaw = krwIdx >= 0 ? r[krwIdx] : '';
           const krw = typeof krwRaw === 'number' ? krwRaw
             : parseFloat(String(krwRaw).replace(/[^0-9.]/g, '')) || 0;
           const usd = usdIdx >= 0 ? (r[usdIdx] || 0) : 0;
-          const entry = { usd, krw, source: 'sht' };  // source 필드 추가 → SHT 견적 표시 정상화
+          const entry = { usd, krw, source: 'sht', sn, po, tkmNo };
           if (sn) quotAmounts[sn] = entry;
           if (po) quotAmounts[po] = entry;
           matched++;
@@ -1925,12 +1967,12 @@
     function generateBarcodePng(value) {
       return new Promise((resolve, reject) => {
         const canvas = document.createElement('canvas');
-        canvas.width  = 280;
-        canvas.height = 60;
+        canvas.width  = 560;
+        canvas.height = 120;
         try {
           JsBarcode(canvas, String(value), {
-            format: 'CODE128', width: 1.5, height: 38,
-            displayValue: true, fontSize: 10, margin: 4,
+            format: 'CODE128', width: 3, height: 76,
+            displayValue: true, fontSize: 20, margin: 8,
             background: '#ffffff', lineColor: '#000000',
           });
         } catch(e) { reject(e); return; }
@@ -2333,49 +2375,168 @@
       startBarcodeScanner();
     }
 
-    async function startBarcodeScanner() {
-      const video  = document.getElementById('barcode-video');
+    // 사진 파일로 바코드 스캔 (네이티브 카메라 앱 이용 → 자동초점 보장)
+    async function onBarcodePhotoSelected(input) {
+      const file = input.files[0];
+      if (!file) return;
+      input.value = '';
       const status = document.getElementById('barcode-status');
-      const result = document.getElementById('barcode-result');
+      status.textContent = '사진 분석 중...';
+      try {
+        const bitmap = await createImageBitmap(file);
+        const cvs = document.createElement('canvas');
+        cvs.width = bitmap.width; cvs.height = bitmap.height;
+        const ctx = cvs.getContext('2d');
+        ctx.filter = 'contrast(170%) grayscale(100%)';
+        ctx.drawImage(bitmap, 0, 0);
+        ctx.filter = 'none';
+        const imageData = ctx.getImageData(0, 0, cvs.width, cvs.height);
+        if (window.ZXingWASM && ZXingWASM.readBarcodesFromImageData) {
+          const results = await ZXingWASM.readBarcodesFromImageData(imageData,
+            { tryHarder: true, tryRotate: true, tryInvert: true, tryDownscale: true });
+          if (results.length) { _onBarcodeDetected(results[0].text); return; }
+        }
+        status.textContent = '인식 실패 — 바코드가 사진에 잘 보이는지 확인 후 다시 시도하세요';
+      } catch(e) {
+        status.textContent = '오류: ' + e.message;
+      }
+    }
+
+    async function onVerifyPhotoSelected(input) {
+      const file = input.files[0];
+      if (!file) return;
+      input.value = '';
+      const status = document.getElementById('verify-cam-status');
+      status.textContent = '사진 분석 중...';
+      try {
+        const bitmap = await createImageBitmap(file);
+        const cvs = document.createElement('canvas');
+        cvs.width = bitmap.width; cvs.height = bitmap.height;
+        const ctx = cvs.getContext('2d');
+        ctx.filter = 'contrast(170%) grayscale(100%)';
+        ctx.drawImage(bitmap, 0, 0);
+        ctx.filter = 'none';
+        const imageData = ctx.getImageData(0, 0, cvs.width, cvs.height);
+        if (window.ZXingWASM && ZXingWASM.readBarcodesFromImageData) {
+          const results = await ZXingWASM.readBarcodesFromImageData(imageData,
+            { tryHarder: true, tryRotate: true, tryInvert: true, tryDownscale: true });
+          if (results.length) {
+            const input2 = document.getElementById('v-' + verifyTargetField);
+            if (input2) { input2.value = results[0].text.trim(); updateVBadge(verifyTargetField); }
+            status.textContent = '✅ 스캔됨: ' + results[0].text.trim();
+            stopVerifyCam();
+            setTimeout(() => document.getElementById('verify-cam-wrap').classList.add('d-none'), 1200);
+            return;
+          }
+        }
+        status.textContent = '인식 실패 — 다시 시도하세요';
+      } catch(e) {
+        status.textContent = '오류: ' + e.message;
+      }
+    }
+
+    // 바코드 인식 완료 공통 처리
+    function _onBarcodeDetected(val) {
+      document.getElementById('barcode-result').textContent = '✅ ' + val;
+      document.getElementById('barcode-status').textContent = '인식 완료! 검색 중...';
+      document.getElementById('search-input').value = val;
+      renderList();
+      setTimeout(() => { _scannerOpen = false; stopBarcodeScanner(); if (barcodeModal) barcodeModal.hide(); }, 1800);
+    }
+
+    async function startBarcodeScanner() {
+      const video      = document.getElementById('barcode-video');
+      const status     = document.getElementById('barcode-status');
+      const result     = document.getElementById('barcode-result');
       const manualWrap = document.getElementById('barcode-manual-wrap');
       result.textContent = '';
 
+      // 카메라 획득 — S21 최적화: 1080p + 후면카메라
+      const camConstraints = { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } };
       try {
-        barcodeStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } }
-        });
+        barcodeStream = await navigator.mediaDevices.getUserMedia({ video: camConstraints, audio: false });
         video.srcObject = barcodeStream;
         await video.play();
       } catch(e) {
-        status.textContent = '카메라 접근 실패: ' + e.message;
-        if (manualWrap) manualWrap.classList.remove('d-none');
+        // 고해상도 실패 시 기본값으로 재시도
+        try {
+          barcodeStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+          video.srcObject = barcodeStream;
+          await video.play();
+        } catch(e2) {
+          status.textContent = '카메라 접근 실패: ' + e2.message;
+          if (manualWrap) manualWrap.classList.remove('d-none');
+          return;
+        }
+      }
+
+      // 연속 자동초점 요청 (지원 기기에서만 적용, 실패 무시)
+      try {
+        const _track = barcodeStream.getVideoTracks()[0];
+        await _track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+      } catch(_) {}
+
+      // ── zxing-wasm 우선 (삼성 인터넷 포함 전 브라우저 지원) ──
+      if (window.ZXingWASM && ZXingWASM.readBarcodesFromImageData) {
+        const { readBarcodesFromImageData } = ZXingWASM;
+        const cvs1 = document.createElement('canvas');
+        const ctx1 = cvs1.getContext('2d', { willReadFrequently: true });
+        const cvs2 = document.createElement('canvas');
+        const ctx2 = cvs2.getContext('2d', { willReadFrequently: true });
+        status.textContent = '카메라로 바코드를 비춰주세요';
+        let busy = false, frameCount = 0;
+
+        const tick = async () => {
+          if (!barcodeStream?.active) return;
+          requestAnimationFrame(tick);
+          if (busy || video.readyState < HTMLMediaElement.HAVE_ENOUGH_DATA) return;
+          busy = true; frameCount++;
+          try {
+            const vw = video.videoWidth, vh = video.videoHeight;
+            if (!vw || !vh) { busy = false; return; }
+            // 1단계: 1200px 축소 + 명암 강화 (초점 없는 폰 대응)
+            const scale = Math.min(1, 1200 / Math.max(vw, vh));
+            cvs1.width = Math.round(vw * scale); cvs1.height = Math.round(vh * scale);
+            ctx1.filter = 'contrast(170%) grayscale(100%)';
+            ctx1.drawImage(video, 0, 0, cvs1.width, cvs1.height);
+            ctx1.filter = 'none';
+            const res1 = await readBarcodesFromImageData(
+              ctx1.getImageData(0, 0, cvs1.width, cvs1.height),
+              { tryHarder: true, tryRotate: true, tryInvert: false, tryDownscale: true }
+            );
+            if (res1.length) { _onBarcodeDetected(res1[0].text); busy = false; return; }
+            // 2단계: 풀해상도 정밀 스캔 (3프레임마다)
+            if (frameCount % 3 === 0) {
+              cvs2.width = vw; cvs2.height = vh;
+              ctx2.filter = 'contrast(170%) grayscale(100%)';
+              ctx2.drawImage(video, 0, 0, vw, vh);
+              ctx2.filter = 'none';
+              const res2 = await readBarcodesFromImageData(
+                ctx2.getImageData(0, 0, vw, vh),
+                { tryHarder: true, tryRotate: true, tryInvert: true, tryDownscale: true }
+              );
+              if (res2.length) { _onBarcodeDetected(res2[0].text); busy = false; return; }
+            }
+          } catch(_) {}
+          busy = false;
+        };
+        requestAnimationFrame(tick);
         return;
       }
 
+      // ── BarcodeDetector 폴백 ──
       if (!('BarcodeDetector' in window)) {
         status.textContent = '자동 인식 미지원 — 바코드를 직접 입력하세요';
         if (manualWrap) manualWrap.classList.remove('d-none');
         return;
       }
-
-      const detector = new BarcodeDetector({
-        formats: ['code_128', 'qr_code', 'data_matrix', 'code_39', 'ean_13', 'ean_8']
-      });
+      const detector = new BarcodeDetector({ formats: ['code_128', 'qr_code', 'data_matrix', 'code_39', 'ean_13', 'ean_8'] });
       status.textContent = '카메라로 바코드를 비춰주세요';
-
       const scan = async () => {
         if (!barcodeStream?.active || !video.readyState) { requestAnimationFrame(scan); return; }
         try {
           const codes = await detector.detect(video);
-          if (codes.length > 0) {
-            const val = codes[0].rawValue;
-            result.textContent = '✅ ' + val;
-            status.textContent = '인식 완료! 검색 중...';
-            document.getElementById('search-input').value = val;
-            renderList();
-            setTimeout(() => { _scannerOpen = false; stopBarcodeScanner(); if (barcodeModal) barcodeModal.hide(); }, 1800);
-            return;
-          }
+          if (codes.length > 0) { _onBarcodeDetected(codes[0].rawValue); return; }
         } catch {}
         requestAnimationFrame(scan);
       };
@@ -2527,36 +2688,95 @@
       stopVerifyCam();
       try {
         verifyCamStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } }
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+          audio: false,
         });
         video.srcObject = verifyCamStream;
         await video.play();
       } catch(e) {
-        status.textContent = '카메라 오류: ' + e.message;
+        try {
+          verifyCamStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+          video.srcObject = verifyCamStream;
+          await video.play();
+        } catch(e2) {
+          status.textContent = '카메라 오류: ' + e2.message;
+          return;
+        }
+      }
+
+      const _applyVerifyScan = (val) => {
+        const input = document.getElementById('v-' + verifyTargetField);
+        if (input) { input.value = val.trim(); updateVBadge(verifyTargetField); }
+        status.textContent = `✅ 스캔됨: ${val.trim()}`;
+        stopVerifyCam();
+        setTimeout(() => wrap.classList.add('d-none'), 1200);
+      };
+
+      // 연속 자동초점 요청 (지원 기기에서만 적용, 실패 무시)
+      try {
+        const _vtrack = verifyCamStream.getVideoTracks()[0];
+        await _vtrack.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+      } catch(_) {}
+
+      // ── zxing-wasm 우선 ──
+      if (window.ZXingWASM && ZXingWASM.readBarcodesFromImageData) {
+        const { readBarcodesFromImageData } = ZXingWASM;
+        const cvs1 = document.createElement('canvas');
+        const ctx1 = cvs1.getContext('2d', { willReadFrequently: true });
+        const cvs2 = document.createElement('canvas');
+        const ctx2 = cvs2.getContext('2d', { willReadFrequently: true });
+        status.textContent = `[${field.toUpperCase()} 스캔] 바코드를 비춰주세요`;
+        let busy = false, frameCount = 0;
+        const tick = async () => {
+          if (!verifyCamStream?.active) return;
+          requestAnimationFrame(tick);
+          if (busy || video.readyState < HTMLMediaElement.HAVE_ENOUGH_DATA) return;
+          busy = true; frameCount++;
+          try {
+            const vw = video.videoWidth, vh = video.videoHeight;
+            if (!vw || !vh) { busy = false; return; }
+            // 1단계: 1200px 축소 + 명암 강화 (초점 없는 폰 대응)
+            const scale = Math.min(1, 1200 / Math.max(vw, vh));
+            cvs1.width = Math.round(vw * scale); cvs1.height = Math.round(vh * scale);
+            ctx1.filter = 'contrast(170%) grayscale(100%)';
+            ctx1.drawImage(video, 0, 0, cvs1.width, cvs1.height);
+            ctx1.filter = 'none';
+            const res1 = await readBarcodesFromImageData(
+              ctx1.getImageData(0, 0, cvs1.width, cvs1.height),
+              { tryHarder: true, tryRotate: true, tryInvert: false, tryDownscale: true }
+            );
+            if (res1.length) { _applyVerifyScan(res1[0].text); busy = false; return; }
+            // 2단계: 풀해상도 정밀 스캔 (3프레임마다)
+            if (frameCount % 3 === 0) {
+              cvs2.width = vw; cvs2.height = vh;
+              ctx2.filter = 'contrast(170%) grayscale(100%)';
+              ctx2.drawImage(video, 0, 0, vw, vh);
+              ctx2.filter = 'none';
+              const res2 = await readBarcodesFromImageData(
+                ctx2.getImageData(0, 0, vw, vh),
+                { tryHarder: true, tryRotate: true, tryInvert: true, tryDownscale: true }
+              );
+              if (res2.length) { _applyVerifyScan(res2[0].text); busy = false; return; }
+            }
+          } catch(_) {}
+          busy = false;
+        };
+        requestAnimationFrame(tick);
         return;
       }
 
+      // ── BarcodeDetector 폴백 ──
       if (!('BarcodeDetector' in window)) {
         status.textContent = '이 브라우저는 자동 스캔 미지원 — 직접 입력하세요';
         return;
       }
-
       const detector = new BarcodeDetector({ formats: ['code_128','code_39','qr_code','data_matrix','ean_13','ean_8','upc_a'] });
       status.textContent = `[${field.toUpperCase()} 스캔] 바코드를 비춰주세요`;
-
       const scan = async () => {
         if (!verifyCamStream) return;
         try {
           const codes = await detector.detect(video);
-          if (codes.length > 0) {
-            const val = codes[0].rawValue.trim();
-            const input = document.getElementById('v-' + verifyTargetField);
-            if (input) { input.value = val; updateVBadge(verifyTargetField); }
-            status.textContent = `✅ 스캔됨: ${val}`;
-            stopVerifyCam();
-            setTimeout(() => wrap.classList.add('d-none'), 1200);
-            return;
-          }
+          if (codes.length > 0) { _applyVerifyScan(codes[0].rawValue); return; }
         } catch(e) {}
         if (verifyCamStream) requestAnimationFrame(scan);
       };

@@ -222,10 +222,24 @@ function readFileAsArrayBuffer(file) {
 }
 
 async function _drmBridgeParse(file, type) {
+  // 먼저 ping으로 브리지 가용 여부 확인 (2초 이내 응답 없으면 미가동으로 판단)
+  try {
+    await fetch('http://localhost:3001/ping', { signal: AbortSignal.timeout(2000) });
+  } catch {
+    throw new Error('drm-bridge 미실행 — localhost:3001에 연결할 수 없습니다');
+  }
   const form = new FormData();
   form.append('file', file);
   form.append('type', type || 'mes');
-  const res = await fetch('http://localhost:3001/drm-convert', { method: 'POST', body: form, signal: AbortSignal.timeout(60000) });
+  let res;
+  try {
+    res = await fetch('http://localhost:3001/drm-convert', { method: 'POST', body: form, signal: AbortSignal.timeout(60000) });
+  } catch(e) {
+    const msg = e?.name === 'TimeoutError' || String(e?.message).includes('timed out')
+      ? 'DRM 변환 시간 초과 (60초) — 파일이 너무 크거나 브리지 서버가 응답하지 않습니다'
+      : 'DRM 브리지 연결 오류: ' + e.message;
+    throw new Error(msg);
+  }
   if (!res.ok) throw new Error('DRM 브리지 오류 ' + res.status);
   const csv = await res.text();
   return XLSX.read(csv, { type: 'string' });
@@ -328,7 +342,8 @@ async function generateQuotation(mesFile, masterFile) {
       masterTargets.push({
         orderNo, pn: String(r[6]||'').trim(), sn: String(r[7]||'').trim(),
         po: String(r[8]||'').trim(), tkmNo: String(r[9]||'').trim(),
-        fab: String(r[4]||'').trim(),   // TSV 라인 감지용
+        fab: String(r[4]||'').trim(),      // TSV 라인 감지용
+        customer: String(r[3]||'').trim(), // D열: Customer Name
         clnDate,
       });
     }
@@ -392,20 +407,24 @@ async function generateQuotation(mesFile, masterFile) {
     // ※ 배치 필터 필수 — 전체 스캔 시 날짜별 중복 PO 발생
     const allMj = await fetchMasterJobsBatch('order_no, pn, sn, po, tkm_no');
     // master_rows_cache에서 fab 정보 보충 (master_jobs에는 fab 컬럼 없음)
-    const _fabByOrder = {};
+    const _fabByOrder = {}, _customerByOrder = {};
     try {
       const mc = JSON.parse(localStorage.getItem('master_rows_cache') || '[]');
       for (let i = 2; i < mc.length; i++) {
         const mr = mc[i];
         const ono = String(mr[10] || '').trim();
-        if (ono) _fabByOrder[ono] = String(mr[4] || '').trim();
+        if (ono) {
+          _fabByOrder[ono]      = String(mr[4] || '').trim();
+          _customerByOrder[ono] = String(mr[3] || '').trim();
+        }
       }
     } catch {}
     if (allMj.length > 0) {
       masterTargets = allMj.map(r => ({
         orderNo: r.order_no, pn: r.pn || '', sn: r.sn || '',
         po: r.po || '', tkmNo: r.tkm_no || '',
-        fab: _fabByOrder[r.order_no] || '',
+        fab:      _fabByOrder[r.order_no]      || '',
+        customer: _customerByOrder[r.order_no] || '',
       }));
     }
     if (!masterTargets.length) throw new Error('마스터 데이터가 없습니다. 관리자가 마스터파일을 한 번 업로드해야 합니다.');
@@ -522,7 +541,7 @@ async function generateQuotation(mesFile, masterFile) {
     const addonTotalKRW = addonItems.reduce((s, a) => s + a.krw, 0);
 
     quotation.push({
-      수주번호: orderNo, po, pn, sn, tkmNo, fab: target.fab || '',
+      수주번호: orderNo, po, pn, sn, tkmNo, fab: target.fab || '', customer: target.customer || '',
       process: mes.processType,
       processName: procCost.name, processUSD: procCost.usd, processKRW: procCost.krw,
       replParts, replTotalUSD, replTotalKRW,
@@ -587,6 +606,7 @@ async function generateQuotation(mesFile, masterFile) {
     mesOrderCol,
     mesHeader: (mesAllRows[mesHeaderRow]||[]).slice(0,15).map((v,i)=>`[${i}]${String(v||'').slice(0,20)}`).join(' | '),
     sampleMasterOrders: masterTargets.slice(0,3).map(t=>t.orderNo),
+    sampleCustomers: masterTargets.slice(0,3).map(t=>`${t.orderNo}→"${t.customer||'(없음)'}"`),
     sampleMesOrders: Object.keys(mesGroups).slice(0,3).map(v=>v.slice(0,30)),
     issueBreakdown: issues.reduce((acc, i) => { acc[i.issue] = (acc[i.issue]||0)+1; return acc; }, {}),
   };
@@ -1045,7 +1065,7 @@ async function downloadQuotationExcel(quotation) {
   );
 
   const headers = [
-    'SS P/N', 'SS S/N', 'PO', '0247#', 'Process',
+    'Customer Name', 'SS P/N', 'SS S/N', 'PO', '0247#', 'Process',
     'Cleaning price\n(USD)', 'Cleaning price\n(KRW)',
     ...activeParts.flatMap(p => [`${p.label}\n(USD)`, `${p.label}\n(KRW)`]),
     ...(hasResistivity ? ['Resistivity Test\n(USD)', 'Resistivity Test\n(KRW)'] : []),
@@ -1059,7 +1079,7 @@ async function downloadQuotationExcel(quotation) {
     const BRD_BLUE = 'FF8DB4E2'; // 파랑 테두리
     const BRD_GRAY = 'FFD9D9D9'; // 회색 테두리
     const SUM_BG   = 'FFFFF2CC'; // 합계 행 배경 (연노랑)
-    const colWidths = [12, 14, 13, 12, 13, 13, 15,
+    const colWidths = [18, 12, 14, 13, 12, 13, 13, 15,
       ...activeParts.flatMap(() => [12, 15]),
       ...(hasResistivity ? [14, 17] : []),
       12, 15, 26];
@@ -1069,7 +1089,7 @@ async function downloadQuotationExcel(quotation) {
     ws.columns = colWidths.map(w => ({ width: w }));
 
     // 컬럼 인덱스 상수 (1-based)
-    const NUM_START   = 6;                    // Cleaning USD 컬럼
+    const NUM_START   = 7;                    // Cleaning USD 컬럼 (Customer Name 추가로 +1)
     const REMARK_COL  = headers.length;       // Remark 컬럼
     const TOTAL_USD   = REMARK_COL - 2;       // Total USD 컬럼
     const TOTAL_KRW   = REMARK_COL - 1;       // Total KRW 컬럼
@@ -1176,7 +1196,7 @@ async function downloadQuotationExcel(quotation) {
       const krwFormula = krwCols.map(c => `${col(c)}${currentRow}`).join('+');
 
       const row = ws.addRow([
-        q.pn, q.sn, q.po, q.tkmNo, q.processName || q.process,
+        q.customer || '', q.pn, q.sn, q.po, q.tkmNo, q.processName || q.process,
         q.processUSD, q.processKRW, ...partCols, ...resistCols,
         { formula: usdFormula, result: q.totalUSD },
         { formula: krwFormula, result: q.totalKRW },
@@ -1253,7 +1273,7 @@ async function downloadQuotationExcel(quotation) {
       ...q.replParts.map(p=>`${p.pn} ×${p.qty}`),
       ...(resistItem && (resistItem.usd || resistItem.krw) ? ['Resistivity Test'] : []),
     ].join('\n');
-    rows.push([q.pn,q.sn,q.po,q.tkmNo,q.processName||q.process,q.processUSD,q.processKRW,...pc,...resistCols,q.totalUSD,q.totalKRW,rm]);
+    rows.push([q.customer||'',q.pn,q.sn,q.po,q.tkmNo,q.processName||q.process,q.processUSD,q.processKRW,...pc,...resistCols,q.totalUSD,q.totalKRW,rm]);
   }
   const ws = XLSX.utils.aoa_to_sheet(rows);
   ws['!rows'] = [{ hpt: 15 }, { hpt: 32 }];
