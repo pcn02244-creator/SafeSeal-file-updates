@@ -302,6 +302,14 @@ async function generateQuotation(mesFile, masterFile) {
   const COL_PROCESS = _findMesCol('SafeSeal타입', 2);
   const COL_MATPN   = _findMesCol('사용자재목록', 8);
   const COL_MATQTY  = _findMesCol('사용수량목록', 9);
+  // Retainer Ring Re-Work: 헤더에서 탐색 (없으면 D열=index 3 폴백)
+  const COL_RETAINER_REWORK = (() => {
+    for (let ci = 0; ci < hdr.length; ci++) {
+      const h = String(hdr[ci] || '').toLowerCase().replace(/[\s\-_]/g, '');
+      if (h.includes('retainer') && (h.includes('rework') || h.includes('리워크'))) return ci;
+    }
+    return 3;
+  })();
 
   const mesGroups = {};
   for (let i = mesHeaderRow + 1; i < mesAllRows.length; i++) {
@@ -315,7 +323,9 @@ async function generateQuotation(mesFile, masterFile) {
     const processType = normalizeProcessKey(String(r[COL_PROCESS] || ''));
     const matPN  = String(r[COL_MATPN] || '').trim();
     const matQty = parseInt(String(r[COL_MATQTY] || '').replace(/[^0-9]/g, '')) || 0;
-    if (!mesGroups[orderNo]) mesGroups[orderNo] = { processType, pn, sn, materials: [] };
+    const hasReworkFlag = !!String(r[COL_RETAINER_REWORK] || '').trim();
+    if (!mesGroups[orderNo]) mesGroups[orderNo] = { processType, pn, sn, materials: [], hasRetainerRework: false };
+    if (hasReworkFlag) mesGroups[orderNo].hasRetainerRework = true;
     if (matPN) mesGroups[orderNo].materials.push({ pn: matPN, qty: matQty || 1 });
   }
   // MES 캐시 저장
@@ -535,6 +545,15 @@ async function generateQuotation(mesFile, masterFile) {
         name: (resistCost && resistCost.name) || 'Resistivity Test',
         usd:  (resistCost && resistCost.usd  != null) ? resistCost.usd  : RESIST_USD_DEFAULT,
         krw:  (resistCost && resistCost.krw  != null) ? resistCost.krw  : RESIST_KRW_DEFAULT,
+      });
+    }
+    // ── MES D열 Retainer Ring Re-Work 감지 ─────────────────────────────
+    if (mes.hasRetainerRework) {
+      addonItems.push({
+        type: 'RETAINER_REWORK',
+        name: 'Retainer Ring Re-Work',
+        usd:  44.43,
+        krw:  67100,
       });
     }
     const addonTotalUSD = addonItems.reduce((s, a) => s + a.usd, 0);
@@ -1063,11 +1082,16 @@ async function downloadQuotationExcel(quotation) {
   const hasResistivity = quotation.some(q =>
     (q.addonItems || []).some(a => a.type === 'RESISTIVITY_TEST')
   );
+  // Retainer Ring Re-Work 컬럼: 해당 항목이 하나라도 있을 때만 컬럼 추가
+  const hasRetainerRework = quotation.some(q =>
+    (q.addonItems || []).some(a => a.type === 'RETAINER_REWORK')
+  );
 
   const headers = [
     'Customer Name', 'SS P/N', 'SS S/N', 'PO', '0247#', 'Process',
     'Cleaning price\n(USD)', 'Cleaning price\n(KRW)',
     ...activeParts.flatMap(p => [`${p.label}\n(USD)`, `${p.label}\n(KRW)`]),
+    ...(hasRetainerRework ? ['Retainer Ring Re-Work\n(USD)', 'Retainer Ring Re-Work\n(KRW)'] : []),
     ...(hasResistivity ? ['Resistivity Test\n(USD)', 'Resistivity Test\n(KRW)'] : []),
     'Total\n(USD)', 'Total\n(KRW)', 'Remark',
   ];
@@ -1081,6 +1105,7 @@ async function downloadQuotationExcel(quotation) {
     const SUM_BG   = 'FFFFF2CC'; // 합계 행 배경 (연노랑)
     const colWidths = [18, 12, 14, 13, 12, 13, 13, 15,
       ...activeParts.flatMap(() => [12, 15]),
+      ...(hasRetainerRework ? [18, 20] : []),
       ...(hasResistivity ? [14, 17] : []),
       12, 15, 26];
 
@@ -1125,6 +1150,16 @@ async function downloadQuotationExcel(quotation) {
         right:  { style: 'thin', color: { argb: BRD_BLUE } },
       };
     });
+    // Retainer Ring Re-Work 헤더 강조 (연주황 배경)
+    if (hasRetainerRework) {
+      const reworkOffset = hasResistivity ? 4 : 2;
+      const reworkUsdCol = TOTAL_USD - reworkOffset;
+      const reworkKrwCol = TOTAL_USD - reworkOffset + 1;
+      for (const c of [reworkUsdCol, reworkKrwCol]) {
+        const cell = row2.getCell(c);
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF3E0' } };
+      }
+    }
     // Resistivity Test 헤더 강조 (TSV 컬럼 — 연보라 배경)
     if (hasResistivity) {
       const resistUsdCol = TOTAL_USD - 2;
@@ -1180,6 +1215,12 @@ async function downloadQuotationExcel(quotation) {
         throw new Error(`견적서 생성 오류 (PO ${q.po}): Breakdown 합계(KRW ${_bdKRW.toLocaleString()})가 부품 합계(KRW ${_expectKRW.toLocaleString()})와 불일치 — 데이터 확인 필요`);
       }
 
+      // Retainer Ring Re-Work 컬럼 값
+      const retainerReworkItem = hasRetainerRework
+        ? ((q.addonItems || []).find(a => a.type === 'RETAINER_REWORK') || { usd: 0, krw: 0 })
+        : null;
+      const reworkCols = hasRetainerRework ? [retainerReworkItem.usd || 0, retainerReworkItem.krw || 0] : [];
+
       // Resistivity Test 컬럼 값
       const resistItem = hasResistivity
         ? ((q.addonItems || []).find(a => a.type === 'RESISTIVITY_TEST') || { usd: 0, krw: 0 })
@@ -1188,6 +1229,7 @@ async function downloadQuotationExcel(quotation) {
 
       const remark = [
         ...q.replParts.map(p => `${p.pn} ×${p.qty}`),
+        ...(retainerReworkItem && (retainerReworkItem.usd || retainerReworkItem.krw) ? ['Retainer Ring Re-Work'] : []),
         ...(resistItem && (resistItem.usd || resistItem.krw) ? ['Resistivity Test'] : []),
       ].join('\n');
 
@@ -1197,12 +1239,20 @@ async function downloadQuotationExcel(quotation) {
 
       const row = ws.addRow([
         q.customer || '', q.pn, q.sn, q.po, q.tkmNo, q.processName || q.process,
-        q.processUSD, q.processKRW, ...partCols, ...resistCols,
+        q.processUSD, q.processKRW, ...partCols, ...reworkCols, ...resistCols,
         { formula: usdFormula, result: q.totalUSD },
         { formula: krwFormula, result: q.totalKRW },
         remark,
       ]);
       applyDataStyle(row, currentRow);
+      // Retainer Ring Re-Work 행 연주황 배경 강조
+      if (hasRetainerRework && (q.addonItems || []).some(a => a.type === 'RETAINER_REWORK')) {
+        row.eachCell(cell => {
+          if (!cell.fill || cell.fill.fgColor?.argb === 'FFFFFFFF' || !cell.fill.fgColor) {
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF3E0' } };
+          }
+        });
+      }
       // TSV 행 연한 배경 강조
       if (hasResistivity && (q.addonItems || []).some(a => a.type === 'RESISTIVITY_TEST')) {
         row.eachCell(cell => {
@@ -1265,15 +1315,20 @@ async function downloadQuotationExcel(quotation) {
     const _eu=+(q.totalUSD-q.processUSD-((q.addonItems||[]).reduce((s,a)=>s+(a.usd||0),0))).toFixed(2);
     const _ek=q.totalKRW-q.processKRW-((q.addonItems||[]).reduce((s,a)=>s+(a.krw||0),0));
     if (Math.abs(_bk-_ek)>1||Math.abs(_bu-_eu)>0.01) throw new Error(`견적서 생성 오류 (PO ${q.po}): Breakdown KRW ${_bk.toLocaleString()} ≠ 부품합계 KRW ${_ek.toLocaleString()}`);
+    const retainerReworkItem2 = hasRetainerRework
+      ? ((q.addonItems || []).find(a => a.type === 'RETAINER_REWORK') || { usd: 0, krw: 0 })
+      : null;
+    const reworkCols2 = hasRetainerRework ? [retainerReworkItem2.usd || 0, retainerReworkItem2.krw || 0] : [];
     const resistItem = hasResistivity
       ? ((q.addonItems || []).find(a => a.type === 'RESISTIVITY_TEST') || { usd: 0, krw: 0 })
       : null;
     const resistCols = hasResistivity ? [resistItem.usd || 0, resistItem.krw || 0] : [];
     const rm = [
       ...q.replParts.map(p=>`${p.pn} ×${p.qty}`),
+      ...(retainerReworkItem2 && (retainerReworkItem2.usd || retainerReworkItem2.krw) ? ['Retainer Ring Re-Work'] : []),
       ...(resistItem && (resistItem.usd || resistItem.krw) ? ['Resistivity Test'] : []),
     ].join('\n');
-    rows.push([q.customer||'',q.pn,q.sn,q.po,q.tkmNo,q.processName||q.process,q.processUSD,q.processKRW,...pc,...resistCols,q.totalUSD,q.totalKRW,rm]);
+    rows.push([q.customer||'',q.pn,q.sn,q.po,q.tkmNo,q.processName||q.process,q.processUSD,q.processKRW,...pc,...reworkCols2,...resistCols,q.totalUSD,q.totalKRW,rm]);
   }
   const ws = XLSX.utils.aoa_to_sheet(rows);
   ws['!rows'] = [{ hpt: 15 }, { hpt: 32 }];
