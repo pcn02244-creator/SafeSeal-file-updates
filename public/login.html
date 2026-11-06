@@ -104,7 +104,11 @@
       const pw = document.getElementById('pw').value;
       const h = await sha256(pw);
       if (h === HASH) {
-        sessionStorage.setItem('iones_auth_v1', '1');
+        const exp = Date.now() + 30 * 24 * 60 * 60 * 1000; // 30일
+        try {
+          localStorage.removeItem('iones_auth_v1'); // 구버전 제거
+          localStorage.setItem('iones_auth_v2', JSON.stringify({ exp }));
+        } catch (e) {}
         const redir = sessionStorage.getItem('iones_redirect');
         sessionStorage.removeItem('iones_redirect');
         location.replace(redir && !redir.includes('login.html') ? redir : 'parts-mgmt.html');
