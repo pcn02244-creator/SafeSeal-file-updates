@@ -323,7 +323,8 @@ async function generateQuotation(mesFile, masterFile) {
     const processType = normalizeProcessKey(String(r[COL_PROCESS] || ''));
     const matPN  = String(r[COL_MATPN] || '').trim();
     const matQty = parseInt(String(r[COL_MATQTY] || '').replace(/[^0-9]/g, '')) || 0;
-    const hasReworkFlag = !!String(r[COL_RETAINER_REWORK] || '').trim();
+    const _reworkVal = String(r[COL_RETAINER_REWORK] || '').trim().toUpperCase();
+    const hasReworkFlag = /^(Y|O|YES|1|TRUE|있음|해당)$/.test(_reworkVal);
     if (!mesGroups[orderNo]) mesGroups[orderNo] = { processType, pn, sn, materials: [], hasRetainerRework: false };
     if (hasReworkFlag) mesGroups[orderNo].hasRetainerRework = true;
     if (matPN) mesGroups[orderNo].materials.push({ pn: matPN, qty: matQty || 1 });
