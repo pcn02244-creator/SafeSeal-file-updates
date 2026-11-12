@@ -1801,9 +1801,9 @@
       if (!tplPath) return alert('템플릿 파일 경로를 입력해 주세요.');
       if (!outDir)  return alert('출력 폴더를 입력해 주세요.');
 
-      const today    = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-      const poLabel  = [...selectedPos].join('_').slice(0, 40);
-      const outFile  = `${outDir}\\거래명세서_${poLabel}_${today}.xlsx`;
+      const stmtDateVal = document.getElementById('stmt-date-input')?.value || new Date().toISOString().slice(0,10);
+      const dateLabel   = stmtDateVal.slice(2).replace(/-/g,''); // YYMMDD
+      const outFile     = `${outDir}\\Safeseal_거래명세서-${dateLabel}.xlsx`;
       const bridgeUrl = localStorage.getItem('drm_bridge_url') || 'http://localhost:3001';
 
       const logEl = document.getElementById('stmt-drm-log');
@@ -2309,9 +2309,8 @@
         const url    = URL.createObjectURL(blob);
         const a      = document.createElement('a');
         a.href = url;
-        const today = new Date().toISOString().slice(0,10).replace(/-/g,'');
-        const label = pos.slice(0,3).join('_');
-        a.download = `거래명세서_${label}_${today}.xlsx`;
+        const dateLabel = dateStr.slice(2).replace(/-/g,''); // YYMMDD
+        a.download = `Safeseal_거래명세서-${dateLabel}.xlsx`;
         a.click();
         URL.revokeObjectURL(url);
 
