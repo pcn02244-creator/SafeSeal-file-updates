@@ -472,11 +472,18 @@
               <div class="text-muted" style="font-size:.75rem">자동: 다음 영업일 (금요일→차주 월요일) · 직접 수정 가능</div>
             </div>
 
-            <div class="d-flex align-items-center gap-2 mb-3">
+            <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
               <span id="stmt-quot-status" class="small"></span>
               <label class="text-muted small mb-0" style="cursor:pointer">
                 (다른 견적 파일 사용 시 수동 업로드)
                 <input type="file" class="d-none" id="stmt-quot-input" accept=".xlsx,.xls" onchange="onQuotUpload(this)">
+              </label>
+            </div>
+            <div class="d-flex align-items-center gap-2 mb-3">
+              <button class="btn btn-outline-secondary btn-sm" onclick="exportAmtCache()" title="견적 금액 캐시를 JSON 파일로 내보내기">📤 금액 내보내기</button>
+              <label class="btn btn-outline-primary btn-sm mb-0" title="다른 PC에서 내보낸 JSON 파일 가져오기" style="cursor:pointer">
+                📥 금액 가져오기
+                <input type="file" class="d-none" id="amt-cache-import" accept=".json" onchange="importAmtCache(this)">
               </label>
             </div>
 
@@ -1479,6 +1486,41 @@
       });
     }
 
+    /* ════ 견적 금액 캐시 내보내기 / 가져오기 ════ */
+    function exportAmtCache() {
+      const cache = localStorage.getItem('quotation_amounts_cache') || '{}';
+      const parsed = JSON.parse(cache);
+      const cnt = Object.keys(parsed).length;
+      if (cnt === 0) { alert('내보낼 견적 금액이 없습니다.\n먼저 견적 생성 화면에서 견적을 만들어 주세요.'); return; }
+      const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      const blob = new Blob([JSON.stringify(parsed, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+      a.download = `quotation_cache_${today}.json`; a.click(); URL.revokeObjectURL(a.href);
+    }
+
+    function importAmtCache(input) {
+      const file = input.files[0]; if (!file) return;
+      const reader = new FileReader();
+      reader.onload = e => {
+        try {
+          const imported = JSON.parse(e.target.result);
+          const existing = JSON.parse(localStorage.getItem('quotation_amounts_cache') || '{}');
+          const merged = { ...existing, ...imported };
+          localStorage.setItem('quotation_amounts_cache', JSON.stringify(merged));
+          const cnt = Object.keys(imported).length;
+          const statusEl = document.getElementById('stmt-quot-status');
+          if (statusEl) {
+            statusEl.innerHTML = `✅ 견적 금액 ${cnt}건 가져오기 완료`;
+            statusEl.className = 'small text-success fw-semibold';
+          }
+          quotAmounts = merged;
+          buildPreview().catch(e => console.error('[buildPreview] 오류:', e));
+        } catch(err) { alert('파일 형식 오류: ' + err.message); }
+        input.value = '';
+      };
+      reader.readAsText(file);
+    }
+
     /* ════ 거래명세서 생성 ════ */
     let stmtModal;
     let quotAmounts   = {};
@@ -1638,40 +1680,6 @@
       document.getElementById('stmt-no-preview').textContent = '⏳ 데이터 로드 중...';
       document.getElementById('stmt-no-preview').classList.remove('d-none');
       document.getElementById('stmt-preview-table').classList.add('d-none');
-
-      // Supabase에서 미매칭 PO 금액 보충 (다른 PC에서 견적 생성한 경우)
-      {
-        const _missingPos = [...selectedPos].filter(p => !quotAmounts[p]);
-        if (_missingPos.length > 0) {
-          try {
-            const sbFill = getSB();
-            if (sbFill) {
-              const { data: autoRows } = await sbFill.from('ext_quote_lines')
-                .select('po, sn, unit_price, batch_date')
-                .in('po', _missingPos)
-                .eq('source_file', 'auto_quotation')
-                .order('batch_date', { ascending: false });
-              if (autoRows && autoRows.length > 0) {
-                const seen = new Set();
-                for (const row of autoRows) {
-                  if (!seen.has(row.po)) {
-                    seen.add(row.po);
-                    const entry = { usd: 0, krw: row.unit_price || 0, source: 'auto' };
-                    quotAmounts[row.po] = entry;
-                    if (row.sn) quotAmounts[row.sn] = entry;
-                  }
-                }
-                try { localStorage.setItem('quotation_amounts_cache', JSON.stringify(quotAmounts)); } catch {}
-                const statusEl = document.getElementById('stmt-quot-status');
-                if (statusEl && seen.size > 0) {
-                  statusEl.innerHTML += `<br><span style="font-size:10px;color:#2196F3">☁ Supabase에서 ${seen.size}건 금액 보충됨</span>`;
-                  statusEl.className = 'small text-success fw-semibold';
-                }
-              }
-            }
-          } catch(eFill) { console.warn('[buildPreview] Supabase 금액 보충 실패:', eFill.message); }
-        }
-      }
 
       let masterCache = [];
       try { masterCache = JSON.parse(localStorage.getItem('master_rows_cache') || '[]'); } catch {}

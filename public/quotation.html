@@ -572,26 +572,6 @@
         const data = await generateQuotation(mesFile, masterFile);
         restoreResult(data);
         try { sessionStorage.setItem('quotation_result', JSON.stringify(data)); } catch {}
-        // 자동 견적 금액 → Supabase 저장 (다른 PC에서도 거래명세서 생성 가능)
-        (async () => {
-          try {
-            const sbAuto = getSB();
-            if (sbAuto && data.quotation && data.quotation.length > 0) {
-              const today = new Date().toISOString().slice(0, 10);
-              const autoPos = [...new Set(data.quotation.map(q => q.po).filter(Boolean))];
-              if (autoPos.length > 0) {
-                await sbAuto.from('ext_quote_lines').delete().in('po', autoPos).eq('source_file', 'auto_quotation');
-                const autoRows = data.quotation.filter(q => q.po).map(q => ({
-                  batch_date: today, po: q.po, ptn_no: '', sn: String(q.sn || ''),
-                  pn: q.pn || '', order_no: q.수주번호 || '', unit_price: q.totalKRW || 0,
-                  qty: 1, total_price: q.totalKRW || 0, source_file: 'auto_quotation',
-                }));
-                await sbAuto.from('ext_quote_lines').insert(autoRows);
-                console.log('[auto-quotation] Supabase 금액 저장:', autoRows.length, '건');
-              }
-            }
-          } catch(eAuto) { console.warn('[auto-quotation] Supabase 금액 저장 실패:', eAuto.message); }
-        })();
         if (data.summary.quotationCount === 0 && data.debug) {
           const d = data.debug;
           const issueText = Object.entries(d.issueBreakdown||{}).map(([k,v])=>`${k}: ${v}건`).join(' / ') || '없음';
