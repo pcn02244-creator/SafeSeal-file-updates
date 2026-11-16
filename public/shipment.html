@@ -1639,6 +1639,40 @@
       document.getElementById('stmt-no-preview').classList.remove('d-none');
       document.getElementById('stmt-preview-table').classList.add('d-none');
 
+      // Supabase에서 미매칭 PO 금액 보충 (다른 PC에서 견적 생성한 경우)
+      {
+        const _missingPos = [...selectedPos].filter(p => !quotAmounts[p]);
+        if (_missingPos.length > 0) {
+          try {
+            const sbFill = getSB();
+            if (sbFill) {
+              const { data: autoRows } = await sbFill.from('ext_quote_lines')
+                .select('po, sn, unit_price, batch_date')
+                .in('po', _missingPos)
+                .eq('source_file', 'auto_quotation')
+                .order('batch_date', { ascending: false });
+              if (autoRows && autoRows.length > 0) {
+                const seen = new Set();
+                for (const row of autoRows) {
+                  if (!seen.has(row.po)) {
+                    seen.add(row.po);
+                    const entry = { usd: 0, krw: row.unit_price || 0, source: 'auto' };
+                    quotAmounts[row.po] = entry;
+                    if (row.sn) quotAmounts[row.sn] = entry;
+                  }
+                }
+                try { localStorage.setItem('quotation_amounts_cache', JSON.stringify(quotAmounts)); } catch {}
+                const statusEl = document.getElementById('stmt-quot-status');
+                if (statusEl && seen.size > 0) {
+                  statusEl.innerHTML += `<br><span style="font-size:10px;color:#2196F3">☁ Supabase에서 ${seen.size}건 금액 보충됨</span>`;
+                  statusEl.className = 'small text-success fw-semibold';
+                }
+              }
+            }
+          } catch(eFill) { console.warn('[buildPreview] Supabase 금액 보충 실패:', eFill.message); }
+        }
+      }
+
       let masterCache = [];
       try { masterCache = JSON.parse(localStorage.getItem('master_rows_cache') || '[]'); } catch {}
 
